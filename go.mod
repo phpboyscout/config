@@ -1,4 +1,4 @@
-module gitlab.com/phpboyscout/config
+module github.com/phpboyscout/config
 
 go 1.20
 
