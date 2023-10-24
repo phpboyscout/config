@@ -1,0 +1,27 @@
+repos:
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v1.55.0
+    hooks:
+      - id: golangci-lint
+  - repo: https://github.com/TekWizely/pre-commit-golang
+    rev: master
+    hooks:
+      - id: go-test-mod
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-shebang-scripts-are-executable
+      - id: check-symlinks
+      - id: check-toml
+      - id: check-xml
+      - id: check-yaml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: fix-byte-order-marker
+      - id: mixed-line-ending
+      - id: no-commit-to-branch
+        args: [--branch, main]
+      - id: trailing-whitespace
