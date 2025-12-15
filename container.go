@@ -3,11 +3,11 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/fsnotify/fsnotify"
 	"github.com/go-errors/errors"
 	"github.com/spf13/viper"
@@ -34,7 +34,7 @@ type Containable interface {
 type Container struct {
 	ID        string
 	viper     *viper.Viper
-	logger    *log.Logger
+	logger    *slog.Logger
 	observers []Observable
 }
 
@@ -106,16 +106,20 @@ func (c *Container) handleReadFileError(err error) {
 // watchConfig monitor the changes in the config file.
 func (c *Container) watchConfig() {
 	c.viper.OnConfigChange(func(e fsnotify.Event) {
-		c.logger.Infof("Config updated %v", e)
+		c.logger.Info(fmt.Sprintf("Config updated %v", e))
+
 		errs := make(chan error)
+
 		wg := &sync.WaitGroup{}
 		for _, o := range c.observers {
 			wg.Add(1)
+
 			go func(o Observable, wg *sync.WaitGroup, errs chan error) {
 				o.Run(c, errs)
 				wg.Done()
 			}(o, wg, errs)
 		}
+
 		wg.Wait()
 	})
 	c.viper.WatchConfig()
@@ -139,9 +143,10 @@ func (c *Container) GetObservers() []Observable {
 // Dump return config as json string.
 func (c *Container) ToJSON() string {
 	s := c.viper.AllSettings()
+
 	bs, err := json.Marshal(s)
 	if err != nil {
-		c.logger.Fatal("unable to marshal config to YAML", "stacktrace", errors.Wrap(err, 0).ErrorStack())
+		c.logger.Error("unable to marshal config to YAML", "stacktrace", errors.Wrap(err, 0).ErrorStack())
 	}
 
 	return string(bs)

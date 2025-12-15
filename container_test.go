@@ -2,12 +2,13 @@ package config_test
 
 import (
 	"io"
+	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,20 +27,20 @@ func (o TestObserver) Run(c config.Containable, errs chan error) {
 // TestContainer_AddObserver provides a convoluted test for triggering multiple observers of filesystem changes.
 func TestContainer_AddObserver(t *testing.T) {
 	t.Parallel()
-	logger := log.New(io.Discard)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	t.Run("with single config file", func(t *testing.T) {
 		t.Parallel()
-		filename := "/tmp/config.yml"
-		f, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
+		// Use t.TempDir() to avoid polluting /tmp and ensure cleanup
+		tmpDir := t.TempDir()
+		filename := filepath.Join(tmpDir, "config.yml")
+
+		// Create initial file
+		err := os.WriteFile(filename, []byte(firstMockFilesYaml), 0644)
 		require.NoError(t, err)
 
-		_, err = f.WriteString(firstMockFilesYaml)
-		require.NoError(t, err)
-
-		err = f.Close()
-		require.NoError(t, err)
-
+		// Must use OsFs because Viper's WatchConfig relies on fsnotify which requires real filesystem events.
+		// MemMapFs does not support this.
 		c := config.NewFilesContainer(logger, afero.NewOsFs(), filename)
 		origValue := c.GetString("yaml.key")
 		observed := 0
@@ -56,11 +57,11 @@ func TestContainer_AddObserver(t *testing.T) {
 		c.AddObserver(TestObserver{observeFunc})
 		c.AddObserverFunc(observeFunc)
 
-		f2, _ := os.OpenFile(filename, os.O_RDWR|os.O_TRUNC, 0755)
-		_, err = f2.WriteString(secondMockFilesYaml)
-		require.NoError(t, err)
+		// Give watcher time to start? Viper WatchConfig is usually async.
+		time.Sleep(100 * time.Millisecond)
 
-		err = f2.Close()
+		// Update file
+		err = os.WriteFile(filename, []byte(secondMockFilesYaml), 0644)
 		require.NoError(t, err)
 
 		time.Sleep(1 * time.Second)
@@ -77,7 +78,7 @@ func TestContainer_AddObserver(t *testing.T) {
 
 func TestContainer_Get(t *testing.T) {
 	t.Parallel()
-	l := log.New(io.Discard)
+	l := slog.New(slog.NewTextHandler(io.Discard, nil))
 	c := config.NewReaderContainer(l, "yaml", strings.NewReader(firstMockFilesYaml))
 
 	t.Run("test Get", func(t *testing.T) {
@@ -131,7 +132,7 @@ func TestContainer_Get(t *testing.T) {
 func TestContainer_Sub(t *testing.T) {
 	t.Parallel()
 
-	l := log.New(io.Discard)
+	l := slog.New(slog.NewTextHandler(io.Discard, nil))
 	c := config.NewReaderContainer(l, "yaml", strings.NewReader(secondMockFilesYaml))
 	s := c.Sub("yaml.more")
 
@@ -142,7 +143,7 @@ func TestContainer_Sub(t *testing.T) {
 func TestContainer_GetViper(t *testing.T) {
 	t.Parallel()
 
-	l := log.New(io.Discard)
+	l := slog.New(slog.NewTextHandler(io.Discard, nil))
 	c := config.NewReaderContainer(l, "yaml", strings.NewReader(firstMockFilesYaml))
 	v := c.GetViper()
 

@@ -3,18 +3,18 @@ package config
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 
-	"github.com/charmbracelet/log"
 	"github.com/spf13/afero"
 	"github.com/spf13/viper"
 )
 
-func initContainer(l *log.Logger, fs afero.Fs) *Container {
+func initContainer(l *slog.Logger, fs afero.Fs) *Container {
 	c := Container{
 		ID:        "",
 		viper:     viper.New(),
-		logger:    l.With("component", "config"),
+		logger:    l,
 		observers: make([]Observable, 0),
 	}
 
@@ -27,7 +27,7 @@ func initContainer(l *log.Logger, fs afero.Fs) *Container {
 }
 
 // NewFilesContainer Initialise configuration container to read files from the FS.
-func NewFilesContainer(l *log.Logger, fs afero.Fs, configFiles ...string) *Container {
+func NewFilesContainer(l *slog.Logger, fs afero.Fs, configFiles ...string) *Container {
 	c := initContainer(l, fs)
 
 	if len(configFiles) > 0 {
@@ -42,6 +42,7 @@ func NewFilesContainer(l *log.Logger, fs afero.Fs, configFiles ...string) *Conta
 			c.viper.SetConfigFile(f)
 			c.handleReadFileError(c.viper.MergeInConfig())
 		}
+
 		c.logger.Info("Loaded Config")
 		c.watchConfig()
 	}
@@ -50,7 +51,7 @@ func NewFilesContainer(l *log.Logger, fs afero.Fs, configFiles ...string) *Conta
 }
 
 // NewReaderContainer Initialise configuration container to read config from ioReader.
-func NewReaderContainer(l *log.Logger, format string, configReaders ...io.Reader) *Container {
+func NewReaderContainer(l *slog.Logger, format string, configReaders ...io.Reader) *Container {
 	c := initContainer(l, afero.NewOsFs())
 
 	c.viper.SetConfigType(format)
@@ -65,6 +66,7 @@ func NewReaderContainer(l *log.Logger, format string, configReaders ...io.Reader
 			c.ID = fmt.Sprintf("%s;%d", c.ID, i+1)
 			c.handleReadFileError(c.viper.MergeConfig(f))
 		}
+
 		c.logger.Info("Loaded Config")
 	}
 
