@@ -1,6 +1,6 @@
 module github.com/phpboyscout/config
 
-go 1.20
+go 1.25.5
 
 require (
 	github.com/fsnotify/fsnotify v1.6.0
