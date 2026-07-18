@@ -1,0 +1,19 @@
+dir: configmock
+filename: "{{.InterfaceName}}.go"
+force-file-write: true
+formatter: goimports
+include-auto-generated: false
+inpackage: false
+log-level: info
+structname: "{{.Mock}}{{.InterfaceName}}"
+pkgname: configmock
+require-template-schema-exists: true
+template: testify
+template-schema: "{{.Template}}.schema.json"
+packages:
+  gitlab.com/phpboyscout/go/config:
+    config:
+      all: false
+    interfaces:
+      Containable:
+      Observable:

@@ -1,0 +1,7 @@
+/bin/
+/dist/
+/coverage.out
+/cover.out
+*.test
+.DS_Store
+/site/
