@@ -17,7 +17,7 @@ real `*Container`; tests pass either a
 in-memory string. That single change is what makes config-dependent code ordinarily
 testable.
 
-The [`configmock`](../how-to/test-with-mocks.md) package is generated from the real
+The [`mocks`](../how-to/test-with-mocks.md) package is generated from the real
 interfaces, so the doubles cannot drift from the contract and they verify expectations
 on cleanup.
 

@@ -3,7 +3,7 @@
 Code that reads configuration should take a `Containable`, not a concrete `*Container`
 — so tests can pass a mock and assert exactly which keys are read, or drive specific
 return values, without building a real config file. The module ships those mocks in
-the **`configmock`** package.
+the **`mocks`** package.
 
 ## Depend on the interface
 
@@ -16,7 +16,7 @@ func NewServer(cfg config.Containable) *Server {
 
 ## Use the published mock
 
-`configmock.MockContainable` is a [testify](https://github.com/stretchr/testify) mock
+`configmocks.MockContainable` is a [testify](https://github.com/stretchr/testify) mock
 of `Containable` (and `MockObservable` of `Observable`). Set expectations with the
 generated `EXPECT()` helpers:
 
@@ -26,11 +26,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"gitlab.com/phpboyscout/go/config/configmock"
+	configmocks "gitlab.com/phpboyscout/go/config/mocks"
 )
 
 func TestNewServer(t *testing.T) {
-	cfg := configmock.NewMockContainable(t) // fails the test on unexpected calls
+	cfg := configmocks.NewMockContainable(t) // fails the test on unexpected calls
 	cfg.EXPECT().GetString("server.host").Return("localhost")
 	cfg.EXPECT().GetInt("server.port").Return(8080)
 
@@ -49,10 +49,10 @@ missing read fails the test.
 `Sub()` returns another `Containable`, so return a second mock from it:
 
 ```go
-sub := configmock.NewMockContainable(t)
+sub := configmocks.NewMockContainable(t)
 sub.EXPECT().GetString("host").Return("db.local")
 
-cfg := configmock.NewMockContainable(t)
+cfg := configmocks.NewMockContainable(t)
 cfg.EXPECT().Sub("database").Return(sub)
 ```
 
@@ -86,7 +86,7 @@ them — but you don't need a file watcher to do it.
 **Unit-test the logic** by calling it directly with a mock:
 
 ```go
-cfg := configmock.NewMockContainable(t)
+cfg := configmocks.NewMockContainable(t)
 cfg.EXPECT().GetString("log.level").Return("debug")
 
 require.NoError(t, (&levelWatcher{}).Run(cfg))

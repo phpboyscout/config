@@ -18,7 +18,7 @@ are applied atomically — or rejected and rolled back to the last-known-good.
 
 - **One interface to depend on.** `Containable` exposes typed accessors, section
   access, validation, and observer registration. Your code never imports Viper
-  directly; tests use the published [`configmock`](https://pkg.go.dev/gitlab.com/phpboyscout/go/config/configmock)
+  directly; tests use the published [`mocks`](https://pkg.go.dev/gitlab.com/phpboyscout/go/config/mocks)
   package.
 - **Safe hot-reload.** A file change rebuilds and **re-validates** the config; a
   candidate that fails to build or validate is rejected and the last-known-good is
@@ -49,7 +49,7 @@ are applied atomically — or rejected and rolled back to the last-known-good.
 - :material-shield-check: **[Validate](how-to/validate-config.md)** — `Schema` and
   `ValidateStruct` from `config:` tags.
 - :material-test-tube: **[Test with the mock](how-to/test-with-mocks.md)** —
-  `configmock.MockContainable` in your tests.
+  `configmocks.MockContainable` in your tests.
 - :material-lightbulb-on: **[Why a wrapper](explanation/why-a-wrapper.md)** — the traps
   in raw Viper this module exists to close.
 

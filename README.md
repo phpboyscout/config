@@ -26,7 +26,7 @@ directly.
 
 - **One interface to depend on.** `Containable` exposes typed accessors, section
   access, validation, and observer registration. Your packages take a `Containable`;
-  tests pass a mock from the published [`configmock`](https://pkg.go.dev/gitlab.com/phpboyscout/go/config/configmock)
+  tests pass a mock from the published [`mocks`](https://pkg.go.dev/gitlab.com/phpboyscout/go/config/mocks)
   package.
 - **Safe hot-reload.** File watches rebuild the config on change and re-validate it;
   a candidate that fails to build or validate is **rejected**, and the
@@ -85,7 +85,7 @@ func main() {
 - **Validation** — `Schema` / `FieldSchema` / `ValidateStruct[T]` / `ValidationResult`.
 - **Hot-reload** — `Observable` / `Observer`, `AddObserver`, `OnReloadError`, and the
   reject-and-retain-last-good reload path.
-- **`configmock`** — published testify mocks of `Containable` and `Observable` for
+- **`mocks`** — published testify mocks of `Containable` and `Observable` for
   downstream tests.
 
 ## Documentation
