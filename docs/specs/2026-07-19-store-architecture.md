@@ -633,6 +633,83 @@ multi-read guarantee. D2's consistency property applies within a single call, wi
 block, and across a typed section. That must be documented plainly rather than implied by the
 existence of snapshots.
 
+### D19 — Documentation is a deliverable, not a follow-up
+
+The Diátaxis site under `docs/` is part of this module's product. It MUST be **revised** for
+the new design — not appended to — and revision is part of the definition of done for each
+work item, not a subsequent task.
+
+**The reasoning developed here belongs in `explanation/`, not only in this spec.** A spec is a
+decision record for maintainers; explanation pages are how users understand *why* the module
+behaves as it does. The single-owner argument, what it eliminates, and the measured
+limitations must be readable without opening a spec.
+
+**Pages that change, and why:**
+
+| Page | Change |
+|---|---|
+| `explanation/why-a-wrapper.md` | Currently reads as a catalogue of viper traps the wrapper papers over. Several no longer apply (the `Sub` trap, the write path); the argument becomes single-ownership and layer-correct writes. Substantial rewrite. |
+| `explanation/precedence-and-merge.md` | Merge model gains **documents as layers** (D6a), provenance (D7) and shadowing queries. The "which files contributed?" section is superseded by real provenance. |
+| `explanation/hot-reload-safety.md` | The reload model changes wholesale: own writes construct snapshots directly, the watcher handles only foreign changes, notification is exactly-once (D4, D9). |
+| **NEW** `explanation/the-store.md` | Why a single owner; what fragility it removes; snapshots and consistency (D1–D4, D18). |
+| **NEW** `explanation/provenance.md` | Where a value came from, what shadows it, and why merge-eager designs cannot answer this (D7). |
+| **NEW** `how-to/write-config.md` | The write surface: `Put`/`Remove`, routing, dry run, conflicts (D13–D16). |
+| `how-to/load-and-merge.md`, `how-to/hot-reload.md`, `how-to/typed-sections.md`, `how-to/validate-config.md`, `how-to/bind-cli-flags.md`, `how-to/test-with-mocks.md`, `getting-started.md`, `index.md` | Construction changes (a Store is created and a Container binds to it); removed APIs; new capabilities. |
+
+**Documented limits are mandatory, not optional.** Each of these MUST appear in user-facing
+docs, not merely in this spec, because each is a sharp edge a user can hit:
+
+- D5's fidelity guarantee **and** what it does not cover; the refusal of multi-line flow
+  collections with interior comments
+- D6a's multi-document overlay semantics, stated as **this module's choice**, not YAML's
+- D6b's empty-container-is-a-value rule
+- D16's map-valued `Put` sharp edge, with the anchor/comment loss spelled out
+- D18's caveat that the **default read path does not carry the multi-read guarantee**
+- D3's in-process-only serialisation, and that cross-process races rely on conflict detection
+
+**Migration documentation is required**, covering the removed APIs, the `Catalog.WriteTo`-style
+port (D16), and what downstream consumers must change — with the explicit statement that the
+typed-section surface does not change.
+
+### D20 — Tests are written in advance; unit and BDD both mandatory
+
+Implementation is test-first. A behaviour without a failing test that describes it is not
+ready to be built.
+
+**Unit tests** cover pure logic: the document layer (parse, locate, mutate, re-emit), comment
+ownership (D17), merge and precedence, routing (D13), provenance (D7), empty containers (D6b),
+validation (D15).
+
+**Godog scenarios** cover behaviour that spans components and time — where a Gherkin scenario
+genuinely earns its keep over a unit test:
+
+- write → snapshot → notification, end to end (D4, D9)
+- reload lifecycle: fail-closed rejection, last-known-good retention, `OnReloadError` (D9)
+- exactly-once notification for a multi-file, multi-document `Apply`
+- concurrent `Apply` calls, conflict detection, partial-failure restoration (D3, D14)
+- watcher behaviour across filesystems, including the polling fallback and loud failure (D8)
+- observer propagation, including derived views and the frozen typed-section contract (D10)
+
+**This module has no godog today**; `go-tool-base` and `keyrx` do. Follow the house
+convention: `features/<area>/*.feature`, tagged, with the feature docstring naming the spec
+section it covers. Use the same godog version as the sibling modules.
+
+**Every numbered acceptance criterion in this spec MUST map to at least one test or scenario**,
+and the mapping must be traceable — a reviewer should be able to confirm coverage without
+inference.
+
+**Adversarial fixtures are mandatory, not corpus-only.** The corpus validated the common path
+and missed two corruption cases: multi-line flow collections with interior comments, and
+deleting the last key of a nested mapping. Both were found only by constructing the case
+deliberately. Real-world fixtures prove it works; adversarial fixtures find where it breaks,
+and both are required.
+
+**The spike's fixtures are the starting suite.** They already encode every measured failure
+mode — comment-ownership rules, type-aware scalar dispatch, flow style, multi-document,
+empty containers — and must be carried into the module's tests rather than rewritten.
+
+**Run under `-race`.** Concurrency is load-bearing in D3, D9 and D14.
+
 ---
 
 ## Breaking changes
@@ -755,6 +832,17 @@ All four are eliminated by construction, not fixed.
 
 24. Every existing typed-section consumer compiles and behaves unchanged (D10), verified
     against the real `config_adapter.go` files.
+
+**Delivery**
+
+24a. Every acceptance criterion above maps to at least one unit test or godog scenario, and
+    the mapping is traceable without inference (D20).
+24b. The test suite includes both the real-config corpus **and** adversarial fixtures for each
+    measured failure mode, and passes under `-race` (D20).
+24c. Every Diátaxis page listed in D19 is revised, the new pages exist, and each documented
+    limit appears in user-facing docs rather than only in this spec (D19).
+24d. Migration documentation covers the removed APIs and the consumer-side port, and states
+    explicitly that the typed-section surface is unchanged (D19).
 25. Everything above holds against an in-memory `afero.Fs`.
 
 ## Non-goals
