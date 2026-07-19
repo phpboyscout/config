@@ -1501,3 +1501,106 @@ func TestCoverage_DoesNotPollTheSamePathTwice(t *testing.T) {
 		t.Errorf("one change reported %d times — the path is polled more than once", got)
 	}
 }
+
+// A Store publishes under its lock and notifies outside it, so without ordering
+// nothing stops two concurrent writes delivering their snapshots in either
+// order. An observer told about version 3 and then version 2 is holding older
+// configuration than it was already given, and every observer that caches
+// anything derived from what it is told has that exposure — not just the typed
+// sections that happened to defend themselves.
+func TestNotify_NeverDeliversAnOlderSnapshotAfterANewer(t *testing.T) {
+	t.Parallel()
+
+	s := storeOn(t, memFS(t, map[string]string{
+		"/app.yaml": "a: 0\nb: 0\nc: 0\nd: 0\ne: 0\nf: 0\ng: 0\nh: 0\n",
+	}), "/app.yaml")
+
+	var (
+		mu   sync.Mutex
+		seen []uint64
+	)
+
+	s.AddObserverFunc(func(cfg Observed) error {
+		mu.Lock()
+		seen = append(seen, cfg.Snapshot().Version())
+		mu.Unlock()
+
+		return nil
+	})
+
+	var wg sync.WaitGroup
+
+	for _, key := range []string{"a", "b", "c", "d", "e", "f", "g", "h"} {
+		wg.Add(1)
+
+		go func(k string) {
+			defer wg.Done()
+
+			_, _ = s.Apply(context.Background(), Set(k, 1))
+		}(key)
+	}
+
+	wg.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	for i := 1; i < len(seen); i++ {
+		if seen[i] < seen[i-1] {
+			t.Fatalf("observer was told version %d after version %d: %v",
+				seen[i], seen[i-1], seen)
+		}
+	}
+
+	// And the last thing it was told is the configuration that is actually live.
+	if len(seen) > 0 && seen[len(seen)-1] != s.Snapshot().Version() {
+		t.Errorf("last delivery was version %d, live is %d",
+			seen[len(seen)-1], s.Snapshot().Version())
+	}
+}
+
+// The race above is real but very hard to provoke — a competing write has to
+// complete a whole file write inside the window — so the guarantee is asserted
+// directly rather than waited for. Delivering out of order is what an unordered
+// notifier does; the notifier must not pass it on.
+func TestNotify_SupersededDeliveryIsNotPassedOn(t *testing.T) {
+	t.Parallel()
+
+	var n notifier
+
+	var (
+		mu   sync.Mutex
+		seen []uint64
+	)
+
+	n.addObserver(ObserverFunc(func(cfg Observed) error {
+		mu.Lock()
+		seen = append(seen, cfg.Snapshot().Version())
+		mu.Unlock()
+
+		return nil
+	}))
+
+	layers := []Layer{{
+		Source: Source{Kind: SourceFile, Name: "/app.yaml"},
+		Values: map[string]any{"a": 1},
+	}}
+
+	n.notify(newSnapshot(3, layers))
+	n.notify(newSnapshot(2, layers))
+	n.notify(newSnapshot(4, layers))
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	for i := 1; i < len(seen); i++ {
+		if seen[i] < seen[i-1] {
+			t.Fatalf("observer was told version %d after version %d: %v",
+				seen[i], seen[i-1], seen)
+		}
+	}
+
+	if len(seen) == 0 || seen[len(seen)-1] != 4 {
+		t.Errorf("deliveries = %v, want the newest last", seen)
+	}
+}

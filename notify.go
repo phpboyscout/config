@@ -100,6 +100,12 @@ type notifier struct {
 	// it would be worse than the cascade this prevents.
 	notifying map[uint64]int
 
+	// deliver serialises notification and, with delivered, keeps it in
+	// snapshot order. It is separate from mu because it is held across the
+	// observers' own code, which mu must never be.
+	deliver   sync.Mutex
+	delivered uint64
+
 	mu             sync.Mutex
 	observers      []Observable
 	onError        []func(error)
@@ -188,6 +194,29 @@ func (n *notifier) notify(snap *Snapshot) {
 	if len(observers) == 0 {
 		return
 	}
+
+	// Delivery is serialised and ordered. A Store publishes under its own lock
+	// and notifies outside it — it must, because holding that lock across an
+	// observer would deadlock the Store against anything the observer reads —
+	// so without this nothing stops two concurrent writes handing their
+	// snapshots to observers in either order.
+	//
+	// The observer's own lock cannot fix it: by the time an older snapshot
+	// arrives, the observer has no way to know a newer one already has. So it
+	// is settled here, once, for every observer rather than only for the ones
+	// that thought to defend themselves.
+	n.deliver.Lock()
+	defer n.deliver.Unlock()
+
+	if snap.Version() <= n.delivered {
+		// A newer configuration has already gone out. Delivering this one would
+		// tell every observer to go back to an older state, and each snapshot
+		// is complete in itself, so the newer delivery has already said
+		// everything this one would have.
+		return
+	}
+
+	n.delivered = snap.Version()
 
 	n.enterNotification()
 	defer n.leaveNotification()

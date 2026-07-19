@@ -13,7 +13,6 @@ import (
 
 	"github.com/spf13/afero"
 	"gitlab.com/phpboyscout/go/yamldoc"
-	"go.yaml.in/yaml/v3"
 )
 
 // File modes for staged and committed configuration.
@@ -42,6 +41,12 @@ var (
 	// state: a caller must never be left guessing.
 	ErrPartialCommit = errors.New("config: commit partially applied")
 )
+
+// asEdit renders a change as the edit a backend applies, for the internal
+// bookkeeping that needs one directly.
+func (c Change) asEdit() Edit {
+	return Edit{Path: c.Path, Value: c.Value, Remove: c.Remove}
+}
 
 // Edit is one change addressed at a specific document of a backend.
 type Edit struct {
@@ -429,25 +434,32 @@ func seedDocument(path string, original []byte, edits []Edit) ([]byte, []Edit, e
 		}
 	}
 
-	for i, edit := range edits {
-		if edit.Remove {
-			// Nothing exists to remove yet. Dropping it here keeps the created
-			// file free of keys that were only ever added to be deleted.
-			continue
-		}
+	// A placeholder rather than the first real value. The document layer has
+	// nothing to edit into until a mapping exists, and rendering a user's value
+	// here to create one would mean two emitters writing the same kind of
+	// content — this one, and yamldoc for every key after it. They do not agree
+	// about quoting or escaping, and the guarantee that invisible and
+	// bidirectional characters are escaped is a property of yamldoc's emitter,
+	// so a value written by this path would sit outside it.
+	//
+	// The placeholder carries no user data, so nothing that matters is rendered
+	// here. Every real value is written by yamldoc, into the mapping this
+	// creates, and the placeholder is removed before anything is emitted.
+	// Separated by a blank line, so whatever was already in the file reads as a
+	// section comment rather than the placeholder's own. A head comment
+	// directly above a key is removed with it — the rule that makes deletion
+	// tidy — and without the blank line the file's header would go with the
+	// placeholder.
+	seeded := append(preamble(original), '\n')
+	seeded = append(seeded, []byte(seedKey+": null\n")...)
 
-		rendered, err := yaml.Marshal(nest(edit.Path, edit.Value))
-		if err != nil {
-			return nil, nil, fmt.Errorf("config: creating %s: %w", path, err)
-		}
-
-		return append(preamble(original), rendered...), edits[i+1:], nil
-	}
-
-	// Every edit was a removal, so the file is created empty rather than not at
-	// all: it was routed here, and a caller that asked for it should find it.
-	return append(preamble(original), []byte("{}\n")...), nil, nil
+	return seeded, append(edits, Remove(seedKey).asEdit()), nil
 }
+
+// seedKey is the placeholder a created file is given so the document layer has
+// a mapping to edit into. It is removed in the same pass, so it never reaches
+// disk.
+const seedKey = "x-config-seed"
 
 // needsSeed reports whether a source has no mapping for an edit to land in.
 //
