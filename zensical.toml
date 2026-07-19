@@ -6,23 +6,29 @@ nav = [
   { Tutorial = [ { "Getting started" = "getting-started.md" } ] },
   { "How-to guides" = [
     { "Load & merge configuration" = "how-to/load-and-merge.md" },
+    { "Write configuration" = "how-to/write-config.md" },
     { "Use typed sections" = "how-to/typed-sections.md" },
     { "React to changes with hot-reload" = "how-to/hot-reload.md" },
     { "Validate configuration" = "how-to/validate-config.md" },
     { "Bind CLI flags" = "how-to/bind-cli-flags.md" },
-    { "Test with the config mock" = "how-to/test-with-mocks.md" },
+    { "Test with the config mocks" = "how-to/test-with-mocks.md" },
   ] },
   { Explanation = [
-    { "Why a wrapper over Viper" = "explanation/why-a-wrapper.md" },
+    { "The Store" = "explanation/the-store.md" },
     { "Precedence & merge model" = "explanation/precedence-and-merge.md" },
+    { "Provenance" = "explanation/provenance.md" },
     { "Hot-reload safety" = "explanation/hot-reload-safety.md" },
+  ] },
+  { About = [
+    { History = "about/history.md" },
+    { "Migrating from v0.2.x" = "migrating.md" },
   ] },
   { "Reference (pkg.go.dev)" = "https://pkg.go.dev/gitlab.com/phpboyscout/go/config" },
 ]
 
 [project]
 site_name = "config"
-site_description = "A hardened Viper configuration container for Go — hierarchical merge, safe hot-reload, typed sections, and struct-tag validation, behind one small interface"
+site_description = "Layered configuration for Go with a single owner — comment-preserving layer-correct writes, per-key provenance, safe hot-reload, typed sections and struct-tag validation"
 site_author = "Matt Cockayne"
 site_url = "https://config.go.phpboyscout.uk"
 repo_url = "https://gitlab.com/phpboyscout/go/config"
