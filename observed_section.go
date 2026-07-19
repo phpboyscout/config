@@ -17,6 +17,9 @@ type ObservedSection[T any] struct {
 	mu      sync.RWMutex
 	current *Section[T]
 	version uint64
+	// source is the Snapshot version the held section was derived from, used to
+	// reject a notification that arrives out of order.
+	source uint64
 }
 
 // Value returns the latest complete settings snapshot.
@@ -64,17 +67,6 @@ func (s *ObservedSection[T]) Version() uint64 {
 	return s.version
 }
 
-func (s *ObservedSection[T]) snapshot() (Section[T], bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if s.current == nil {
-		return Section[T]{}, false
-	}
-
-	return *s.current, true
-}
-
 func (s *ObservedSection[T]) store(section Section[T]) uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -84,6 +76,49 @@ func (s *ObservedSection[T]) store(section Section[T]) uint64 {
 	s.version++
 
 	return s.version
+}
+
+// storeIfNewer adopts a section only if it is a genuine change derived from a
+// snapshot at least as new as the one already held.
+//
+// The comparison and the store happen under one lock. Reading the previous
+// section, deciding, and then storing was a read-modify-write that two
+// concurrent notifications could interleave, so the later writer could be the
+// one carrying the older configuration.
+//
+// The source version is the more important half. A Store publishes under its
+// lock but notifies outside it, so nothing orders two notifications against
+// each other — and this is the one component that caches what it is told, so an
+// out-of-order delivery left it holding older values under a higher version:
+// permanently stale, while reporting itself current to anyone watching Version.
+func (s *ObservedSection[T]) storeIfNewer(
+	section Section[T],
+	source uint64,
+	equal func(a, b Section[T]) bool,
+) (previous Section[T], version uint64, changed bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.current != nil {
+		previous = *s.current
+
+		if source < s.source {
+			return previous, s.version, false
+		}
+
+		if equal != nil && equal(previous, section) {
+			s.source = source
+
+			return previous, s.version, false
+		}
+	}
+
+	next := section
+	s.current = &next
+	s.source = source
+	s.version++
+
+	return previous, s.version, true
 }
 
 // SectionChange describes an observed typed section change.
@@ -209,20 +244,22 @@ func ObserveSection[T any](
 				return err
 			}
 
-			previous, ok := observed.snapshot()
-			if ok && settings.sectionsEqual(previous, section) {
+			previous, version, changed := observed.storeIfNewer(
+				section, next.Snapshot().Version(), settings.sectionsEqual)
+			if !changed {
 				return nil
 			}
-
-			version := observed.store(section)
 
 			if settings.apply != nil {
 				return settings.apply(SectionChange[T]{
 					Previous: previous,
 					Current:  section,
-					Initial:  !ok,
-					Changed:  true,
-					Version:  version,
+					// The initial section is stored before this observer is
+					// registered, so a change delivered here is never the
+					// first one. See the note on SectionChange.
+					Initial: false,
+					Changed: true,
+					Version: version,
 				})
 			}
 

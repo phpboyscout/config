@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -858,5 +859,104 @@ func TestPollWatcher_DetectsASameLengthEdit(t *testing.T) {
 	case <-changed:
 	case <-time.After(2 * time.Second):
 		t.Fatal("a same-length edit was never detected")
+	}
+}
+
+// pinnedBinder hands out a fixed view and captures the observer, so a test can
+// deliver notifications in a chosen order rather than racing for one.
+type pinnedBinder struct {
+	view      *View
+	observers []func(Observed) error
+}
+
+func (b *pinnedBinder) View() *View { return b.view }
+
+func (b *pinnedBinder) AddObserverFunc(f func(Observed) error) {
+	b.observers = append(b.observers, f)
+}
+
+func sectionSnapshot(version uint64, host string) *Snapshot {
+	return newSnapshot(version, []Layer{{
+		Source: Source{Kind: SourceFile, Name: "/app.yaml"},
+		Values: map[string]any{"server": map[string]any{"host": host}},
+	}})
+}
+
+// A Store publishes under its lock but notifies outside it, so nothing orders
+// two notifications against each other. An observed section is the one thing
+// that caches what it is told, so a delivery arriving out of order left it
+// holding older values under a higher version — permanently stale, while
+// reporting itself current to anything watching Version.
+func TestObserveSection_IgnoresAnOutOfOrderDelivery(t *testing.T) {
+	t.Parallel()
+
+	type settings struct {
+		Host string `mapstructure:"host"`
+	}
+
+	binder := &pinnedBinder{view: NewView(sectionSnapshot(1, "first"))}
+
+	section, err := ObserveSection[settings](binder, "server")
+	if err != nil {
+		t.Fatalf("ObserveSection: %v", err)
+	}
+
+	if got := section.Value().Host; got != "first" {
+		t.Fatalf("initial host = %q, want first", got)
+	}
+
+	// Deliver the newer snapshot, then an older one.
+	for _, observe := range binder.observers {
+		if err := observe(NewView(sectionSnapshot(3, "newest"))); err != nil {
+			t.Fatalf("observer: %v", err)
+		}
+
+		if err := observe(NewView(sectionSnapshot(2, "older"))); err != nil {
+			t.Fatalf("observer: %v", err)
+		}
+	}
+
+	if got := section.Value().Host; got != "newest" {
+		t.Errorf("host = %q — a stale delivery overwrote a newer one", got)
+	}
+}
+
+// The equality check and the store have to happen together. Reading the
+// previous section, deciding, and then storing was a read-modify-write that two
+// concurrent notifications could interleave, leaving the later writer — which
+// may carry the older configuration — as the one that wins.
+func TestObserveSection_ConcurrentDeliveriesSettleOnTheNewest(t *testing.T) {
+	t.Parallel()
+
+	type settings struct {
+		Host string `mapstructure:"host"`
+	}
+
+	binder := &pinnedBinder{view: NewView(sectionSnapshot(1, "first"))}
+
+	section, err := ObserveSection[settings](binder, "server")
+	if err != nil {
+		t.Fatalf("ObserveSection: %v", err)
+	}
+
+	observe := binder.observers[0]
+
+	var wg sync.WaitGroup
+
+	for i := range uint64(32) {
+		wg.Add(1)
+
+		go func(n uint64) {
+			defer wg.Done()
+
+			_ = observe(NewView(sectionSnapshot(n+2, fmt.Sprintf("host-%02d", n))))
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Whatever order they arrived in, the newest source must be the one held.
+	if got := section.Value().Host; got != "host-31" {
+		t.Errorf("host = %q, want host-31 — the newest delivery did not win", got)
 	}
 }
