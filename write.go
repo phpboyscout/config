@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/afero"
 	"gitlab.com/phpboyscout/go/yamldoc"
+	"go.yaml.in/yaml/v3"
 )
 
 // File modes for staged and committed configuration.
@@ -175,9 +176,24 @@ func (b *fileBackend) read() (content []byte, existed bool, err error) {
 // disagreeing about types.
 func applyEdits(path string, original []byte, edits []Edit) ([]byte, error) {
 	source := original
+
 	if len(source) == 0 {
-		// An absent or empty file still needs a document to edit into.
-		source = []byte("{}\n")
+		// An absent or empty file has no document to edit, and none to
+		// preserve either — no comments, no key order, no quoting choices. So
+		// the first key is rendered directly and the rest are edited into it
+		// as normal.
+		//
+		// Seeding with an empty flow mapping instead looks tidier and is not:
+		// yamldoc re-emits in the style it found, so every subsequent key is
+		// written in flow style too, and anything nested comes back as YAML
+		// that does not parse. A created file should look like one a person
+		// would have written.
+		seeded, remaining, err := seedDocument(path, edits)
+		if err != nil {
+			return nil, err
+		}
+
+		source, edits = seeded, remaining
 	}
 
 	doc, err := yamldoc.Parse(source)
@@ -307,7 +323,15 @@ func (p *filePending) writeTemp() error {
 }
 
 // Rollback restores what was there before the commit.
+//
+// Both halves of "before" matter. Commit advances the backend's record of what
+// the file holds, and the Store never re-reads after committing, so restoring
+// the bytes while leaving that record pointing at the rolled-back content would
+// leave the backend permanently unusable: every later write would be rejected
+// as a conflict with a change nobody made.
 func (p *filePending) Rollback(_ context.Context) error {
+	defer p.restoreFingerprint()
+
 	if !p.existed {
 		// The file is ours; removing it returns the world to how it was.
 		if err := p.backend.fs.Remove(p.backend.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -324,10 +348,51 @@ func (p *filePending) Rollback(_ context.Context) error {
 	return nil
 }
 
+// restoreFingerprint returns the backend's record of the file to what it was
+// when this write was prepared.
+//
+// Deferred rather than conditional: if the restore write failed, the file's
+// state is unknown, and the fingerprint from prepare is still the better of the
+// two answers. It describes what was last known to be there, so a genuine
+// foreign change is still caught, where a fingerprint describing content that
+// was never successfully written would reject everything.
+func (p *filePending) restoreFingerprint() {
+	p.backend.loaded = p.fingerprint
+	p.backend.loadedExist = p.existed
+}
+
 func (p *filePending) Discard(_ context.Context) error {
 	if err := p.backend.fs.Remove(p.tempPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("config: discarding staged %s: %w", p.backend.path, err)
 	}
 
 	return nil
+}
+
+// seedDocument renders the first assignment as a block-style document and
+// returns it with the edits still to be applied.
+//
+// Creating a file is the one case where there is nothing to preserve, so the
+// value layer may render it. Every later edit goes back through yamldoc, which
+// is what keeps the boundary meaningful: the document layer owns editing, and
+// this owns only the moment before a document exists.
+func seedDocument(path string, edits []Edit) ([]byte, []Edit, error) {
+	for i, edit := range edits {
+		if edit.Remove {
+			// Nothing exists to remove yet. Dropping it here keeps the created
+			// file free of keys that were only ever added to be deleted.
+			continue
+		}
+
+		rendered, err := yaml.Marshal(nest(edit.Path, edit.Value))
+		if err != nil {
+			return nil, nil, fmt.Errorf("config: creating %s: %w", path, err)
+		}
+
+		return rendered, edits[i+1:], nil
+	}
+
+	// Every edit was a removal, so the file is created empty rather than not at
+	// all: it was routed here, and a caller that asked for it should find it.
+	return []byte("{}\n"), nil, nil
 }

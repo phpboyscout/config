@@ -162,10 +162,10 @@ func envName(key string) string {
 }
 
 // nest expands a dotted key into the nested map a layer is built from.
-func nest(key, value string) map[string]any {
+func nest(key string, value any) map[string]any {
 	segs := strings.Split(key, ".")
 
-	var current any = value
+	current := value
 
 	for i := len(segs) - 1; i > 0; i-- {
 		current = map[string]any{segs[i]: current}
