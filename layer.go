@@ -128,7 +128,17 @@ func mergeInto(dst map[string]any, origin map[string]Source, src map[string]any,
 
 		mergeInto(existing, origin, nested, source, path)
 		dst[key] = existing
-		origin[path] = source
+
+		// Provenance belongs to leaves. An empty container is a leaf — it holds
+		// a value, just not entries — but a populated one is assembled from
+		// however many layers contributed to it, so naming a single source for
+		// it would be dishonest. Callers asking "where did this subtree come
+		// from" are asking the wrong question; Shadowed answers the right one.
+		if len(existing) == 0 {
+			origin[path] = source
+		} else {
+			delete(origin, path)
+		}
 	}
 }
 
