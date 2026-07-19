@@ -68,16 +68,6 @@ type Store struct {
 	schema *Schema
 }
 
-// keyAware is an optional interface for a backend whose interpretation of its
-// own input depends on what the layers beneath it define.
-//
-// The environment backend is the case that needs it: mapping APP_SERVER_PORT
-// back to a dotted key is ambiguous without knowing whether server.port or
-// server_port exists.
-type keyAware interface {
-	observeKnownKeys(keys []string)
-}
-
 // backendLayers pairs a backend with what it contributed.
 type backendLayers struct {
 	backend Backend
@@ -516,11 +506,7 @@ func (s *Store) loadAll(ctx context.Context) ([]backendLayers, error) {
 	loaded := make([]backendLayers, 0, len(s.backends))
 
 	for i, backend := range s.backends {
-		if aware, ok := backend.(keyAware); ok {
-			aware.observeKnownKeys(keysOf(loaded))
-		}
-
-		got, err := backend.Load(ctx)
+		got, err := backend.Load(ctx, flatten(loaded))
 		if err == nil {
 			loaded = append(loaded, backendLayers{backend: backend, layers: got})
 
@@ -854,26 +840,16 @@ func (s *Store) rebuild(ctx context.Context, pending map[string]Pending) ([]back
 			continue
 		}
 
-		// A backend whose reading of its own input depends on the keys beneath
-		// it has to be re-derived, because the write may have changed them. The
-		// environment backend is the case: it resolves a variable name against
+		// Re-read rather than carried over. A backend whose reading of its own
+		// input depends on the keys beneath it must see the keys this write
+		// produced — the environment backend resolves a variable name against
 		// the existing key space, so a write introducing a second key spelled
 		// the same way makes that variable ambiguous.
 		//
-		// Carrying it over instead is what let a write validate, land, and then
-		// break the very reload it triggered — the file changed and the process
-		// left on last-known-good, which is precisely the outcome D15 exists to
-		// prevent.
-		aware, isAware := bl.backend.(keyAware)
-		if !isAware {
-			next = append(next, bl)
-
-			continue
-		}
-
-		aware.observeKnownKeys(keysOf(next))
-
-		layers, err := bl.backend.Load(ctx)
+		// Carrying it over is what let a write validate, land, and then break
+		// the reload it triggered, leaving the file changed and the process on
+		// last-known-good: the outcome D15 exists to prevent.
+		layers, err := bl.backend.Load(ctx, flatten(next))
 		if err != nil {
 			return nil, err
 		}
@@ -882,21 +858,6 @@ func (s *Store) rebuild(ctx context.Context, pending map[string]Pending) ([]back
 	}
 
 	return next, nil
-}
-
-// keysOf lists every leaf key the layers loaded so far define.
-func keysOf(loaded []backendLayers) []string {
-	seen := map[string]bool{}
-
-	var keys []string
-
-	for _, bl := range loaded {
-		for _, layer := range bl.layers {
-			collectKeys(layer.Values, "", seen, &keys)
-		}
-	}
-
-	return keys
 }
 
 func collectKeys(values map[string]any, prefix string, seen map[string]bool, out *[]string) {

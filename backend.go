@@ -47,7 +47,15 @@ type Backend interface {
 	// A source that does not exist returns fs.ErrNotExist, so the caller can
 	// decide whether that is fatal: a base file usually is, an optional
 	// overlay usually is not.
-	Load(ctx context.Context) ([]Layer, error)
+	// Load reads this backend's sources into layers.
+	//
+	// below is everything the lower-precedence backends contributed, in order.
+	// Most backends ignore it; a backend whose reading of its own input depends
+	// on what is already defined needs it, and receiving it as an argument is
+	// what stops that being a separate call someone can forget to make. The
+	// environment backend is the case: mapping APP_SERVER_PORT back to a dotted
+	// key is ambiguous without knowing whether server.port already exists.
+	Load(ctx context.Context, below []Layer) ([]Layer, error)
 
 	// Capabilities describes what this backend can do, so callers can adapt
 	// rather than discover limitations by hitting them.
@@ -153,7 +161,7 @@ func (b *fileBackend) Capabilities() Capabilities {
 	}
 }
 
-func (b *fileBackend) Load(ctx context.Context) ([]Layer, error) {
+func (b *fileBackend) Load(ctx context.Context, _ []Layer) ([]Layer, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -294,7 +302,7 @@ func (b *readerBackend) Capabilities() Capabilities {
 	return Capabilities{}
 }
 
-func (b *readerBackend) Load(ctx context.Context) ([]Layer, error) {
+func (b *readerBackend) Load(ctx context.Context, _ []Layer) ([]Layer, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

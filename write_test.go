@@ -434,7 +434,7 @@ type staticBackend struct {
 
 func (b staticBackend) ID() string { return b.id }
 
-func (b staticBackend) Load(_ context.Context) ([]Layer, error) { return b.layers, nil }
+func (b staticBackend) Load(_ context.Context, _ []Layer) ([]Layer, error) { return b.layers, nil }
 
 func (b staticBackend) Capabilities() Capabilities { return Capabilities{} }
 

@@ -127,8 +127,8 @@ func (_c *MockWritableBackend_ID_Call) RunAndReturn(run func() string) *MockWrit
 }
 
 // Load provides a mock function for the type MockWritableBackend
-func (_mock *MockWritableBackend) Load(ctx context.Context) ([]config.Layer, error) {
-	ret := _mock.Called(ctx)
+func (_mock *MockWritableBackend) Load(ctx context.Context, below []config.Layer) ([]config.Layer, error) {
+	ret := _mock.Called(ctx, below)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Load")
@@ -136,18 +136,18 @@ func (_mock *MockWritableBackend) Load(ctx context.Context) ([]config.Layer, err
 
 	var r0 []config.Layer
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context) ([]config.Layer, error)); ok {
-		return returnFunc(ctx)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []config.Layer) ([]config.Layer, error)); ok {
+		return returnFunc(ctx, below)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context) []config.Layer); ok {
-		r0 = returnFunc(ctx)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []config.Layer) []config.Layer); ok {
+		r0 = returnFunc(ctx, below)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]config.Layer)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
-		r1 = returnFunc(ctx)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, []config.Layer) error); ok {
+		r1 = returnFunc(ctx, below)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -161,18 +161,24 @@ type MockWritableBackend_Load_Call struct {
 
 // Load is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockWritableBackend_Expecter) Load(ctx interface{}) *MockWritableBackend_Load_Call {
-	return &MockWritableBackend_Load_Call{Call: _e.mock.On("Load", ctx)}
+//   - below []config.Layer
+func (_e *MockWritableBackend_Expecter) Load(ctx interface{}, below interface{}) *MockWritableBackend_Load_Call {
+	return &MockWritableBackend_Load_Call{Call: _e.mock.On("Load", ctx, below)}
 }
 
-func (_c *MockWritableBackend_Load_Call) Run(run func(ctx context.Context)) *MockWritableBackend_Load_Call {
+func (_c *MockWritableBackend_Load_Call) Run(run func(ctx context.Context, below []config.Layer)) *MockWritableBackend_Load_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
+		var arg1 []config.Layer
+		if args[1] != nil {
+			arg1 = args[1].([]config.Layer)
+		}
 		run(
 			arg0,
+			arg1,
 		)
 	})
 	return _c
@@ -183,7 +189,7 @@ func (_c *MockWritableBackend_Load_Call) Return(layers []config.Layer, err error
 	return _c
 }
 
-func (_c *MockWritableBackend_Load_Call) RunAndReturn(run func(ctx context.Context) ([]config.Layer, error)) *MockWritableBackend_Load_Call {
+func (_c *MockWritableBackend_Load_Call) RunAndReturn(run func(ctx context.Context, below []config.Layer) ([]config.Layer, error)) *MockWritableBackend_Load_Call {
 	_c.Call.Return(run)
 	return _c
 }

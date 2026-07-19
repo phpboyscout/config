@@ -262,3 +262,17 @@ func normaliseNested(v any) any {
 
 	return cloneValues(v)
 }
+
+// leafKeys lists every leaf path the given layers define, which is the key
+// space a backend resolves its own input against.
+func leafKeys(layers []Layer) []string {
+	seen := map[string]bool{}
+
+	var keys []string
+
+	for _, layer := range layers {
+		collectKeys(layer.Values, "", seen, &keys)
+	}
+
+	return keys
+}

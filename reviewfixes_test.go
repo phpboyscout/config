@@ -974,7 +974,7 @@ func (e *externalBackend) ID() string { return "external" }
 
 func (e *externalBackend) Capabilities() Capabilities { return Capabilities{} }
 
-func (e *externalBackend) Load(context.Context) ([]Layer, error) {
+func (e *externalBackend) Load(context.Context, []Layer) ([]Layer, error) {
 	return []Layer{{
 		Source: Source{Kind: SourceDefault, Name: "external"},
 		Values: map[string]any{"external": "value"},
@@ -1051,5 +1051,80 @@ func TestWatch_RefusesWhenNothingCanWatch(t *testing.T) {
 
 	if _, err := s.Watch(context.Background()); !errors.Is(err, ErrWatchUnavailable) {
 		t.Errorf("err = %v, want ErrWatchUnavailable", err)
+	}
+}
+
+// countingBackend records what it was handed, so a test can assert that a
+// backend genuinely receives the layers beneath it rather than being told
+// separately by a call someone can forget to make.
+type countingBackend struct {
+	mu    sync.Mutex
+	below [][]Layer
+}
+
+func (c *countingBackend) ID() string { return "counting" }
+
+func (c *countingBackend) Capabilities() Capabilities { return Capabilities{} }
+
+func (c *countingBackend) Load(_ context.Context, below []Layer) ([]Layer, error) {
+	c.mu.Lock()
+	c.below = append(c.below, below)
+	c.mu.Unlock()
+
+	return nil, nil
+}
+
+// A backend whose reading of its own input depends on what is already defined
+// used to be told separately, before Load, by whichever Store method remembered
+// to. That contract was invisible in the interface and was forgotten once.
+func TestBackend_ReceivesTheLayersBeneathIt(t *testing.T) {
+	t.Parallel()
+
+	counter := &countingBackend{}
+
+	s, err := NewStore(context.Background(),
+		WithFiles(memFS(t, map[string]string{"/app.yaml": "server:\n  port: 1\n"}), "/app.yaml"),
+		WithBackend(counter))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	counter.mu.Lock()
+	first := counter.below
+	counter.mu.Unlock()
+
+	if len(first) == 0 {
+		t.Fatal("the backend was never loaded")
+	}
+
+	if len(first[0]) == 0 {
+		t.Fatal("the backend was not given the layers beneath it")
+	}
+
+	// And it is given them again after a write, because the write may have
+	// changed the key space it resolves against.
+	if _, err := s.Apply(context.Background(), Set("server.host", "h")); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	counter.mu.Lock()
+	defer counter.mu.Unlock()
+
+	if len(counter.below) < 2 {
+		t.Fatal("the backend was not re-read after a write")
+	}
+
+	latest := counter.below[len(counter.below)-1]
+
+	var sawHost bool
+
+	for _, l := range latest {
+		if _, ok := lookup(l.Values, []string{"server", "host"}); ok {
+			sawHost = true
+		}
+	}
+
+	if !sawHost {
+		t.Error("the re-read did not include the key the write created")
 	}
 }

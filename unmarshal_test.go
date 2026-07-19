@@ -573,12 +573,12 @@ func (m *mutableSource) set(yaml string) {
 	m.content = []byte(yaml)
 }
 
-func (m *mutableSource) Load(ctx context.Context) ([]config.Layer, error) {
+func (m *mutableSource) Load(ctx context.Context, _ []config.Layer) ([]config.Layer, error) {
 	m.mu.Lock()
 	content := m.content
 	m.mu.Unlock()
 
-	return config.NewReaderBackend("test.yaml", content).Load(ctx)
+	return config.NewReaderBackend("test.yaml", content).Load(ctx, nil)
 }
 
 // mutableStoreFrom builds a Store over content the test can change.

@@ -17,6 +17,7 @@ nav = [
     { "The Store" = "explanation/the-store.md" },
     { "Precedence & merge model" = "explanation/precedence-and-merge.md" },
     { "Provenance" = "explanation/provenance.md" },
+    { "Backends & capabilities" = "explanation/backends.md" },
     { "Hot-reload safety" = "explanation/hot-reload-safety.md" },
   ] },
   { About = [

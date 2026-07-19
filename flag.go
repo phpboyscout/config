@@ -56,7 +56,7 @@ func (b *flagBackend) Capabilities() Capabilities {
 	return Capabilities{}
 }
 
-func (b *flagBackend) Load(ctx context.Context) ([]Layer, error) {
+func (b *flagBackend) Load(ctx context.Context, _ []Layer) ([]Layer, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

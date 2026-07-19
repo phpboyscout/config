@@ -20,9 +20,6 @@ type envBackend struct {
 	// environ is the source of variables, injectable so tests need not mutate
 	// process state and race each other.
 	environ func() []string
-	// known is the key space of the layers below, used to disambiguate variable
-	// names. See mapKey.
-	known []string
 }
 
 // EnvOption configures the environment backend.
@@ -61,19 +58,13 @@ func NewEnvBackend(prefix string, opts ...EnvOption) Backend {
 
 func (b *envBackend) ID() string { return "env:" + b.prefix }
 
-// observeKnownKeys receives the key space of the layers beneath, which is what
-// makes the reverse mapping from a variable name unambiguous.
-func (b *envBackend) observeKnownKeys(keys []string) {
-	b.known = keys
-}
-
 // Capabilities reports the environment as readable but never writable.
 // Persisting to it would not survive the process, so routing must skip it.
 func (b *envBackend) Capabilities() Capabilities {
 	return Capabilities{}
 }
 
-func (b *envBackend) Load(ctx context.Context) ([]Layer, error) {
+func (b *envBackend) Load(ctx context.Context, below []Layer) ([]Layer, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -83,6 +74,11 @@ func (b *envBackend) Load(ctx context.Context) ([]Layer, error) {
 		// empty rather than swallowing the whole environment.
 		return nil, nil
 	}
+
+	// Derived here rather than pushed in beforehand: the mapping depends on what
+	// the lower layers define, and taking it as an argument means no caller can
+	// load this backend without supplying it.
+	known := leafKeys(below)
 
 	prefix := b.prefix + "_"
 
@@ -94,7 +90,7 @@ func (b *envBackend) Load(ctx context.Context) ([]Layer, error) {
 			continue
 		}
 
-		key, err := mapKey(strings.TrimPrefix(name, prefix), b.known)
+		key, err := mapKey(strings.TrimPrefix(name, prefix), known)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s", err, name)
 		}

@@ -260,6 +260,35 @@ prepare/verify/commit protocol already expresses compare-and-swap: `Pending.Veri
 comparison and `Commit` is the swap. Declaring a field for it would describe the same property
 twice, in two places that could disagree.
 
+### R7 — 2026-07-19: a backend's key-space dependency moves into Load's signature
+
+**`keyAware` was an unexported interface carrying an undocumented temporal contract:
+`observeKnownKeys` had to be called before `Load`, and only the Store methods that remembered
+to do so enforced it.**
+
+Being unexported, no backend outside this package could participate — so it was the environment
+backend special-cased, wearing an interface's clothes. The contract was invisible in `Backend`,
+and it was forgotten once on this branch: `rebuild` skipped the step, and the result was a write
+that validated, landed, and then broke the reload it triggered, leaving the file changed and the
+process on last-known-good.
+
+`Load` now takes the layers beneath it:
+
+```go
+Load(ctx context.Context, below []Layer) ([]Layer, error)
+```
+
+Most backends ignore the argument. The dependency is real, so it belongs in the signature rather
+than in a side channel: no caller can skip a step that does not exist separately, and the
+environment backend stops holding Store-derived mutable state between two calls it does not
+control.
+
+**Breaking** for anyone implementing `Backend`, which is this package and the generated mocks.
+
+Written up for users in `explanation/backends.md`, along with the reasoning behind R5 and R6 —
+so the next person to wonder why writability is an interface and `Capabilities` is a set of
+unread fields finds the answer in the documentation rather than rediscovering it.
+
 ## Why this exists
 
 The module needs to write configuration back to the files it was loaded from — preserving

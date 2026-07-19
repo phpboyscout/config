@@ -21,3 +21,4 @@ packages:
       Binder:
       Backend:
       WritableBackend:
+      WatchableBackend:
