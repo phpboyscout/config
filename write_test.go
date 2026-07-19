@@ -437,3 +437,72 @@ func (b staticBackend) ID() string { return b.id }
 func (b staticBackend) Load(_ context.Context) ([]Layer, error) { return b.layers, nil }
 
 func (b staticBackend) Capabilities() Capabilities { return Capabilities{} }
+
+// Writing twice to the same file must work. The Store never re-reads after a
+// commit — it builds the next snapshot from the staged layers — so unless the
+// commit advances what the backend knows the file to hold, the second write
+// compares against the content from load time and is reported as a conflict
+// with the first.
+func TestApply_SequentialWritesToTheSameFile(t *testing.T) {
+	t.Parallel()
+
+	filesystem := memFS(t, map[string]string{"/app.yaml": "count: 0\nname: start\n"})
+	s := storeOn(t, filesystem, "/app.yaml")
+
+	for i := 1; i <= 5; i++ {
+		if _, err := s.Apply(context.Background(), Set("count", i)); err != nil {
+			t.Fatalf("write %d of 5: %v", i, err)
+		}
+	}
+
+	if got := s.View().GetInt("count"); got != 5 {
+		t.Errorf("count = %d, want 5", got)
+	}
+
+	content, err := afero.ReadFile(filesystem, "/app.yaml")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+
+	if !strings.Contains(string(content), "count: 5") {
+		t.Errorf("the file does not hold the last write:\n%s", content)
+	}
+
+	// Untouched keys survive every one of those rewrites.
+	if !strings.Contains(string(content), "name: start") {
+		t.Errorf("an unrelated key was lost across repeated writes:\n%s", content)
+	}
+}
+
+// Advancing the fingerprint on commit must not blind the Store to genuine
+// foreign edits — that check is the whole reason the fingerprint exists.
+func TestApply_ForeignEditBetweenWritesStillConflicts(t *testing.T) {
+	t.Parallel()
+
+	filesystem := memFS(t, map[string]string{"/app.yaml": "count: 0\n"})
+	s := storeOn(t, filesystem, "/app.yaml")
+
+	if _, err := s.Apply(context.Background(), Set("count", 1)); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+
+	// Someone else edits the file behind the Store's back.
+	if err := afero.WriteFile(filesystem, "/app.yaml", []byte("count: 99\nintruder: yes\n"), 0o644); err != nil {
+		t.Fatalf("foreign write: %v", err)
+	}
+
+	_, err := s.Apply(context.Background(), Set("count", 2))
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("err = %v, want ErrConflict — a foreign edit was silently overwritten", err)
+	}
+
+	// And their work is still there.
+	content, readErr := afero.ReadFile(filesystem, "/app.yaml")
+	if readErr != nil {
+		t.Fatalf("read: %v", readErr)
+	}
+
+	if !strings.Contains(string(content), "intruder: yes") {
+		t.Errorf("the foreign edit was discarded:\n%s", content)
+	}
+}

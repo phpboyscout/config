@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -172,6 +173,23 @@ func RequireFirstSource() StoreOption {
 // Construction and loading are deliberately not separable. A Store that exists
 // but has not loaded is a state every caller would have to handle and most
 // would forget to.
+//
+// A configuration that loads and parses but violates the schema is returned
+// *alongside* ErrInvalidConfig rather than discarded. The usual
+// `if err != nil { return }` still fails fast, so a service refuses to start on
+// a bad config exactly as before. But a tool whose job is to repair
+// configuration needs a Store to repair it through, and returning nil would
+// make one missing key unfixable by the surface designed to fix it — see D15.
+// Such a caller checks for ErrInvalidConfig specifically and proceeds:
+//
+//	s, err := config.NewStore(ctx, opts...)
+//	if err != nil && !errors.Is(err, config.ErrInvalidConfig) {
+//	    return err // genuinely unusable: no sources, unreadable, unparseable
+//	}
+//
+// Every other failure — no sources, a source that cannot be read, one that
+// cannot be parsed — still returns nil, because there is no configuration to
+// hand back.
 func NewStore(ctx context.Context, opts ...StoreOption) (*Store, error) {
 	s := &Store{}
 
@@ -184,6 +202,10 @@ func NewStore(ctx context.Context, opts ...StoreOption) (*Store, error) {
 	}
 
 	if err := s.Reload(ctx); err != nil {
+		if errors.Is(err, ErrInvalidConfig) {
+			return s, err
+		}
+
 		return nil, err
 	}
 
@@ -206,6 +228,12 @@ func (s *Store) Snapshot() *Snapshot {
 // partly the old values and partly the new is worse than either, and worse
 // than refusing.
 func (s *Store) Reload(ctx context.Context) error {
+	// Reloading from an observer cascades exactly as writing does: the reload
+	// publishes, which notifies, which reloads again.
+	if s.notifier.insideObserver() {
+		return ErrWriteFromObserver
+	}
+
 	next, changed, err := s.reload(ctx)
 	if err != nil {
 		s.notifier.notifyError(err)
@@ -240,6 +268,20 @@ func (s *Store) reload(ctx context.Context) (next *Snapshot, changed bool, err e
 	}
 
 	if err := s.validate(loaded); err != nil {
+		// A running Store keeps its last-known-good configuration: it has one,
+		// and swapping in something known to be invalid would be strictly
+		// worse than standing still.
+		if s.current.Load() != nil {
+			return nil, false, err
+		}
+
+		// The first load has no last-known-good to fall back on. Publishing the
+		// invalid configuration anyway is what keeps it repairable — the
+		// alternative is a Store with no snapshot, which cannot be read from or
+		// written through, so the config could never be fixed through it (D15).
+		// The error still travels, so a caller that wants to fail fast does.
+		s.publish(loaded)
+
 		return nil, false, err
 	}
 
@@ -283,6 +325,97 @@ func (s *Store) validate(loaded []backendLayers) error {
 	}
 
 	return nil
+}
+
+// violations resolves a candidate and reports what the schema objects to.
+//
+// It builds a throwaway snapshot for the same reason validate does: a single
+// layer may legitimately be invalid alone and valid once merged — a base
+// omitting a key its overlay supplies — so only the resolved result can be
+// judged.
+func (s *Store) violations(loaded []backendLayers) []ValidationError {
+	if s.schema == nil {
+		return nil
+	}
+
+	var flat []Layer
+	for _, bl := range loaded {
+		flat = append(flat, bl.layers...)
+	}
+
+	return validateSnapshot(newSnapshot(0, flat), s.schema).Errors
+}
+
+// validateChange refuses a write that introduces a schema violation, while
+// allowing one that leaves an existing violation untouched.
+//
+// The asymmetry is the point. Validating the candidate outright would make an
+// already-invalid configuration uneditable, so a single missing required key
+// would lock the config against the very surface meant to repair it. Comparing
+// before against after means a caller is answerable for what their change
+// breaks and nothing else.
+//
+// The candidate is built by the same rebuild-and-merge path a reload uses, so
+// validation here and validation after the commit cannot disagree. A separate
+// path would drift, and the failure mode is nasty: a write that validates,
+// lands, and is then rejected by the reload it triggers, leaving the file
+// changed and the process on last-known-good.
+func (s *Store) validateChange(before, after []backendLayers) error {
+	if s.schema == nil {
+		return nil
+	}
+
+	introduced, existing := diffViolations(s.violations(before), s.violations(after))
+	if len(introduced) == 0 {
+		return nil
+	}
+
+	var sb strings.Builder
+
+	sb.WriteString("this change would make the configuration invalid:")
+
+	for _, e := range introduced {
+		sb.WriteString("\n  " + e.String())
+	}
+
+	// Pre-existing violations are reported but explicitly marked as not the
+	// caller's doing. Without the distinction they would read as consequences
+	// of the change, sending someone to debug an edit that was fine.
+	if len(existing) > 0 {
+		sb.WriteString("\n\nthe configuration was already invalid before this change, " +
+			"and these are unaffected by it:")
+
+		for _, e := range existing {
+			sb.WriteString("\n  " + e.String())
+		}
+	}
+
+	return fmt.Errorf("%w: %s", ErrInvalidConfig, sb.String())
+}
+
+// diffViolations splits the violations of a candidate into those the change
+// introduced and those that were already there.
+//
+// Identity is key plus message: the same key can fail for different reasons,
+// and a change that swaps one failure for another on the same key has
+// introduced something the caller needs to hear about.
+func diffViolations(before, after []ValidationError) (introduced, existing []ValidationError) {
+	was := make(map[string]bool, len(before))
+	for _, e := range before {
+		was[e.Key+"\x00"+e.Message] = true
+	}
+
+	for _, e := range after {
+		if was[e.Key+"\x00"+e.Message] {
+			existing = append(existing, e)
+
+			continue
+		}
+
+		introduced = append(introduced, e)
+	}
+
+	return introduced, existing
 }
 
 // loadAll reads every backend in order, building the layer list.
@@ -404,9 +537,27 @@ func (s *Store) Plan(changes ...Change) (*Plan, error) {
 // Execution is prepare → verify → commit. Everything expensive or likely to
 // fail happens while nothing is visible; commit is a sequence of renames.
 func (s *Store) Apply(ctx context.Context, changes ...Change) (*Snapshot, error) {
-	next, err := s.apply(ctx, changes)
+	if s.notifier.insideObserver() {
+		return nil, ErrWriteFromObserver
+	}
+
+	next, changed, err := s.apply(ctx, changes)
 	if err != nil {
 		return nil, err
+	}
+
+	// A write that resolved to the configuration already published is not a
+	// change, and announcing it as one is how an observer that reacts by
+	// writing gets stuck: its write lands, notifies, runs the observer, which
+	// asks for the same write again, with nothing anywhere to say the value had
+	// already settled. Reload has always filtered this; Apply had not, so the
+	// two disagreed about what counts as a change.
+	//
+	// The file may still have been rewritten — comments reflowed, a key moved
+	// into the layer that should own it — and that write is real. It just did
+	// not alter the resolved configuration, which is what observers react to.
+	if !changed {
+		return next, nil
 	}
 
 	// Exactly one notification per logical change, however many sources it
@@ -417,7 +568,7 @@ func (s *Store) Apply(ctx context.Context, changes ...Change) (*Snapshot, error)
 	return next, nil
 }
 
-func (s *Store) apply(ctx context.Context, changes []Change) (*Snapshot, error) {
+func (s *Store) apply(ctx context.Context, changes []Change) (*Snapshot, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -425,25 +576,41 @@ func (s *Store) apply(ctx context.Context, changes []Change) (*Snapshot, error) 
 
 	plan, err := route(current, s.writableTargets(), changes)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	pending, err := s.prepare(ctx, plan)
 	if err != nil {
-		return nil, err
+		return nil, false, err
+	}
+
+	// The candidate is what the Store will publish once this commits. Building
+	// it now means the schema judges the same configuration a reader would see,
+	// and it is judged while everything is still staged and abandonable.
+	candidate := s.rebuild(pending)
+
+	if err := s.validateChange(s.loaded, candidate); err != nil {
+		discardAll(ctx, pending)
+
+		return nil, false, err
 	}
 
 	if err := verifyAll(ctx, pending); err != nil {
 		discardAll(ctx, pending)
 
-		return nil, err
+		return nil, false, err
 	}
 
 	if err := commitAll(ctx, pending); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	return s.publish(s.rebuild(pending)), nil
+	next := s.publish(candidate)
+
+	// Whether the resolved configuration actually moved is decided here, on the
+	// same comparison a reload uses, so the two cannot disagree about what
+	// counts as a change.
+	return next, !sameConfiguration(current, next), nil
 }
 
 // prepare groups a plan by backend and stages the edits for each.

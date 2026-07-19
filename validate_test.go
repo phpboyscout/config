@@ -260,8 +260,15 @@ func TestStore_WithSchema_Invalid(t *testing.T) {
 
 	s, err := NewStore(context.Background(), WithFiles(fs, "/config.yaml"), WithSchema(schema))
 	require.ErrorIs(t, err, ErrInvalidConfig)
-	assert.Nil(t, s)
 	assert.Contains(t, err.Error(), "github.token")
+
+	// The Store is returned despite the error. A caller doing the usual
+	// `if err != nil { return }` still fails fast, but a tool whose job is to
+	// repair configuration needs something to repair it through — returning nil
+	// would make one missing key unfixable by the surface designed to fix it
+	// (D15).
+	require.NotNil(t, s)
+	assert.Equal(t, "info", s.View().GetString("log.level"))
 }
 
 // Validation applies to the resolved configuration, not to any single layer:

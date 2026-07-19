@@ -280,6 +280,15 @@ func (p *filePending) Commit(ctx context.Context) error {
 		return fmt.Errorf("config: committing %s: %w", p.backend.path, err)
 	}
 
+	// The content just written is now what this backend knows the file to hold.
+	// Advancing the fingerprint here is what distinguishes our own writes from
+	// foreign ones: the Store never re-reads after committing — it builds the
+	// next snapshot from the staged layers — so nothing else would ever move it
+	// on, and the second write to any file would be reported as a conflict with
+	// the first.
+	p.backend.loaded = sha256.Sum256(p.staged)
+	p.backend.loadedExist = true
+
 	return nil
 }
 

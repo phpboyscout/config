@@ -166,42 +166,145 @@ func TestWatch_OwnWritesDoNotCascade(t *testing.T) {
 
 	defer stop()
 
-	// An observer that reacts to a change by writing more configuration is the
-	// shape that would loop.
-	var writes int
-
-	var mu sync.Mutex
-
-	s.AddObserverFunc(func(cfg Observed) error {
-		mu.Lock()
-		defer mu.Unlock()
-
-		writes++
-		if writes > 5 {
-			return errors.New("cascade")
-		}
-
-		_, err := s.Apply(context.Background(), Set("count", cfg.GetInt("count")+1))
-
-		return err
-	})
+	obs := &countingObserver{}
+	s.AddObserver(obs)
 
 	if _, err := s.Apply(context.Background(), Set("value", "second")); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
 
 	// Every event the watcher could deliver now finds the file already
-	// matching the published configuration.
+	// matching the published configuration, so none of them is a change.
 	for range 3 {
 		w.trigger()
 	}
 
-	mu.Lock()
-	got := writes
-	mu.Unlock()
+	if got := obs.count(); got != 1 {
+		t.Errorf("observer ran %d times for one write, want 1 — the write is coming back round", got)
+	}
+}
 
-	if got > 2 {
-		t.Errorf("observer ran %d times — a write is cascading", got)
+// Writing from inside an observer is refused rather than made to work. Each
+// such write is itself a change, which notifies, which runs the observer again;
+// there is no end to that, and no way for the Store to break it without either
+// dropping notifications or reordering what changed when.
+func TestApply_WritingFromInsideAnObserverIsRefused(t *testing.T) {
+	t.Parallel()
+
+	s := storeOn(t, memFS(t, map[string]string{"/app.yaml": "value: first\ncount: 0\n"}), "/app.yaml")
+
+	var (
+		mu   sync.Mutex
+		runs int
+		got  error
+	)
+
+	s.AddObserverFunc(func(cfg Observed) error {
+		mu.Lock()
+		defer mu.Unlock()
+
+		runs++
+		_, got = s.Apply(context.Background(), Set("count", cfg.GetInt("count")+1))
+
+		return nil
+	})
+
+	if _, err := s.Apply(context.Background(), Set("value", "second")); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if runs != 1 {
+		t.Errorf("observer ran %d times, want 1 — the refusal is not stopping the cascade", runs)
+	}
+
+	if !errors.Is(got, ErrWriteFromObserver) {
+		t.Errorf("observer's write returned %v, want ErrWriteFromObserver", got)
+	}
+}
+
+// Reloading from an observer cascades exactly as writing does.
+func TestReload_FromInsideAnObserverIsRefused(t *testing.T) {
+	t.Parallel()
+
+	s := storeOn(t, memFS(t, map[string]string{"/app.yaml": "value: first\n"}), "/app.yaml")
+
+	var (
+		mu  sync.Mutex
+		got error
+	)
+
+	s.AddObserverFunc(func(_ Observed) error {
+		mu.Lock()
+		defer mu.Unlock()
+
+		got = s.Reload(context.Background())
+
+		return nil
+	})
+
+	if _, err := s.Apply(context.Background(), Set("value", "second")); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if !errors.Is(got, ErrWriteFromObserver) {
+		t.Errorf("observer's reload returned %v, want ErrWriteFromObserver", got)
+	}
+}
+
+// The refusal must be scoped to the goroutine running the observer. Another
+// goroutine writing while observers happen to be executing is doing nothing
+// wrong, and rejecting it would be a worse bug than the cascade this prevents.
+func TestApply_ConcurrentWriteDuringNotificationIsAllowed(t *testing.T) {
+	t.Parallel()
+
+	s := storeOn(t, memFS(t, map[string]string{"/app.yaml": "value: first\nother: 0\n"}), "/app.yaml")
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+
+	// The observer fires for every change, but only the first one needs to be
+	// held open — the second write's notification must not block the test.
+	var once sync.Once
+
+	s.AddObserverFunc(func(_ Observed) error {
+		once.Do(func() {
+			close(entered)
+			<-release
+		})
+
+		return nil
+	})
+
+	go func() {
+		_, _ = s.Apply(context.Background(), Set("value", "second"))
+	}()
+
+	<-entered
+
+	// A different goroutine writes while the observer is mid-flight.
+	done := make(chan error, 1)
+
+	go func() {
+		_, err := s.Apply(context.Background(), Set("other", 1))
+		done <- err
+	}()
+
+	// The write blocks on the Store lock until the observer returns, so let it
+	// finish and then confirm the write was accepted rather than refused.
+	close(release)
+
+	if err := <-done; err != nil {
+		t.Fatalf("a legitimate concurrent write was refused: %v", err)
+	}
+
+	if got := s.View().GetInt("other"); got != 1 {
+		t.Errorf("other = %d, want 1", got)
 	}
 }
 
@@ -444,5 +547,50 @@ func TestWatch_VirtualFilesBehindRealLookingPathsFallBackToPolling(t *testing.T)
 
 	if w.isReallyOnDisk("/app.yaml", filepath.Join(dir, "app.yaml")) {
 		t.Error("an in-memory file was mistaken for the unrelated file on disk")
+	}
+}
+
+// The supported way for an observer to change configuration: take the write out
+// of the observation. The refusal is scoped to the observing goroutine
+// precisely so this works — it is the escape hatch, not a loophole.
+func TestApply_ObserverMayDeferAWriteToAnotherGoroutine(t *testing.T) {
+	t.Parallel()
+
+	s := storeOn(t, memFS(t, map[string]string{"/app.yaml": "value: first\nderived: none\n"}), "/app.yaml")
+
+	written := make(chan error, 1)
+
+	var once sync.Once
+
+	s.AddObserverFunc(func(cfg Observed) error {
+		// Capture what is needed, return, and let something outside the
+		// observation perform the write.
+		want := "from-" + cfg.GetString("value")
+
+		once.Do(func() {
+			go func() {
+				_, err := s.Apply(context.Background(), Set("derived", want))
+				written <- err
+			}()
+		})
+
+		return nil
+	})
+
+	if _, err := s.Apply(context.Background(), Set("value", "second")); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	select {
+	case err := <-written:
+		if err != nil {
+			t.Fatalf("a deferred write from an observer was refused: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the deferred write never completed")
+	}
+
+	if got := s.View().GetString("derived"); got != "from-second" {
+		t.Errorf("derived = %q, want from-second", got)
 	}
 }

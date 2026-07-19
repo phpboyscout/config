@@ -1,7 +1,9 @@
 package config
 
 import (
+	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -63,16 +65,93 @@ type ObserverFunc func(cfg Observed) error
 // Run calls the function.
 func (f ObserverFunc) Run(cfg Observed) error { return f(cfg) }
 
+// ErrWriteFromObserver is returned when configuration is changed from inside an
+// observer callback.
+//
+// Writing while reacting to a write is refused outright rather than made to work.
+// Each such write is itself a change, which notifies, which runs the observer
+// again — a cascade with no natural end, and one the Store cannot break without
+// either dropping notifications other components need or silently reordering
+// what changed when.
+//
+// An observer that needs to update configuration must take the change *out* of
+// the observation: record what is needed, return, and perform the write from
+// somewhere else — a worker goroutine, a queue, the next tick. Serialising and
+// de-duplicating those deferred writes belongs to the consumer, which is the
+// only party that knows which of them still matter.
+var ErrWriteFromObserver = errors.New(
+	"config: cannot change configuration from inside an observer")
+
 // notifier holds observers and the callbacks for rejected reloads.
 //
 // Both lists are copied under the lock and invoked outside it, so a slow or
 // misbehaving observer cannot block a reload, deadlock the Store, or prevent
 // other observers from running.
 type notifier struct {
+	// inFlight counts notifications currently running. It exists so the
+	// re-entrancy check costs nothing at all when no observer is executing,
+	// which is the overwhelmingly common case for a write.
+	inFlight atomic.Int64
+
+	// notifying holds the goroutines currently inside a notification, so a
+	// write can tell "I am an observer writing back" from "another goroutine
+	// happens to be writing while observers run". A plain flag cannot: it would
+	// reject the second, which is a legitimate concurrent write, and rejecting
+	// it would be worse than the cascade this prevents.
+	notifying map[uint64]int
+
 	mu             sync.Mutex
 	observers      []Observable
 	onError        []func(error)
 	onObserveError []func(error)
+}
+
+// enterNotification marks the calling goroutine as running observers.
+func (n *notifier) enterNotification() {
+	id := goroutineID()
+
+	n.mu.Lock()
+	if n.notifying == nil {
+		n.notifying = map[uint64]int{}
+	}
+
+	n.notifying[id]++
+	n.mu.Unlock()
+
+	n.inFlight.Add(1)
+}
+
+// leaveNotification clears the mark set by enterNotification.
+func (n *notifier) leaveNotification() {
+	id := goroutineID()
+
+	n.mu.Lock()
+
+	if n.notifying[id] <= 1 {
+		delete(n.notifying, id)
+	} else {
+		n.notifying[id]--
+	}
+
+	n.mu.Unlock()
+
+	n.inFlight.Add(-1)
+}
+
+// insideObserver reports whether the calling goroutine is running an observer.
+func (n *notifier) insideObserver() bool {
+	// No notification anywhere means this cannot be a nested write, and the
+	// question is answered without determining the goroutine at all.
+	if n.inFlight.Load() == 0 {
+		return false
+	}
+
+	id := goroutineID()
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	return n.notifying[id] > 0
 }
 
 func (n *notifier) addObserver(o Observable) {
@@ -110,13 +189,12 @@ func (n *notifier) notify(snap *Snapshot) {
 		return
 	}
 
+	n.enterNotification()
+	defer n.leaveNotification()
+
 	// Every observer sees the same pinned view, so none of them can observe a
 	// later change midway through reacting to this one.
 	pinned := NewView(snap)
-
-	n.mu.Lock()
-	report := append([]func(error){}, n.onObserveError...)
-	n.mu.Unlock()
 
 	for _, o := range observers {
 		err := o.Run(pinned)
@@ -128,9 +206,19 @@ func (n *notifier) notify(snap *Snapshot) {
 		// already changed, and one component being unable to react is not a
 		// reason to withhold the change from the others — but it must not pass
 		// silently either.
-		for _, f := range report {
-			f(err)
-		}
+		n.reportObserverError(err)
+	}
+}
+
+// reportObserverError hands an error to every registered observer-error
+// callback, copying the list under the lock and calling outside it.
+func (n *notifier) reportObserverError(err error) {
+	n.mu.Lock()
+	report := append([]func(error){}, n.onObserveError...)
+	n.mu.Unlock()
+
+	for _, f := range report {
+		f(err)
 	}
 }
 
