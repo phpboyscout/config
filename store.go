@@ -584,6 +584,11 @@ func (s *Store) publish(loaded []backendLayers) *Snapshot {
 
 // Sources returns the identity of every backend, in precedence order.
 func (s *Store) Sources() []string {
+	// Locked because AddLayer replaces the backend list wholesale, so reading
+	// it unsynchronised races a write to the slice header itself.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	out := make([]string, 0, len(s.backends))
 	for _, b := range s.backends {
 		out = append(out, b.ID())
@@ -1024,6 +1029,10 @@ func WithWatcher(w Watcher) WatchOption {
 
 // watchablePaths returns the file paths behind the Store's backends.
 func (s *Store) watchablePaths() ([]string, afero.Fs) {
+	// Same reason as Sources: AddLayer reassigns s.backends under the lock.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	var (
 		paths      []string
 		filesystem afero.Fs

@@ -177,18 +177,21 @@ func (b *fileBackend) read() (content []byte, existed bool, err error) {
 func applyEdits(path string, original []byte, edits []Edit) ([]byte, error) {
 	source := original
 
-	if len(source) == 0 {
-		// An absent or empty file has no document to edit, and none to
-		// preserve either — no comments, no key order, no quoting choices. So
-		// the first key is rendered directly and the rest are edited into it
-		// as normal.
+	if needsSeed(source) {
+		// The file has no mapping to edit into: it is absent, empty, or holds
+		// only comments, blank lines or a bare document marker. Commenting a
+		// config file out entirely is an ordinary thing to do, and it must not
+		// make the file permanently unwritable.
+		//
+		// Whatever is already there is kept and the first key is rendered
+		// beneath it, so a commented-out header survives being written to.
 		//
 		// Seeding with an empty flow mapping instead looks tidier and is not:
 		// yamldoc re-emits in the style it found, so every subsequent key is
 		// written in flow style too, and anything nested comes back as YAML
 		// that does not parse. A created file should look like one a person
 		// would have written.
-		seeded, remaining, err := seedDocument(path, edits)
+		seeded, remaining, err := seedDocument(path, source, edits)
 		if err != nil {
 			return nil, err
 		}
@@ -315,11 +318,31 @@ func (p *filePending) writeTemp() error {
 		}
 	}
 
-	if err := afero.WriteFile(p.backend.fs, p.tempPath, p.staged, configFileMode); err != nil {
+	if err := afero.WriteFile(p.backend.fs, p.tempPath, p.staged, p.mode()); err != nil {
 		return fmt.Errorf("config: staging %s: %w", p.backend.path, err)
 	}
 
 	return nil
+}
+
+// mode is the permission set the committed file should carry.
+//
+// A file this module creates is owner-only, because configuration routinely
+// holds credentials and inheriting a permissive default would leak them. A file
+// that already exists keeps whatever mode its owner chose — that is their
+// decision, not ours, and staging through a temporary file must not quietly
+// tighten it.
+func (p *filePending) mode() fs.FileMode {
+	if !p.existed {
+		return configFileMode
+	}
+
+	info, err := p.backend.fs.Stat(p.backend.path)
+	if err != nil {
+		return configFileMode
+	}
+
+	return info.Mode().Perm()
 }
 
 // Rollback restores what was there before the commit.
@@ -341,7 +364,7 @@ func (p *filePending) Rollback(_ context.Context) error {
 		return nil
 	}
 
-	if err := afero.WriteFile(p.backend.fs, p.backend.path, p.original, configFileMode); err != nil {
+	if err := afero.WriteFile(p.backend.fs, p.backend.path, p.original, p.mode()); err != nil {
 		return fmt.Errorf("config: rolling back %s: %w", p.backend.path, err)
 	}
 
@@ -376,7 +399,7 @@ func (p *filePending) Discard(_ context.Context) error {
 // value layer may render it. Every later edit goes back through yamldoc, which
 // is what keeps the boundary meaningful: the document layer owns editing, and
 // this owns only the moment before a document exists.
-func seedDocument(path string, edits []Edit) ([]byte, []Edit, error) {
+func seedDocument(path string, original []byte, edits []Edit) ([]byte, []Edit, error) {
 	for i, edit := range edits {
 		if edit.Remove {
 			// Nothing exists to remove yet. Dropping it here keeps the created
@@ -389,10 +412,54 @@ func seedDocument(path string, edits []Edit) ([]byte, []Edit, error) {
 			return nil, nil, fmt.Errorf("config: creating %s: %w", path, err)
 		}
 
-		return rendered, edits[i+1:], nil
+		return append(preamble(original), rendered...), edits[i+1:], nil
 	}
 
 	// Every edit was a removal, so the file is created empty rather than not at
 	// all: it was routed here, and a caller that asked for it should find it.
-	return []byte("{}\n"), nil, nil
+	return append(preamble(original), []byte("{}\n")...), nil, nil
+}
+
+// needsSeed reports whether a source has no mapping for an edit to land in.
+//
+// Byte-emptiness is not the same question. A file holding only comments, blank
+// lines or a bare document marker parses successfully and yields no mapping, so
+// yamldoc has nothing to set into and every write to it would fail.
+func needsSeed(source []byte) bool {
+	if len(source) == 0 {
+		return true
+	}
+
+	doc, err := yamldoc.Parse(source)
+	if err != nil {
+		// Leave a genuinely malformed file to the parse error below, which
+		// names the problem properly.
+		return false
+	}
+
+	docs := doc.Documents()
+	if len(docs) == 0 {
+		return true
+	}
+
+	_, ok := docs[0].Keys("")
+
+	return !ok
+}
+
+// preamble returns the source with a trailing newline guaranteed, so rendered
+// content appended after it starts on its own line.
+func preamble(original []byte) []byte {
+	if len(original) == 0 {
+		return nil
+	}
+
+	out := make([]byte, 0, len(original)+1)
+	out = append(out, original...)
+
+	if out[len(out)-1] != '\n' {
+		out = append(out, '\n')
+	}
+
+	return out
 }

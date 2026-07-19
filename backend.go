@@ -128,6 +128,16 @@ func (b *fileBackend) Load(ctx context.Context) ([]Layer, error) {
 	src, err := afero.ReadFile(b.fs, b.path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
+			// The record of what this file held has to go with the file. A
+			// source deleted while the process runs is a legitimate state — the
+			// Store tolerates it for an optional source — but leaving the write
+			// fingerprint describing content that is no longer there makes
+			// every later write to that path fail as a conflict with a change
+			// nobody made, permanently, including the write that would recreate
+			// it.
+			b.loaded = [32]byte{}
+			b.loadedExist = false
+
 			return nil, fmt.Errorf("%s: %w", b.path, fs.ErrNotExist)
 		}
 

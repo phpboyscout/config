@@ -287,12 +287,25 @@ func decodeInto(input, target any) error {
 // So all three are honoured, in that order of specificity: an explicit
 // mapstructure tag wins, then yaml, then json, then the field name itself.
 func translateKeys(input any, target reflect.Type) any {
+	target = deref(target)
+	if target == nil {
+		return input
+	}
+
+	// A collection carries the translation down to what it holds. Stopping at
+	// the first non-struct meant a struct inside a list or a map was never
+	// visited, so a field in it spelled with a yaml or json tag decoded as its
+	// zero value — silently, and with no error, which is precisely the failure
+	// this function exists to remove.
+	if translated, handled := translateCollection(input, target); handled {
+		return translated
+	}
+
 	values, ok := asStringMap(input)
 	if !ok {
 		return input
 	}
 
-	target = deref(target)
 	if target.Kind() != reflect.Struct {
 		return input
 	}
@@ -303,45 +316,98 @@ func translateKeys(input any, target reflect.Type) any {
 	}
 
 	for i := range target.NumField() {
-		field := target.Field(i)
-		if !field.IsExported() {
-			continue
-		}
-
-		canonical, aliases, squash, skip := fieldKeys(field)
-		if skip {
-			continue
-		}
-
-		if squash {
-			// A squashed struct's fields live at this level, so its aliases
-			// have to be resolved here too.
-			out, _ = asStringMap(translateKeys(out, field.Type))
-
-			continue
-		}
-
-		resolveAlias(out, canonical, aliases)
-
-		if nested, present := out[canonical]; present {
-			out[canonical] = translateKeys(nested, field.Type)
-		}
+		out = translateField(out, target.Field(i))
 	}
 
 	return out
 }
 
+// translateField resolves one struct field's aliases within a value map and
+// carries translation into whatever that field holds.
+func translateField(out map[string]any, field reflect.StructField) map[string]any {
+	if !field.IsExported() {
+		return out
+	}
+
+	canonical, aliases, squash, skip := fieldKeys(field)
+	if skip {
+		return out
+	}
+
+	if squash {
+		// A squashed struct's fields live at this level, so its aliases have to
+		// be resolved here too.
+		squashed, _ := asStringMap(translateKeys(out, field.Type))
+
+		return squashed
+	}
+
+	resolveAlias(out, canonical, aliases)
+
+	if nested, present := out[canonical]; present {
+		out[canonical] = translateKeys(nested, field.Type)
+	}
+
+	return out
+}
+
+// translateCollection carries translation into a slice, array or map, and
+// reports whether the target was a collection at all.
+func translateCollection(input any, target reflect.Type) (any, bool) {
+	switch target.Kind() {
+	case reflect.Slice, reflect.Array:
+		items, ok := input.([]any)
+		if !ok {
+			return input, true
+		}
+
+		out := make([]any, len(items))
+		for i, item := range items {
+			out[i] = translateKeys(item, target.Elem())
+		}
+
+		return out, true
+
+	case reflect.Map:
+		entries, ok := asStringMap(input)
+		if !ok {
+			return input, true
+		}
+
+		out := make(map[string]any, len(entries))
+		for k, v := range entries {
+			out[k] = translateKeys(v, target.Elem())
+		}
+
+		return out, true
+
+	default:
+		return nil, false
+	}
+}
+
 // resolveAlias moves a value written under an alias to the canonical key.
+//
+// Matching is normalised on both sides. A tag is written in whatever case its
+// author chose, while a mapping's keys are lower-cased on the way into a
+// layer — but the keys inside a sequence element are not, because nothing walks
+// them. Comparing raw would therefore work in a list and fail in a map, which
+// is how a field tagged only yaml or json came to decode as its zero value in
+// one place and not the other.
 func resolveAlias(values map[string]any, canonical string, aliases []string) {
 	if _, ok := values[canonical]; ok {
 		return
 	}
 
 	for _, alias := range aliases {
-		if v, ok := values[alias]; ok {
-			values[canonical] = v
+		want := normaliseKey(alias)
 
-			return
+		for key, v := range values {
+			if normaliseKey(key) == want {
+				values[canonical] = v
+
+				return
+			}
 		}
 	}
 }

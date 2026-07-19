@@ -193,10 +193,7 @@ func ObserveSection[T any](
 
 	observed := &ObservedSection[T]{}
 
-	var reader *View
-	if binder != nil {
-		reader = binder.View()
-	}
+	reader := readerFor(binder)
 
 	initial, err := loadObservedSection(reader, key, settings)
 	if err != nil {
@@ -295,4 +292,24 @@ func (settings SectionBindingConfig[T]) sectionsEqual(previous, current Section[
 	}
 
 	return reflect.DeepEqual(previous, current)
+}
+
+// readerFor returns what a binder currently reads, as an interface that is nil
+// when there is nothing to read.
+//
+// Declared as the interface rather than as *View on purpose: a nil *View boxed
+// into an interface is not a nil interface, so a nil check downstream would not
+// fire and decoding would run through a nil receiver instead of returning an
+// empty section.
+func readerFor(binder Binder) Observed {
+	if binder == nil {
+		return nil
+	}
+
+	v := binder.View()
+	if v == nil {
+		return nil
+	}
+
+	return v
 }
