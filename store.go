@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/spf13/afero"
+	"github.com/spf13/pflag"
 )
 
 // ErrNoSources is returned when a Store is built with nothing to read.
@@ -51,6 +52,16 @@ type Store struct {
 	version atomic.Uint64
 }
 
+// keyAware is an optional interface for a backend whose interpretation of its
+// own input depends on what the layers beneath it define.
+//
+// The environment backend is the case that needs it: mapping APP_SERVER_PORT
+// back to a dotted key is ambiguous without knowing whether server.port or
+// server_port exists.
+type keyAware interface {
+	observeKnownKeys(keys []string)
+}
+
 // backendLayers pairs a backend with what it contributed.
 type backendLayers struct {
 	backend Backend
@@ -75,6 +86,26 @@ func WithFiles(filesystem afero.Fs, paths ...string) StoreOption {
 		for _, p := range paths {
 			s.backends = append(s.backends, NewFileBackend(filesystem, p))
 		}
+	}
+}
+
+// WithEnv appends an environment backend reading variables under a prefix.
+//
+// Add it after the file sources: environment variables are expected to
+// override what is on disk, and precedence follows the order backends are
+// added.
+func WithEnv(prefix string, opts ...EnvOption) StoreOption {
+	return func(s *Store) {
+		s.backends = append(s.backends, NewEnvBackend(prefix, opts...))
+	}
+}
+
+// WithFlags appends a backend contributing the flags the user actually
+// changed. Add it last: an explicit flag is the most deliberate input there
+// is.
+func WithFlags(flags *pflag.FlagSet, opts ...FlagOption) StoreOption {
+	return func(s *Store) {
+		s.backends = append(s.backends, NewFlagBackend(flags, opts...))
 	}
 }
 
@@ -146,6 +177,10 @@ func (s *Store) loadAll(ctx context.Context) ([]backendLayers, error) {
 	loaded := make([]backendLayers, 0, len(s.backends))
 
 	for i, backend := range s.backends {
+		if aware, ok := backend.(keyAware); ok {
+			aware.observeKnownKeys(keysOf(loaded))
+		}
+
 		got, err := backend.Load(ctx)
 		if err == nil {
 			loaded = append(loaded, backendLayers{backend: backend, layers: got})
@@ -391,6 +426,43 @@ func (s *Store) rebuild(pending map[string]Pending) []backendLayers {
 	}
 
 	return next
+}
+
+// keysOf lists every leaf key the layers loaded so far define.
+func keysOf(loaded []backendLayers) []string {
+	seen := map[string]bool{}
+
+	var keys []string
+
+	for _, bl := range loaded {
+		for _, layer := range bl.layers {
+			collectKeys(layer.Values, "", seen, &keys)
+		}
+	}
+
+	return keys
+}
+
+func collectKeys(values map[string]any, prefix string, seen map[string]bool, out *[]string) {
+	for k, v := range values {
+		path := normaliseKey(k)
+		if prefix != "" {
+			path = prefix + "." + path
+		}
+
+		nested, isMap := asStringMap(v)
+		if isMap && len(nested) > 0 {
+			collectKeys(nested, path, seen, out)
+
+			continue
+		}
+
+		if !seen[path] {
+			seen[path] = true
+
+			*out = append(*out, path)
+		}
+	}
 }
 
 // writableTargets lists the layers a change could be written to, in precedence
