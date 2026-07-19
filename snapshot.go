@@ -62,21 +62,7 @@ func (s *Snapshot) Get(path string) (any, bool) {
 		return nil, false
 	}
 
-	var current any = s.values
-
-	for _, seg := range segs {
-		m, ok := asStringMap(current)
-		if !ok {
-			return nil, false
-		}
-
-		current, ok = m[seg]
-		if !ok {
-			return nil, false
-		}
-	}
-
-	return current, true
+	return lookup(s.values, segs)
 }
 
 // Has reports whether a path resolves to a value.
