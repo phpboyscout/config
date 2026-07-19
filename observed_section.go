@@ -20,6 +20,63 @@ type ObservedSection[T any] struct {
 	// source is the Snapshot version the held section was derived from, used to
 	// reject a notification that arrives out of order.
 	source uint64
+
+	// apply is the callback registered with WithSectionApply, retained so the
+	// caller can ask for the initial delivery once its own dependencies exist.
+	apply func(SectionChange[T]) error
+	// primed records that the initial delivery has happened, so asking twice
+	// does not run a caller's setup twice.
+	primed bool
+}
+
+// markPrimed records that an initial delivery is no longer appropriate.
+func (s *ObservedSection[T]) markPrimed() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.primed = true
+}
+
+// ApplyInitial delivers the section the binding started with to the apply
+// callback, exactly once, as an initial change.
+//
+// It exists because the natural place to react to configuration is the same
+// callback that reacts to a change — but a callback usually closes over
+// something built after the binding, so firing it during ObserveSection would
+// run it against a half-constructed world. Handing the caller the trigger lets
+// them say when their dependencies exist.
+//
+// A consumer that never calls this gets change-only delivery, which is what
+// binding has always done. Calling it more than once is a no-op, so it is safe
+// in a startup path that may run twice.
+//
+// Returns nil when no apply callback was registered, and whatever the callback
+// returns otherwise.
+func (s *ObservedSection[T]) ApplyInitial() error {
+	s.mu.Lock()
+
+	if s.primed || s.apply == nil || s.current == nil {
+		s.mu.Unlock()
+
+		return nil
+	}
+
+	s.primed = true
+	apply := s.apply
+	section := *s.current
+	version := s.version
+
+	s.mu.Unlock()
+
+	// Called outside the lock: the callback is the caller's code, and holding
+	// the section's lock across it would let a callback that reads the section
+	// deadlock against itself.
+	return apply(SectionChange[T]{
+		Current: section,
+		Initial: true,
+		Changed: false,
+		Version: version,
+	})
 }
 
 // Value returns the latest complete settings snapshot.
@@ -122,6 +179,11 @@ func (s *ObservedSection[T]) storeIfNewer(
 }
 
 // SectionChange describes an observed typed section change.
+//
+// Initial marks the delivery [ObservedSection.ApplyInitial] makes: the section
+// the binding started with, rather than a change to it. Changed is its
+// complement, true for every later delivery. A caller that treats both the same
+// way can ignore them and read Current.
 type SectionChange[T any] struct {
 	Previous Section[T]
 	Current  Section[T]
@@ -236,6 +298,7 @@ func ObserveSection[T any](
 	}
 
 	observed.store(initial)
+	observed.apply = settings.apply
 
 	if binder != nil {
 		binder.AddObserverFunc(func(next Observed) error {
@@ -250,16 +313,18 @@ func ObserveSection[T any](
 				return nil
 			}
 
+			// A change closes the initial window. Delivering the section the
+			// binding started with after a later one has already been applied
+			// would hand the caller stale configuration and call it initial.
+			observed.markPrimed()
+
 			if settings.apply != nil {
 				return settings.apply(SectionChange[T]{
 					Previous: previous,
 					Current:  section,
-					// The initial section is stored before this observer is
-					// registered, so a change delivered here is never the
-					// first one. See the note on SectionChange.
-					Initial: false,
-					Changed: true,
-					Version: version,
+					Initial:  false,
+					Changed:  true,
+					Version:  version,
 				})
 			}
 

@@ -1128,3 +1128,118 @@ func TestBackend_ReceivesTheLayersBeneathIt(t *testing.T) {
 		t.Error("the re-read did not include the key the write created")
 	}
 }
+
+type applySettings struct {
+	Host string `mapstructure:"host"`
+}
+
+// applyRecorder binds a section and records every delivery.
+func applyRecorder(t *testing.T, host string) (*ObservedSection[applySettings], *pinnedBinder, *[]SectionChange[applySettings]) {
+	t.Helper()
+
+	binder := &pinnedBinder{view: NewView(sectionSnapshot(1, host))}
+	got := &[]SectionChange[applySettings]{}
+
+	section, err := ObserveSection[applySettings](binder, "server",
+		WithSectionApply(func(c SectionChange[applySettings]) error {
+			*got = append(*got, c)
+
+			return nil
+		}))
+	if err != nil {
+		t.Fatalf("ObserveSection: %v", err)
+	}
+
+	return section, binder, got
+}
+
+// The apply callback is where a consumer reacts to configuration, and the
+// natural wish is to use it for the initial setup too rather than duplicating
+// that logic at startup. It cannot fire during binding, because the callback
+// usually closes over something built afterwards — so the caller is given the
+// trigger and says when its dependencies exist.
+func TestObserveSection_WithoutApplyInitialDeliveryIsChangeOnly(t *testing.T) {
+	t.Parallel()
+
+	_, binder, got := applyRecorder(t, "first")
+
+	if len(*got) != 0 {
+		t.Fatalf("binding delivered %d change(s) before the caller was ready", len(*got))
+	}
+
+	if err := binder.observers[0](NewView(sectionSnapshot(2, "second"))); err != nil {
+		t.Fatalf("observer: %v", err)
+	}
+
+	if len(*got) != 1 {
+		t.Fatalf("got %d deliveries, want one", len(*got))
+	}
+
+	if (*got)[0].Initial || !(*got)[0].Changed {
+		t.Errorf("delivery = %+v, want a non-initial change", (*got)[0])
+	}
+}
+
+func TestObserveSection_ApplyInitialDeliversThenChanges(t *testing.T) {
+	t.Parallel()
+
+	section, binder, got := applyRecorder(t, "first")
+
+	if err := section.ApplyInitial(); err != nil {
+		t.Fatalf("ApplyInitial: %v", err)
+	}
+
+	// Safe in a startup path that may run twice.
+	if err := section.ApplyInitial(); err != nil {
+		t.Fatalf("second ApplyInitial: %v", err)
+	}
+
+	if err := binder.observers[0](NewView(sectionSnapshot(2, "second"))); err != nil {
+		t.Fatalf("observer: %v", err)
+	}
+
+	if len(*got) != 2 {
+		t.Fatalf("got %d deliveries, want an initial and one change", len(*got))
+	}
+
+	assertDelivery(t, "initial", (*got)[0], true, "first")
+	assertDelivery(t, "change", (*got)[1], false, "second")
+}
+
+// assertDelivery checks one delivery's flags and payload. Initial and Changed
+// are complements, so asserting one settles both.
+func assertDelivery(t *testing.T, label string, got SectionChange[applySettings], initial bool, host string) {
+	t.Helper()
+
+	if got.Initial != initial {
+		t.Errorf("%s delivery: Initial = %v, want %v", label, got.Initial, initial)
+	}
+
+	if got.Changed == initial {
+		t.Errorf("%s delivery: Changed = %v, want %v", label, got.Changed, !initial)
+	}
+
+	if got.Current.Value.Host != host {
+		t.Errorf("%s delivery: host = %q, want %q", label, got.Current.Value.Host, host)
+	}
+}
+
+// Delivering the section the binding started with, after a later one has been
+// applied, would hand the caller stale configuration and call it initial.
+func TestObserveSection_ApplyInitialIsANoOpAfterAChange(t *testing.T) {
+	t.Parallel()
+
+	section, binder, got := applyRecorder(t, "first")
+
+	if err := binder.observers[0](NewView(sectionSnapshot(2, "second"))); err != nil {
+		t.Fatalf("observer: %v", err)
+	}
+
+	if err := section.ApplyInitial(); err != nil {
+		t.Fatalf("ApplyInitial: %v", err)
+	}
+
+	if len(*got) != 1 {
+		t.Errorf("got %d deliveries, want the change alone", len(*got))
+	}
+}

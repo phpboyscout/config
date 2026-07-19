@@ -289,6 +289,39 @@ Written up for users in `explanation/backends.md`, along with the reasoning behi
 so the next person to wonder why writability is an interface and `Capabilities` is a set of
 unread fields finds the answer in the documentation rather than rediscovering it.
 
+### R8 — 2026-07-19: `SectionChange.Initial` becomes meaningful, on the caller's terms
+
+**`Initial` was always false and `Changed` always true.** The section a binding starts with is
+stored before the observer registers, so a delivery to an apply callback was never the first
+one — two fields that looked like data and were constants.
+
+The obvious repair, firing `apply` once at bind so `Initial` occurs, is wrong for a reason worth
+recording. An apply callback is a consumer's reaction to configuration, and it routinely closes
+over something constructed *after* the binding — a server, a pool, a template cache. Firing it
+inside `ObserveSection` would run it against a half-built world, which is a nil dereference at
+startup in a callback whose author reasonably assumed it only ran on change.
+
+**Measured before deciding:** `go-tool-base` has **no production `WithSectionApply` call sites**;
+the option appears in four test files, each asserting an exact delivery count. So the blast
+radius was small — but "nothing uses it yet" is a reason to get the shape right, not a licence
+to break it later.
+
+`ObservedSection.ApplyInitial()` gives the caller the trigger:
+
+```go
+settings, err := config.ObserveSection[T](cfg, "server", config.WithSectionApply(reconfigure))
+// ... construct whatever reconfigure closes over ...
+if err := settings.ApplyInitial(); err != nil { return err }
+```
+
+Both fields are now honest: `Initial: true, Changed: false` for that delivery, the reverse for
+every later one. A consumer that never calls it gets change-only delivery, exactly as before, so
+the addition changes nothing that exists. Calling it twice is a no-op, and calling it after a
+change has landed is also a no-op — delivering the section the binding started with, once a
+later one has been applied, would hand the caller stale configuration and call it initial.
+
+**Additive**, so D10's freeze holds: no existing signature or behaviour moves.
+
 ## Why this exists
 
 The module needs to write configuration back to the files it was loaded from — preserving
