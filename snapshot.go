@@ -62,7 +62,20 @@ func (s *Snapshot) Get(path string) (any, bool) {
 		return nil, false
 	}
 
-	return lookup(s.values, segs)
+	found, ok := lookup(s.values, segs)
+	if !ok {
+		return nil, false
+	}
+
+	// A composite is copied on the way out. Returning the snapshot's own map
+	// would hand the caller a live reference into published state: mutating what
+	// `Get("server")` returned would change what every other reader sees, and
+	// inject keys that were never in any source. It is also a data race, and one
+	// the race detector cannot see, because the mutation happens in consumer
+	// code that the Store never observes.
+	//
+	// Scalars — the overwhelming majority of reads — cost nothing here.
+	return cloneValues(found), true
 }
 
 // Has reports whether a path resolves to a value.

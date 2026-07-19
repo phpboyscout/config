@@ -297,3 +297,59 @@ func TestSnapshot_EmptyThenPopulatedDropsLeafProvenance(t *testing.T) {
 		t.Errorf("Origin(x.a) = %q/%v, want overlay.yaml", src, ok)
 	}
 }
+
+// A composite read must be a copy. Handing back the snapshot's own map lets a
+// caller mutate published state — changing what every other reader sees, and
+// injecting keys that were in no source. It is also a data race the detector
+// cannot see, because the mutation happens in consumer code the Store never
+// observes.
+func TestSnapshot_GetDoesNotLeakLiveState(t *testing.T) {
+	t.Parallel()
+
+	snap := newSnapshot(1, []Layer{{
+		Source: Source{Kind: SourceFile, Name: "/app.yaml", Writable: true},
+		Values: map[string]any{
+			"server": map[string]any{
+				"port":  8080,
+				"hosts": []any{"a", "b"},
+			},
+		},
+	}})
+
+	got, ok := snap.Get("server")
+	if !ok {
+		t.Fatal("server not found")
+	}
+
+	section, ok := got.(map[string]any)
+	if !ok {
+		t.Fatalf("server is %T, want a map", got)
+	}
+
+	section["port"] = 1
+	section["injected"] = "hostile"
+
+	if port, _ := snap.Get("server.port"); port != 8080 {
+		t.Errorf("server.port = %v after a caller mutated what Get returned, want 8080", port)
+	}
+
+	if snap.Has("server.injected") {
+		t.Error("a caller injected a key into the published snapshot")
+	}
+
+	// Nested composites must be copied too, or the leak just moves one level
+	// down.
+	nested, _ := snap.Get("server.hosts")
+
+	hosts, ok := nested.([]any)
+	if !ok {
+		t.Fatalf("server.hosts is %T, want a slice", nested)
+	}
+
+	hosts[0] = "mutated"
+
+	again, _ := snap.Get("server.hosts")
+	if fresh, _ := again.([]any); fresh[0] != "a" {
+		t.Errorf("server.hosts[0] = %v after mutation, want a", fresh[0])
+	}
+}

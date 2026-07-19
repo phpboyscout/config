@@ -579,7 +579,7 @@ func (s *Store) apply(ctx context.Context, changes []Change) (*Snapshot, bool, e
 		return nil, false, err
 	}
 
-	pending, err := s.prepare(ctx, plan)
+	pending, order, err := s.prepare(ctx, plan)
 	if err != nil {
 		return nil, false, err
 	}
@@ -595,13 +595,13 @@ func (s *Store) apply(ctx context.Context, changes []Change) (*Snapshot, bool, e
 		return nil, false, err
 	}
 
-	if err := verifyAll(ctx, pending); err != nil {
+	if err := verifyAll(ctx, pending, order); err != nil {
 		discardAll(ctx, pending)
 
 		return nil, false, err
 	}
 
-	if err := commitAll(ctx, pending); err != nil {
+	if err := commitAll(ctx, pending, order); err != nil {
 		return nil, false, err
 	}
 
@@ -618,7 +618,7 @@ func (s *Store) apply(ctx context.Context, changes []Change) (*Snapshot, bool, e
 // Grouping matters: a file is read, edited and written once per apply however
 // many changes target it. Editing per change would reparse the same document
 // repeatedly, and a settings screen saving fifty fields would pay for it.
-func (s *Store) prepare(ctx context.Context, plan *Plan) (map[string]Pending, error) {
+func (s *Store) prepare(ctx context.Context, plan *Plan) (map[string]Pending, []string, error) {
 	grouped := map[string][]Edit{}
 	order := []string{}
 
@@ -643,33 +643,35 @@ func (s *Store) prepare(ctx context.Context, plan *Plan) (map[string]Pending, er
 		if !ok {
 			discardAll(ctx, pending)
 
-			return nil, fmt.Errorf("%w: no backend for %s", ErrInternal, id)
+			return nil, nil, fmt.Errorf("%w: no backend for %s", ErrInternal, id)
 		}
 
 		writable, ok := backend.(WritableBackend)
 		if !ok {
 			discardAll(ctx, pending)
 
-			return nil, fmt.Errorf("%w: %s", ErrNotWritable, id)
+			return nil, nil, fmt.Errorf("%w: %s", ErrNotWritable, id)
 		}
 
 		staged, err := writable.Prepare(ctx, grouped[id])
 		if err != nil {
 			discardAll(ctx, pending)
 
-			return nil, err
+			return nil, nil, err
 		}
 
 		pending[id] = staged
 	}
 
-	return pending, nil
+	return pending, order, nil
 }
 
 // verifyAll checks every source is unchanged before anything is committed.
-func verifyAll(ctx context.Context, pending map[string]Pending) error {
-	for _, p := range pending {
-		if err := p.Verify(ctx); err != nil {
+func verifyAll(ctx context.Context, pending map[string]Pending, order []string) error {
+	// Ordered so that a set with more than one stale target always reports the
+	// same one, rather than whichever the map happened to yield first.
+	for _, id := range order {
+		if err := pending[id].Verify(ctx); err != nil {
 			return err
 		}
 	}
@@ -684,10 +686,15 @@ func verifyAll(ctx context.Context, pending map[string]Pending) error {
 // narrows the window in which a partially applied set can be observed to the
 // duration of the renames, and it fails in the safe direction: everything
 // likely to go wrong has already happened during prepare.
-func commitAll(ctx context.Context, pending map[string]Pending) error {
+func commitAll(ctx context.Context, pending map[string]Pending, order []string) error {
 	committed := make([]Pending, 0, len(pending))
 
-	for id, p := range pending {
+	// Ordered, not by map iteration. D14 commits sequentially so that a failure
+	// leaves an "everything up to N succeeded" prefix; a random order forfeits
+	// exactly that property, because which targets committed before the failure
+	// would vary between runs and the error could not name a stable set.
+	for _, id := range order {
+		p := pending[id]
 		if err := p.Commit(ctx); err != nil {
 			rollbackErr := rollbackAll(ctx, committed)
 			discardAll(ctx, pending)
