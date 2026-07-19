@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -172,27 +173,60 @@ func isString(v any) bool {
 }
 
 func isInt(v any) bool {
-	switch v.(type) {
+	switch val := v.(type) {
 	case int, int8, int16, int32, int64:
 		return true
+	case string:
+		// A layer that can only carry strings still supplies real values. The
+		// environment and command-line flags are strings by nature — the
+		// operating system offers nothing else — so a schema declaring a field
+		// an int must accept "9090" from them exactly as it accepts 9090 from a
+		// file. What matters is whether the value denotes the declared type,
+		// not how the layer that carried it happened to encode it.
+		//
+		// The rule underneath: validation and the accessors must agree. GetInt
+		// reads such a value happily, so validation calling it the wrong type
+		// would be validation being wrong.
+		_, err := strconv.Atoi(val)
+
+		return err == nil
 	default:
 		return false
 	}
 }
 
 func isFloat(v any) bool {
-	switch v.(type) {
+	switch val := v.(type) {
 	case float32, float64:
 		return true
+	case int, int8, int16, int32, int64:
+		// A whole number is a legitimate float. Rejecting 1 for a field
+		// declared float64 would fail a document nobody would think to write
+		// as 1.0.
+		return true
+	case string:
+		// See isInt: a string-only layer still supplies real values.
+		_, err := strconv.ParseFloat(val, 64)
+
+		return err == nil
 	default:
 		return false
 	}
 }
 
 func isBool(v any) bool {
-	_, ok := v.(bool)
+	switch val := v.(type) {
+	case bool:
+		return true
+	case string:
+		// See isInt. ParseBool accepts the spellings a person actually types
+		// into an environment variable: true/false, 1/0, t/f, T/TRUE and so on.
+		_, err := strconv.ParseBool(val)
 
-	return ok
+		return err == nil
+	default:
+		return false
+	}
 }
 
 func isDuration(v any) bool {
