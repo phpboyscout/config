@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -24,10 +25,21 @@ func routingSnapshot() *Snapshot {
 	})
 }
 
+// sourcesOf lists a snapshot's sources in precedence order, which is what
+// routing walks to decide what outranks a target.
+func sourcesOf(snap *Snapshot) []Source {
+	out := make([]Source, 0, len(snap.layers))
+	for _, l := range snap.layers {
+		out = append(out, l.Source)
+	}
+
+	return out
+}
+
 func planFor(t *testing.T, snap *Snapshot, changes ...Change) *Plan {
 	t.Helper()
 
-	p, err := route(snap, writableOf(snap), changes)
+	p, err := route(snap, writableOf(snap), sourcesOf(snap), changes)
 	if err != nil {
 		t.Fatalf("route: %v", err)
 	}
@@ -155,7 +167,7 @@ func TestRoute_NoWritableLayer(t *testing.T) {
 			Values: map[string]any{"a": 1}},
 	})
 
-	if _, err := route(snap, writableOf(snap), []Change{Set("a", 2)}); !errors.Is(err, ErrNoWritableLayer) {
+	if _, err := route(snap, writableOf(snap), sourcesOf(snap), []Change{Set("a", 2)}); !errors.Is(err, ErrNoWritableLayer) {
 		t.Errorf("err = %v, want ErrNoWritableLayer", err)
 	}
 }
@@ -168,7 +180,7 @@ func TestRoute_Rejects(t *testing.T) {
 	t.Run("no changes", func(t *testing.T) {
 		t.Parallel()
 
-		if _, err := route(snap, writableOf(snap), nil); !errors.Is(err, ErrNoChanges) {
+		if _, err := route(snap, writableOf(snap), sourcesOf(snap), nil); !errors.Is(err, ErrNoChanges) {
 			t.Errorf("err = %v, want ErrNoChanges", err)
 		}
 	})
@@ -177,7 +189,7 @@ func TestRoute_Rejects(t *testing.T) {
 		t.Parallel()
 
 		for _, path := range []string{"", "a..b", ".", "a."} {
-			if _, err := route(snap, writableOf(snap), []Change{Set(path, 1)}); !errors.Is(err, ErrInvalidPath) {
+			if _, err := route(snap, writableOf(snap), sourcesOf(snap), []Change{Set(path, 1)}); !errors.Is(err, ErrInvalidPath) {
 				t.Errorf("route(%q) err = %v, want ErrInvalidPath", path, err)
 			}
 		}
@@ -254,4 +266,41 @@ func writableOf(snap *Snapshot) []Source {
 	}
 
 	return out
+}
+
+// A key no file yet defines routes at the highest-precedence writable layer,
+// which is routinely a configured file that does not exist. The shadowing
+// report has to survive that: "you set this and the environment still wins" is
+// exactly the feedback a user needs, and it is needed most when they are
+// setting the value for the first time.
+func TestRoute_ReportsShadowingForAFileThatDoesNotExistYet(t *testing.T) {
+	t.Parallel()
+
+	filesystem := memFS(t, map[string]string{"/base.yaml": "unrelated: 1\n"})
+
+	s, err := NewStore(context.Background(),
+		WithFiles(filesystem, "/base.yaml", "/overlay.yaml"),
+		WithEnv("APP", envOf("APP_DB_HOST=from-env")))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	plan, err := s.Plan(Set("db.host", "from-file"))
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	op := plan.Operations[0]
+
+	if op.Effective() {
+		t.Error("the write is reported as effective while the environment still wins")
+	}
+
+	if len(op.ShadowedBy) != 1 {
+		t.Fatalf("ShadowedBy = %v, want the environment variable named", op.ShadowedBy)
+	}
+
+	if got := op.ShadowedBy[0].String(); got != "env:APP_DB_HOST" {
+		t.Errorf("shadowed by %q, want env:APP_DB_HOST", got)
+	}
 }

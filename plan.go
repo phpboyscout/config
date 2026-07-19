@@ -151,7 +151,7 @@ func (p *Plan) String() string {
 // value set is the value read back. Writing to the base instead would leave
 // the edit immediately shadowed by an overlay, which looks to the user like
 // the write silently failed.
-func route(snap *Snapshot, targets []Source, changes []Change) (*Plan, error) {
+func route(snap *Snapshot, targets, order []Source, changes []Change) (*Plan, error) {
 	if len(changes) == 0 {
 		return nil, ErrNoChanges
 	}
@@ -163,7 +163,7 @@ func route(snap *Snapshot, targets []Source, changes []Change) (*Plan, error) {
 	plan := &Plan{Operations: make([]Operation, 0, len(changes))}
 
 	for _, change := range changes {
-		op, err := routeOne(snap, targets, change)
+		op, err := routeOne(snap, targets, order, change)
 		if err != nil {
 			return nil, err
 		}
@@ -174,7 +174,7 @@ func route(snap *Snapshot, targets []Source, changes []Change) (*Plan, error) {
 	return plan, nil
 }
 
-func routeOne(snap *Snapshot, targets []Source, change Change) (Operation, error) {
+func routeOne(snap *Snapshot, targets, order []Source, change Change) (Operation, error) {
 	segs := splitPath(change.Path)
 	if segs == nil {
 		return Operation{}, fmt.Errorf("%w: %q", ErrInvalidPath, change.Path)
@@ -185,7 +185,7 @@ func routeOne(snap *Snapshot, targets []Source, change Change) (Operation, error
 			Change:     change,
 			Target:     *change.Target,
 			Creates:    !layerDefines(snap, *change.Target, segs),
-			ShadowedBy: shadowedAbove(snap, *change.Target, segs),
+			ShadowedBy: shadowedAbove(snap, order, *change.Target, segs),
 		}, nil
 	}
 
@@ -198,7 +198,7 @@ func routeOne(snap *Snapshot, targets []Source, change Change) (Operation, error
 		Change:     change,
 		Target:     target,
 		Creates:    !defines,
-		ShadowedBy: shadowedAbove(snap, target, segs),
+		ShadowedBy: shadowedAbove(snap, order, target, segs),
 	}, nil
 }
 
@@ -236,16 +236,28 @@ func layerDefines(snap *Snapshot, target Source, segs []string) bool {
 	return false
 }
 
-// shadowedAbove returns the layers that outrank a target and also define the
+// shadowedAbove returns the sources that outrank a target and also define the
 // path, so a write to the target will not change the effective value.
-func shadowedAbove(snap *Snapshot, target Source, segs []string) []Source {
+//
+// The walk is over the precedence order rather than over the snapshot's layers,
+// because a target may be a file that does not exist yet. Such a target
+// contributes no layer, so searching the layers for it would never find it and
+// every write aimed at a new file would be reported as effective — including
+// the case the report exists for, where a user sets a value the environment is
+// overriding.
+func shadowedAbove(snap *Snapshot, order []Source, target Source, segs []string) []Source {
+	values := make(map[Source]map[string]any, len(snap.layers))
+	for _, layer := range snap.layers {
+		values[layer.Source] = layer.Values
+	}
+
 	var (
 		found   []Source
 		reached bool
 	)
 
-	for _, layer := range snap.layers {
-		if layer.Source == target {
+	for _, src := range order {
+		if src == target {
 			reached = true
 
 			continue
@@ -255,8 +267,8 @@ func shadowedAbove(snap *Snapshot, target Source, segs []string) []Source {
 			continue
 		}
 
-		if _, ok := lookup(layer.Values, segs); ok {
-			found = append(found, layer.Source)
+		if _, ok := lookup(values[src], segs); ok {
+			found = append(found, src)
 		}
 	}
 

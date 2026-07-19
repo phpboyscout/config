@@ -522,9 +522,10 @@ func (s *Store) Sources() []string {
 func (s *Store) Plan(changes ...Change) (*Plan, error) {
 	s.mu.Lock()
 	targets := s.writableTargets()
+	order := s.sourceOrder()
 	s.mu.Unlock()
 
-	return route(s.Snapshot(), targets, changes)
+	return route(s.Snapshot(), targets, order, changes)
 }
 
 // Apply routes changes, writes them, and publishes the resulting snapshot.
@@ -574,7 +575,7 @@ func (s *Store) apply(ctx context.Context, changes []Change) (*Snapshot, bool, e
 
 	current := s.current.Load()
 
-	plan, err := route(current, s.writableTargets(), changes)
+	plan, err := route(current, s.writableTargets(), s.sourceOrder(), changes)
 	if err != nil {
 		return nil, false, err
 	}
@@ -843,6 +844,37 @@ func (s *Store) writableTargets() []Source {
 				if l.Source.Writable {
 					out = append(out, l.Source)
 				}
+			}
+
+			continue
+		}
+
+		if _, ok := bl.backend.(WritableBackend); ok && bl.backend.Capabilities().Writable {
+			out = append(out, Source{
+				Kind:     SourceFile,
+				Name:     bl.backend.ID(),
+				Writable: true,
+			})
+		}
+	}
+
+	return out
+}
+
+// sourceOrder returns every source in precedence order, including a synthesised
+// entry for a writable backend that has not contributed a layer yet.
+//
+// Routing needs the order rather than only the layers, because a write can be
+// aimed at a file that does not exist. Such a target matches nothing in the
+// snapshot, so its position — and therefore what outranks it — cannot be
+// recovered from the layers alone.
+func (s *Store) sourceOrder() []Source {
+	var out []Source
+
+	for _, bl := range s.loaded {
+		if len(bl.layers) > 0 {
+			for _, l := range bl.layers {
+				out = append(out, l.Source)
 			}
 
 			continue
