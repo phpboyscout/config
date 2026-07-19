@@ -102,6 +102,51 @@ would defeat it silently, turning a guaranteed refusal into a cooperative one.
 **Breaking:** `Store.Apply` and `Store.Reload` return `ErrWriteFromObserver` when called from
 within an observer callback.
 
+### R3 — 2026-07-19: invisible and bidirectional characters are escaped by design
+
+**AC3 said astral-plane emoji "survive a write unmangled", which read as a promise that every
+character comes back byte-for-byte. It does not, and should not.** The criterion is amended
+above to state the actual rule.
+
+**Measured behaviour.** Every character a reader can *see* survives verbatim — astral-plane
+emoji, CJK, accented Latin, Greek, Cyrillic. Every **invisible or bidirectional-control**
+character is emitted as an escape:
+
+| Escaped | Preserved verbatim |
+|---|---|
+| `U+202E` RLO, `U+202D` LRO, `U+2067` RLI, `U+2069` PDI | astral-plane emoji (`U+1F30D`) |
+| `U+200E` LRM, `U+200F` RLM, `U+061C` ALM | CJK ideographs |
+| `U+200B` ZWSP, `U+200C` ZWNJ, `U+200D` ZWJ | accented Latin, Greek, Cyrillic |
+| `U+2060` word joiner, `U+FEFF` ZWNBSP, `U+00AD` soft hyphen | |
+
+**This is a security property, not a formatting artefact.** The bidi controls are the Trojan
+Source construct (CVE-2021-42574): they make a document *render* one way and *parse* another,
+so a reviewer approves what they see while the parser reads something else. Configuration is
+exactly where that matters — these files gate deployments and carry credentials. The
+invisible-space family is the quieter version: `admin` and `ad<ZWSP>min` are indistinguishable
+on screen and are different strings. Escaping puts them in front of whoever reads the file,
+which is what the Go compiler and the forge renderers do.
+
+**Escaping is lossless.** An escape in a double-quoted scalar denotes exactly the character it
+replaces, so a round trip returns the original string byte for byte. Asserted rather than
+assumed, by decoding the emitted document and comparing.
+
+**Where it is enforced.** The behaviour comes from the emitter beneath `yamldoc`, not from
+either module, so a substrate change could withdraw it silently. It is pinned by a test in
+`yamldoc` covering thirteen dangerous characters and five visible ones. Nothing else in the
+toolkit would notice the regression.
+
+**How this was misread.** A family emoji is several astral-plane characters joined by `U+200D`.
+The emoji survive; the joiners between them are escaped. Read against AC3's original wording
+that looked like a fidelity failure, and was initially recorded as one. It is the feature
+working.
+
+**Also corrected in the same pass:** a map-valued `Put` over a subtree whose first key differed
+in length from the replacement was misaligned — silently promoting content to the top level
+when the replaced mapping led with a merge key, and panicking outright when the replacement key
+was longer. Fixed upstream in `yamldoc`; AC3's merge-key clause holds again once that release
+lands.
+
 ## Why this exists
 
 The module needs to write configuration back to the files it was loaded from — preserving
@@ -843,7 +888,9 @@ All four are eliminated by construction, not fixed.
    are not asserted.
 2. Repeated writes converge — no drift or accretion.
 3. Merge keys, folded and literal block scalars, anchor/alias pairs and astral-plane emoji
-   survive a write unmangled.
+   survive a write unmangled. **Every character a reader can see survives verbatim.**
+   Invisible and bidirectional-control characters are instead emitted as escapes — losslessly,
+   and deliberately: see [R3](#r3--2026-07-19-invisible-and-bidirectional-characters-are-escaped-by-design).
 4. `Remove` deletes a key and its subtree with no residue, obeying D17's five rules —
    including hoisting a trailing comment rather than destroying it.
 5. Creating a key attaches at the deepest existing ancestor without disturbing sibling

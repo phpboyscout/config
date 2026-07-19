@@ -191,7 +191,8 @@ func TestFidelity_ExoticConstructsSurviveAWrite(t *testing.T) {
 		},
 		{
 			// A plain astral-plane character survives verbatim. A zero-width
-			// joiner does not — see TestFidelity_ZeroWidthJoinersAreEscaped.
+			// joiner is escaped, by design — see
+			// TestFidelity_InvisibleCharactersAreEscapedLosslessly.
 			name:     "astral plane emoji",
 			src:      "greeting: \"hello 🌍 world\"\nother: keep\n",
 			survives: []string{"🌍"},
@@ -662,21 +663,25 @@ func assertCommentsSurvive(t *testing.T, source, after string) {
 }
 
 // AC3, partially divergent — recorded rather than glossed.
+// AC3 and R3 — invisible characters are escaped on write, and that is the
+// feature rather than a defect.
 //
-// A zero-width joiner is rewritten as a ‍ escape on write. The value is
-// preserved exactly: re-reading the file yields the original string byte for
-// byte, so nothing is lost and a restart sees what the author meant. What
-// changes is the text — a family emoji the author typed as one glyph comes back
-// as an escape sequence, which is a visible edit to a file this module promises
-// not to reformat.
+// A family emoji is several astral-plane characters joined by U+200D. The
+// emoji survive verbatim; the joiners between them come back as escapes, which
+// is why this initially read as a fidelity failure against AC3's first wording.
 //
-// Asserted as it behaves so the boundary is pinned. If it is later fixed
-// upstream this test fails, which is the correct prompt to tighten AC3 back to
-// its literal wording.
-func TestFidelity_ZeroWidthJoinersAreEscapedButValuePreserving(t *testing.T) {
+// Escaping invisible and bidirectional characters is a security measure. The
+// bidi controls are the Trojan Source construct (CVE-2021-42574) — they make a
+// file render one way and parse another, so a reviewer approves what they see
+// while the parser reads something else. Configuration is exactly where that
+// matters. The escape is lossless, so nothing is given up for it.
+//
+// yamldoc pins the full character matrix. Asserted here is the part this
+// module depends on: the value is unchanged by a write and reload.
+func TestFidelity_InvisibleCharactersAreEscapedLosslessly(t *testing.T) {
 	t.Parallel()
 
-	const family = "👨‍👩‍👧‍👦"
+	const family = "\U0001F468\u200d\U0001F469\u200d\U0001F467\u200d\U0001F466"
 
 	s, filesystem := fileWith(t, "greeting: \"hi "+family+"\"\nother: keep\n")
 
@@ -684,18 +689,27 @@ func TestFidelity_ZeroWidthJoinersAreEscapedButValuePreserving(t *testing.T) {
 		t.Fatalf("Apply: %v", err)
 	}
 
-	// The value is intact, which is the guarantee that actually matters.
+	// Read back from the bytes on disk, which is what a restart would see.
 	if err := s.Reload(context.Background()); err != nil {
 		t.Fatalf("Reload: %v", err)
 	}
 
 	if got := s.View().GetString("greeting"); got != "hi "+family {
-		t.Errorf("the value did not survive a write and reload:\n got %q\nwant %q", got, "hi "+family)
+		t.Errorf("the value did not survive a write and reload:\n got %q\nwant %q",
+			got, "hi "+family)
 	}
 
-	// The text did not, and that is the known divergence.
-	if strings.Contains(contentOf(t, filesystem, "/app.yaml"), family) {
-		t.Log("zero-width joiners now survive verbatim — AC3 can be tightened and this test replaced")
+	got := contentOf(t, filesystem, "/app.yaml")
+
+	// The visible emoji stay visible; only the joiners between them escape.
+	for _, visible := range []string{"\U0001F468", "\U0001F469", "\U0001F467", "\U0001F466"} {
+		if !strings.Contains(got, visible) {
+			t.Errorf("a visible character was escaped: %q\n%s", visible, got)
+		}
+	}
+
+	if strings.Contains(got, "\u200d") {
+		t.Errorf("a zero-width joiner was written literally, leaving it invisible:\n%s", got)
 	}
 }
 
