@@ -84,7 +84,14 @@ func (b *envBackend) Load(ctx context.Context, below []Layer) ([]Layer, error) {
 
 	var layers []Layer
 
-	for _, entry := range b.environ() {
+	// Sorted, because os.Environ returns the process environment block in
+	// whatever order it happens to hold — so when two variables map onto
+	// overlapping key paths, an unsorted walk lets the winner change between
+	// runs of the same program with the same environment.
+	entries := append([]string(nil), b.environ()...)
+	slices.Sort(entries)
+
+	for _, entry := range entries {
 		name, value, found := strings.Cut(entry, "=")
 		if !found || !strings.HasPrefix(name, prefix) {
 			continue

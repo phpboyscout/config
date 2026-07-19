@@ -601,12 +601,17 @@ func (s *Store) Sources() []string {
 // The result is exactly what Apply would execute, so a dry run cannot drift
 // from the real thing the way a separate preview implementation would.
 func (s *Store) Plan(changes ...Change) (*Plan, error) {
+	// Snapshot taken under the same lock as the routing inputs. Releasing it
+	// first let a concurrent write publish in between, so the plan could route
+	// pre-write layers against a post-write snapshot and preview a target the
+	// apply would not choose — the drift this method promises cannot happen.
 	s.mu.Lock()
-	targets := s.writableTargets()
 	order := s.sourceOrder()
+	targets := writableOnly(order)
+	snap := s.current.Load()
 	s.mu.Unlock()
 
-	return route(s.Snapshot(), targets, order, changes)
+	return route(snap, targets, order, changes)
 }
 
 // Apply routes changes, writes them, and publishes the resulting snapshot.
@@ -656,7 +661,9 @@ func (s *Store) apply(ctx context.Context, changes []Change) (*Snapshot, bool, e
 
 	current := s.current.Load()
 
-	plan, err := route(current, s.writableTargets(), s.sourceOrder(), changes)
+	sources := s.sourceOrder()
+
+	plan, err := route(current, writableOnly(sources), sources, changes)
 	if err != nil {
 		return nil, false, err
 	}
@@ -881,17 +888,12 @@ func collectKeys(values map[string]any, prefix string, seen map[string]bool, out
 	}
 }
 
-// writableTargets returns the sources a write may be routed at, in precedence
-// order.
-//
-// Derived from sourceOrder rather than walking the backends again: the rule for
-// a writable backend that has contributed nothing — a configured file that does
-// not exist yet is still a target — is subtle, and stating it twice is how the
-// two come to disagree about the same source.
-func (s *Store) writableTargets() []Source {
+// writableOnly filters a precedence order down to the sources a write may be
+// routed at, so the order is walked once rather than once per question.
+func writableOnly(order []Source) []Source {
 	var out []Source
 
-	for _, src := range s.sourceOrder() {
+	for _, src := range order {
 		if src.Writable {
 			out = append(out, src)
 		}

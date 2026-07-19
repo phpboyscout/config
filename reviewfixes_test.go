@@ -1326,3 +1326,57 @@ func TestUnmarshalKey_AnEmptyKeyMeansTheWholeScope(t *testing.T) {
 		t.Errorf("scoped decode = %+v, want the server section", scoped)
 	}
 }
+
+// os.Environ returns the process environment block in whatever order it holds,
+// so when two variables map onto overlapping key paths an unsorted walk lets
+// the winner change between runs of the same program with the same environment.
+func TestEnv_OrderingIsDeterministic(t *testing.T) {
+	t.Parallel()
+
+	// Two variables that both resolve into the log subtree.
+	vars := []string{"APP_LOG=fromlog", "APP_LOG_LEVEL=fromlevel"}
+
+	first := ""
+
+	for range 20 {
+		s, err := NewStore(context.Background(),
+			WithFiles(memFS(t, map[string]string{"/app.yaml": "other: 1\n"}), "/app.yaml"),
+			WithEnv("APP", envOf(vars...)))
+		if err != nil {
+			t.Fatalf("NewStore: %v", err)
+		}
+
+		got := fmt.Sprint(s.View().Get("log"))
+		if first == "" {
+			first = got
+
+			continue
+		}
+
+		if got != first {
+			t.Fatalf("resolution changed between runs: %q then %q", first, got)
+		}
+	}
+}
+
+// Creating a file produces one document, so addressing a later one is a request
+// that cannot be met. It used to surface as an internal invariant violation,
+// which blames the module for the caller's mistake.
+func TestApply_CreatingAFileCannotAddressALaterDocument(t *testing.T) {
+	t.Parallel()
+
+	s := storeOn(t, memFS(t, map[string]string{"/base.yaml": "a: 1\n"}), "/base.yaml", "/new.yaml")
+
+	target := Source{Kind: SourceFile, Name: "/new.yaml", Writable: true, Document: 1}
+	change := Set("a", 2)
+	change.Target = &target
+
+	_, err := s.Plan(change)
+	if err == nil {
+		t.Fatal("a target naming a document of a file that does not exist was accepted")
+	}
+
+	if !errors.Is(err, ErrInvalidTarget) {
+		t.Errorf("err = %v, want ErrInvalidTarget", err)
+	}
+}

@@ -167,11 +167,25 @@ func (w *fsnotifyWatcher) Watch(ctx context.Context, paths []string, onChange fu
 	// the set is covered without downgrading the whole of it.
 	stopPolling := func() {}
 
+	// Written by the event goroutine when it degrades, read by whoever stops
+	// watching, so it is guarded rather than left to chance.
+	var (
+		degradeMu   sync.Mutex
+		stopDegrade func()
+	)
+
 	if len(unwatchable) > 0 {
 		stop, err := w.fallback.Watch(ctx, unwatchable, onChange)
-		if err == nil {
-			stopPolling = stop
+		if err != nil {
+			// Reporting success here would tell the caller the whole set is
+			// covered while a path is silently uncovered, which is the failure
+			// this design exists to prevent.
+			_ = watcher.Close()
+
+			return nil, err
 		}
+
+		stopPolling = stop
 	}
 
 	done := make(chan struct{})
@@ -184,6 +198,14 @@ func (w *fsnotifyWatcher) Watch(ctx context.Context, paths []string, onChange fu
 
 			stopPolling()
 
+			degradeMu.Lock()
+			stop := stopDegrade
+			degradeMu.Unlock()
+
+			if stop != nil {
+				stop()
+			}
+
 			_ = watcher.Close()
 		})
 	}
@@ -193,10 +215,28 @@ func (w *fsnotifyWatcher) Watch(ctx context.Context, paths []string, onChange fu
 	// the returned stop function used to close the watcher, so a cancelled
 	// Watch leaked its inotify handle and left fsnotify's sender goroutine
 	// blocked on a channel nothing was draining.
+	// degrade takes over when native notification stops being trustworthy:
+	// polling is slower but it cannot silently stop working, which is the
+	// property that matters here.
+	var degradeOnce sync.Once
+
+	degrade := func() {
+		degradeOnce.Do(func() {
+			stop, err := w.fallback.Watch(ctx, paths, onChange)
+			if err != nil {
+				return
+			}
+
+			degradeMu.Lock()
+			stopDegrade = stop
+			degradeMu.Unlock()
+		})
+	}
+
 	go func() {
 		defer release()
 
-		consumeEvents(ctx, watcher, done, onChange)
+		consumeEvents(ctx, watcher, done, onChange, degrade)
 	}()
 
 	return release, nil
@@ -204,7 +244,13 @@ func (w *fsnotifyWatcher) Watch(ctx context.Context, paths []string, onChange fu
 
 // consumeEvents forwards filesystem events until the context or the watcher
 // ends.
-func consumeEvents(ctx context.Context, watcher *fsnotify.Watcher, done <-chan struct{}, onChange func()) {
+func consumeEvents(
+	ctx context.Context,
+	watcher *fsnotify.Watcher,
+	done <-chan struct{},
+	onChange func(),
+	degrade func(),
+) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -217,10 +263,12 @@ func consumeEvents(ctx context.Context, watcher *fsnotify.Watcher, done <-chan s
 			}
 
 			if !rewatch(watcher, event) {
-				// The watch could not be re-established, so treat the path as
-				// unwatchable from here and let the caller notice rather than
-				// going quiet for the life of the process.
+				// The watch could not be re-established — a re-add can lose the
+				// race with the rename that triggered it — so the path is
+				// watched by nothing from here. Degrade rather than go quiet
+				// for the life of the process.
 				onChange()
+				degrade()
 
 				return
 			}
@@ -230,6 +278,15 @@ func consumeEvents(ctx context.Context, watcher *fsnotify.Watcher, done <-chan s
 			if !ok {
 				return
 			}
+
+			// The kernel drops events when its queue overflows, and a watch
+			// descriptor can be invalidated outright. Discarding that left the
+			// application believing it would hear about changes when it would
+			// not — so the watch is abandoned here and the caller's degrade
+			// callback takes over.
+			degrade()
+
+			return
 		}
 	}
 }

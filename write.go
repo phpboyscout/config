@@ -99,9 +99,16 @@ type filePending struct {
 	// original is the file's content when Prepare ran, retained so a commit
 	// that fails partway through a batch can be undone.
 	original []byte
-	// existed records whether the file was there at all, so a rollback of a
-	// newly created file removes it rather than restoring an empty one.
+	// existed records whether the file was there when this write was prepared,
+	// so a rollback of a newly created file removes it rather than restoring an
+	// empty one.
 	existed bool
+	// loadedExist records whether the file was there when the backend last
+	// read it, which is what the fingerprint describes. A file absent at load
+	// and created by someone else before this write has the two disagree, and
+	// pairing the load-time hash with prepare-time existence would leave the
+	// backend rejecting every later write.
+	loadedExist bool
 	// fingerprint is a hash of the original content. Comparing content rather
 	// than modification time avoids depending on a filesystem's timestamp
 	// granularity, which varies and is coarse on some in-memory
@@ -155,6 +162,7 @@ func (b *fileBackend) Prepare(ctx context.Context, edits []Edit) (Pending, error
 		original:    original,
 		existed:     existed,
 		fingerprint: baseline,
+		loadedExist: b.loadedExist,
 		staged:      staged,
 		layers:      layers,
 		target:      target,
@@ -391,7 +399,7 @@ func (p *filePending) Rollback(_ context.Context) error {
 // was never successfully written would reject everything.
 func (p *filePending) restoreFingerprint() {
 	p.backend.loaded = p.fingerprint
-	p.backend.loadedExist = p.existed
+	p.backend.loadedExist = p.loadedExist
 }
 
 func (p *filePending) Discard(_ context.Context) error {
@@ -410,6 +418,17 @@ func (p *filePending) Discard(_ context.Context) error {
 // is what keeps the boundary meaningful: the document layer owns editing, and
 // this owns only the moment before a document exists.
 func seedDocument(path string, original []byte, edits []Edit) ([]byte, []Edit, error) {
+	for _, edit := range edits {
+		if edit.Document != 0 {
+			// Creating a file produces one document. Addressing a later one is
+			// a request that cannot be met, and saying so names the caller's
+			// mistake rather than reporting an internal invariant violation.
+			return nil, nil, fmt.Errorf(
+				"%w: %s does not exist, so it cannot be created with document %d",
+				ErrInvalidTarget, path, edit.Document)
+		}
+	}
+
 	for i, edit := range edits {
 		if edit.Remove {
 			// Nothing exists to remove yet. Dropping it here keeps the created
