@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"sync"
 	"time"
@@ -263,7 +264,7 @@ func (w *pollWatcher) Watch(ctx context.Context, paths []string, onChange func()
 				return
 			case <-ticker.C:
 				next := w.sample(paths)
-				if !sameState(state, next) {
+				if !maps.Equal(state, next) {
 					state = next
 
 					onChange()
@@ -292,18 +293,4 @@ func (w *pollWatcher) sample(paths []string) map[string]string {
 	}
 
 	return state
-}
-
-func sameState(a, b map[string]string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	for k, v := range a {
-		if b[k] != v {
-			return false
-		}
-	}
-
-	return true
 }

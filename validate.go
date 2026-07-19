@@ -98,7 +98,7 @@ func validateField(key string, field FieldSchema, value any, result *ValidationR
 	// Check required
 	if field.Required {
 		if value == nil || isZeroValue(value) {
-			envKey := strings.ToUpper(strings.ReplaceAll(key, ".", "_"))
+			envKey := envName(key)
 			result.addError(key, "required field is missing",
 				fmt.Sprintf("add %s to your config file or set the %s environment variable", key, envKey))
 
@@ -232,13 +232,17 @@ func isBool(v any) bool {
 func isDuration(v any) bool {
 	switch val := v.(type) {
 	case time.Duration:
-		_ = val
-
 		return true
 	case string:
 		_, err := time.ParseDuration(val)
 
 		return err == nil
+	case int, int8, int16, int32, int64, float32, float64:
+		// A bare number is a duration in nanoseconds, which is how the accessor
+		// reads it. Rejecting it here would have validation and GetDuration
+		// disagree about the same value — the inconsistency the string cases
+		// above were added to remove, left in place for numbers.
+		return true
 	default:
 		return false
 	}

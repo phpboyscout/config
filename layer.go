@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"maps"
 	"strings"
 )
 
@@ -221,9 +220,7 @@ func cloneValues(v any) any {
 // cloneMap deep-copies a value map.
 func cloneMap(m map[string]any) map[string]any {
 	out := make(map[string]any, len(m))
-	maps.Copy(out, m)
-
-	for k, v := range out {
+	for k, v := range m {
 		out[k] = cloneValues(v)
 	}
 

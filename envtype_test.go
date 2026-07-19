@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/spf13/pflag"
 )
@@ -122,5 +123,52 @@ func TestValidate_AStringFieldAcceptsNumericLookingText(t *testing.T) {
 
 	if got := s.View().GetString("server.timeout"); got != "60" {
 		t.Errorf("server.timeout = %q, want 60", got)
+	}
+}
+
+// A duration declared in a schema must accept every spelling the accessor
+// reads. GetDuration treats a bare number as nanoseconds, so validation
+// rejecting one would be the same disagreement the string cases fixed, left in
+// place for numbers.
+func TestValidate_DurationAcceptsEverySpellingTheAccessorReads(t *testing.T) {
+	t.Parallel()
+
+	type durCfg struct {
+		Timeout time.Duration `config:"timeout"`
+	}
+
+	schema, err := NewSchema(WithStructSchema(durCfg{}))
+	if err != nil {
+		t.Fatalf("NewSchema: %v", err)
+	}
+
+	cases := map[string]string{
+		"duration literal": "timeout: 5s\n",
+		"nanoseconds":      "timeout: 5000000000\n",
+		"float":            "timeout: 5000000000.0\n",
+	}
+
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			s, err := NewStore(context.Background(),
+				WithFiles(memFS(t, map[string]string{"/app.yaml": body}), "/app.yaml"),
+				WithSchema(schema))
+			if err != nil {
+				t.Fatalf("a schema rejected a duration the accessor reads: %v", err)
+			}
+
+			if got := s.View().GetDuration("timeout"); got != 5*time.Second {
+				t.Errorf("timeout = %v, want 5s", got)
+			}
+		})
+	}
+
+	// Something that is not a duration at all is still refused.
+	if _, err := NewStore(context.Background(),
+		WithFiles(memFS(t, map[string]string{"/app.yaml": "timeout: not-a-duration\n"}), "/app.yaml"),
+		WithSchema(schema)); err == nil {
+		t.Error("a value that is not a duration was accepted")
 	}
 }

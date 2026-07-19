@@ -1,6 +1,7 @@
 package config
 
 import (
+	"slices"
 	"strings"
 )
 
@@ -84,7 +85,21 @@ func (s *Snapshot) Get(path string) (any, bool) {
 // a value, not an absence, and code may require a parent to exist while it
 // holds nothing.
 func (s *Snapshot) Has(path string) bool {
-	_, ok := s.Get(path)
+	if s == nil {
+		return false
+	}
+
+	segs := splitPath(path)
+	if len(segs) == 0 {
+		return false
+	}
+
+	// Deliberately not Get: presence is a question about the tree's shape, and
+	// answering it through Get would deep-copy a subtree only to discard it.
+	// This is the module's hottest predicate — IsSet, Sub and the per-field
+	// probe behind UnmarshalSection all land here — so the copy is worth
+	// avoiding rather than inheriting.
+	_, ok := lookup(s.values, segs)
 
 	return ok
 }
@@ -177,7 +192,7 @@ func (s *Snapshot) Keys() []string {
 		keys = append(keys, k)
 	}
 
-	sortStrings(keys)
+	slices.Sort(keys)
 
 	return keys
 }
@@ -230,13 +245,4 @@ func normalisePath(path string) string {
 	}
 
 	return strings.Join(segs, ".")
-}
-
-// sortStrings sorts in place without pulling in a dependency for it.
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
-		}
-	}
 }

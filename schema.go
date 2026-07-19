@@ -169,12 +169,9 @@ func goTypeToSchemaType(t reflect.Type) string {
 		return "float64"
 	case reflect.Bool:
 		return "bool"
-	case reflect.Invalid, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		reflect.Uintptr, reflect.Complex64, reflect.Complex128, reflect.Array, reflect.Chan,
-		reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice,
-		reflect.Struct, reflect.UnsafePointer:
+	default:
+		// Anything a schema cannot describe more precisely is treated as a
+		// string, which is what the accessors will coerce it through anyway.
 		return "string"
 	}
-
-	return "string"
 }

@@ -401,10 +401,7 @@ func (s *Store) validate(loaded []backendLayers) error {
 		return nil
 	}
 
-	var flat []Layer
-	for _, bl := range loaded {
-		flat = append(flat, bl.layers...)
-	}
+	flat := flatten(loaded)
 
 	if result := validateSnapshot(newSnapshot(0, flat), s.schema); !result.Valid() {
 		return fmt.Errorf("%w: %s", ErrInvalidConfig, result.Error())
@@ -424,10 +421,7 @@ func (s *Store) violations(loaded []backendLayers) []ValidationError {
 		return nil
 	}
 
-	var flat []Layer
-	for _, bl := range loaded {
-		flat = append(flat, bl.layers...)
-	}
+	flat := flatten(loaded)
 
 	return validateSnapshot(newSnapshot(0, flat), s.schema).Errors
 }
@@ -580,10 +574,7 @@ func (s *Store) OnReloadError(f func(error)) { s.notifier.addErrorFunc(f) }
 func (s *Store) publish(loaded []backendLayers) *Snapshot {
 	s.loaded = loaded
 
-	var flat []Layer
-	for _, bl := range loaded {
-		flat = append(flat, bl.layers...)
-	}
+	flat := flatten(loaded)
 
 	next := newSnapshot(s.version.Add(1), flat)
 	s.current.Store(next)
@@ -914,33 +905,19 @@ func collectKeys(values map[string]any, prefix string, seen map[string]bool, out
 	}
 }
 
-// writableTargets lists the layers a change could be written to, in precedence
-// order, lowest first.
+// writableTargets returns the sources a write may be routed at, in precedence
+// order.
 //
-// A backend that contributed no layers is still a candidate when it can be
-// written: a configured file that does not exist yet is exactly where a new
-// key should go, and leaving it out would make the highest-precedence writable
-// layer depend on whether a file happened to exist.
+// Derived from sourceOrder rather than walking the backends again: the rule for
+// a writable backend that has contributed nothing — a configured file that does
+// not exist yet is still a target — is subtle, and stating it twice is how the
+// two come to disagree about the same source.
 func (s *Store) writableTargets() []Source {
 	var out []Source
 
-	for _, bl := range s.loaded {
-		if len(bl.layers) > 0 {
-			for _, l := range bl.layers {
-				if l.Source.Writable {
-					out = append(out, l.Source)
-				}
-			}
-
-			continue
-		}
-
-		if _, ok := bl.backend.(WritableBackend); ok && bl.backend.Capabilities().Writable {
-			out = append(out, Source{
-				Kind:     SourceFile,
-				Name:     bl.backend.ID(),
-				Writable: true,
-			})
+	for _, src := range s.sourceOrder() {
+		if src.Writable {
+			out = append(out, src)
 		}
 	}
 
@@ -1066,4 +1043,16 @@ func (s *Store) watchablePaths() ([]string, afero.Fs) {
 	}
 
 	return paths, filesystem
+}
+
+// flatten collects every layer in precedence order, discarding which backend
+// produced it. The pairing matters when rebuilding after a write; merging only
+// needs the order.
+func flatten(loaded []backendLayers) []Layer {
+	var flat []Layer
+	for _, bl := range loaded {
+		flat = append(flat, bl.layers...)
+	}
+
+	return flat
 }

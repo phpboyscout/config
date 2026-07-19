@@ -108,7 +108,7 @@ func (v *View) IsSet(path string) bool { return v.Has(path) }
 // scoped view without special-casing the top level.
 func (v *View) SectionExists(path string) bool {
 	if v.qualify(path) == "" {
-		return len(v.snap.Values()) > 0
+		return len(v.snap.values) > 0
 	}
 
 	got, ok := v.snap.Get(v.qualify(path))

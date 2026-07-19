@@ -162,8 +162,13 @@ func route(snap *Snapshot, targets, order []Source, changes []Change) (*Plan, er
 
 	plan := &Plan{Operations: make([]Operation, 0, len(changes))}
 
+	// Indexed once for the whole plan. Shadow detection needs a source's values
+	// per change, and a settings screen saving fifty fields would otherwise
+	// rebuild the same index fifty times.
+	values := indexLayers(snap)
+
 	for _, change := range changes {
-		op, err := routeOne(snap, targets, order, change)
+		op, err := routeOne(snap, targets, order, values, change)
 		if err != nil {
 			return nil, err
 		}
@@ -174,7 +179,7 @@ func route(snap *Snapshot, targets, order []Source, changes []Change) (*Plan, er
 	return plan, nil
 }
 
-func routeOne(snap *Snapshot, targets, order []Source, change Change) (Operation, error) {
+func routeOne(snap *Snapshot, targets, order []Source, values map[Source]map[string]any, change Change) (Operation, error) {
 	segs := splitPath(change.Path)
 	if segs == nil {
 		return Operation{}, fmt.Errorf("%w: %q", ErrInvalidPath, change.Path)
@@ -185,7 +190,7 @@ func routeOne(snap *Snapshot, targets, order []Source, change Change) (Operation
 			Change:     change,
 			Target:     *change.Target,
 			Creates:    !layerDefines(snap, *change.Target, segs),
-			ShadowedBy: shadowedAbove(snap, order, *change.Target, segs),
+			ShadowedBy: shadowedAbove(values, order, *change.Target, segs),
 		}, nil
 	}
 
@@ -198,7 +203,7 @@ func routeOne(snap *Snapshot, targets, order []Source, change Change) (Operation
 		Change:     change,
 		Target:     target,
 		Creates:    !defines,
-		ShadowedBy: shadowedAbove(snap, order, target, segs),
+		ShadowedBy: shadowedAbove(values, order, target, segs),
 	}, nil
 }
 
@@ -245,12 +250,7 @@ func layerDefines(snap *Snapshot, target Source, segs []string) bool {
 // every write aimed at a new file would be reported as effective — including
 // the case the report exists for, where a user sets a value the environment is
 // overriding.
-func shadowedAbove(snap *Snapshot, order []Source, target Source, segs []string) []Source {
-	values := make(map[Source]map[string]any, len(snap.layers))
-	for _, layer := range snap.layers {
-		values[layer.Source] = layer.Values
-	}
-
+func shadowedAbove(values map[Source]map[string]any, order []Source, target Source, segs []string) []Source {
 	var (
 		found   []Source
 		reached bool
@@ -273,4 +273,19 @@ func shadowedAbove(snap *Snapshot, order []Source, target Source, segs []string)
 	}
 
 	return found
+}
+
+// indexLayers maps each source to the values it contributed, so shadow
+// detection can look a source up rather than rescanning the layer list.
+func indexLayers(snap *Snapshot) map[Source]map[string]any {
+	if snap == nil {
+		return nil
+	}
+
+	values := make(map[Source]map[string]any, len(snap.layers))
+	for _, layer := range snap.layers {
+		values[layer.Source] = layer.Values
+	}
+
+	return values
 }

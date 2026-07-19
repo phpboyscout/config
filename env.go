@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -19,9 +20,9 @@ type envBackend struct {
 	// environ is the source of variables, injectable so tests need not mutate
 	// process state and race each other.
 	environ func() []string
-	// known supplies the key space of the layers below, used to disambiguate
-	// variable names. See mapKey.
-	known func() []string
+	// known is the key space of the layers below, used to disambiguate variable
+	// names. See mapKey.
+	known []string
 }
 
 // EnvOption configures the environment backend.
@@ -63,8 +64,7 @@ func (b *envBackend) ID() string { return "env:" + b.prefix }
 // observeKnownKeys receives the key space of the layers beneath, which is what
 // makes the reverse mapping from a variable name unambiguous.
 func (b *envBackend) observeKnownKeys(keys []string) {
-	snapshot := keys
-	b.known = func() []string { return snapshot }
+	b.known = keys
 }
 
 // Capabilities reports the environment as readable but never writable.
@@ -84,11 +84,6 @@ func (b *envBackend) Load(ctx context.Context) ([]Layer, error) {
 		return nil, nil
 	}
 
-	var known []string
-	if b.known != nil {
-		known = b.known()
-	}
-
 	prefix := b.prefix + "_"
 
 	var layers []Layer
@@ -99,7 +94,7 @@ func (b *envBackend) Load(ctx context.Context) ([]Layer, error) {
 			continue
 		}
 
-		key, err := mapKey(strings.TrimPrefix(name, prefix), known)
+		key, err := mapKey(strings.TrimPrefix(name, prefix), b.known)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s", err, name)
 		}
@@ -149,7 +144,7 @@ func mapKey(suffix string, known []string) (string, error) {
 	case 1:
 		return matches[0], nil
 	default:
-		sortStrings(matches)
+		slices.Sort(matches)
 
 		return "", fmt.Errorf("%w: it could mean %s", ErrAmbiguousEnvKey, strings.Join(matches, " or "))
 	}
