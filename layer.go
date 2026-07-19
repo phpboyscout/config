@@ -54,16 +54,10 @@ func (s Source) String() string {
 		}
 
 		return s.Name
-	case SourceEnv, SourceFlag:
-		if s.Name == "" {
-			return string(s.Kind)
-		}
-
-		return string(s.Kind) + ":" + s.Name
-	case SourceDefault, SourceOverride:
+	case SourceEnv, SourceFlag, SourceDefault, SourceOverride:
 		// Named, because a caller asking where a value came from needs to know
-		// which set of defaults or which runtime layer supplied it, not merely
-		// that it was one of them.
+		// which variable, flag, set of defaults or runtime layer supplied it,
+		// not merely that it was one of them.
 		if s.Name == "" {
 			return string(s.Kind)
 		}
@@ -71,6 +65,28 @@ func (s Source) String() string {
 		return string(s.Kind) + ":" + s.Name
 	default:
 		return string(s.Kind)
+	}
+}
+
+// Authored reports whether a source is one a person edits and a schema should
+// therefore govern.
+//
+// A file and a compiled-in default are written deliberately, so a key appearing
+// in one that the schema does not describe is worth reporting. The environment,
+// command-line flags and layers added at runtime are ambient: a deployment
+// platform exporting an unrelated prefixed variable must not be able to stop an
+// application starting.
+//
+// Declared beside the kinds it derives from, so the question is answered once
+// rather than by an allowlist in whatever code happens to need it.
+func (s Source) Authored() bool {
+	switch s.Kind {
+	case SourceFile, SourceDefault:
+		return true
+	case SourceEnv, SourceFlag, SourceOverride:
+		return false
+	default:
+		return false
 	}
 }
 
@@ -102,8 +118,9 @@ func mergeLayers(layers []Layer) (map[string]any, map[string]Source) {
 // mergeInto folds one layer's values into the accumulator, recording
 // provenance as it goes.
 func mergeInto(dst map[string]any, origin map[string]Source, src map[string]any, source Source, prefix string) {
-	for rawKey, value := range src {
-		key := normaliseKey(rawKey)
+	for key, value := range src {
+		// Keys arrive normalised: layers are normalised where they enter the
+		// Store, so doing it again here would be a second owner of the rule.
 		path := joinPath(prefix, key)
 
 		nested, isMap := asStringMap(value)
@@ -230,6 +247,22 @@ func cloneMap(m map[string]any) map[string]any {
 	return out
 }
 
+// normalised returns layers whose keys carry the module's casing rule.
+//
+// Applied where layers enter the Store, so "a Layer's keys are normalised" is a
+// property of every layer the Store holds rather than something each consumer
+// has to remember. It used to be done when a snapshot was built, which left
+// anything reading layers beforehand — the key space handed to a backend's
+// Load, or the keys collected for it — normalising again on its own account.
+func normalised(layers []Layer) []Layer {
+	out := make([]Layer, 0, len(layers))
+	for _, l := range layers {
+		out = append(out, Layer{Source: l.Source, Values: normaliseValues(l.Values)})
+	}
+
+	return out
+}
+
 // normaliseValues deep-copies a value map, normalising every key on the way, so
 // a layer can be queried with the same normalised paths as the merged view.
 func normaliseValues(m map[string]any) map[string]any {
@@ -256,7 +289,9 @@ func normaliseNested(v any) any {
 		return out
 	}
 
-	return cloneValues(v)
+	// Only a scalar reaches here — maps and sequences are handled above — and a
+	// scalar is already a value, so there is nothing to copy.
+	return v
 }
 
 // leafKeys lists every leaf path the given layers define, which is the key

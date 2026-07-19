@@ -28,17 +28,11 @@ func newSnapshot(version uint64, layers []Layer) *Snapshot {
 	owned := make([]Layer, 0, len(layers))
 
 	for _, l := range layers {
-		// Normalised as well as cloned. Merging lowercases keys on the way into
-		// the resolved values, but the layers kept whatever spelling their
-		// source used — so a lookup by normalised path found a key in the merged
-		// view and missed it in the layer that supplied it.
-		//
-		// Everything that asks a layer a question was affected: Shadowed missed
-		// the file defining a mixed-case key, and routing declared it a new key
-		// and wrote it to a different file, leaving the original behind and
-		// stale. That is the layer-correctness this module exists for, defeated
-		// by a spelling.
-		owned = append(owned, Layer{Source: l.Source, Values: normaliseValues(l.Values)})
+		// Cloned, not re-normalised: layers are normalised where they enter the
+		// Store, so their keys already match the paths a lookup uses. A snapshot
+		// whose contents can be changed through a reference the caller kept is
+		// not immutable, which is what the copy is for.
+		owned = append(owned, Layer{Source: l.Source, Values: cloneMap(l.Values)})
 	}
 
 	values, origin := mergeLayers(owned)

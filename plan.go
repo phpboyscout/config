@@ -187,25 +187,29 @@ func routeOne(snap *Snapshot, targets, order []Source, values map[Source]map[str
 		return Operation{}, fmt.Errorf("%w: %q", ErrInvalidPath, change.Path)
 	}
 
+	var (
+		target  Source
+		defines bool
+	)
+
 	if change.Target != nil {
 		pinned, err := matchTarget(targets, *change.Target)
 		if err != nil {
 			return Operation{}, err
 		}
 
-		return Operation{
-			Change:     change,
-			Target:     pinned,
-			Creates:    creates(change, layerDefines(snap, pinned, segs)),
-			ShadowedBy: shadowedAbove(values, order, pinned, segs),
-		}, nil
+		target, defines = pinned, layerDefines(snap, pinned, segs)
+	} else {
+		found, alreadyThere, ok := findTarget(snap, targets, segs)
+		if !ok {
+			return Operation{}, fmt.Errorf("%w: %s", ErrNoWritableLayer, change.Path)
+		}
+
+		target, defines = found, alreadyThere
 	}
 
-	target, defines, ok := findTarget(snap, targets, segs)
-	if !ok {
-		return Operation{}, fmt.Errorf("%w: %s", ErrNoWritableLayer, change.Path)
-	}
-
+	// Built once, so the pinned and routed paths cannot drift on how an
+	// operation reports what it will do.
 	return Operation{
 		Change:     change,
 		Target:     target,

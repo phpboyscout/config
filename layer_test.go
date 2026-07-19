@@ -76,13 +76,18 @@ func TestMerge_LaterLayerWinsPerLeaf(t *testing.T) {
 	}
 }
 
+// Keys carry the module's casing rule from the moment a layer enters the Store,
+// so merging receives them already normalised and does not apply the rule a
+// second time. The guarantee is asserted end to end by
+// TestApply_RoutesAMixedCaseKeyToTheFileThatOwnsIt, which is the behaviour a
+// user sees; this covers the rule itself.
 func TestMerge_KeysAreLowercased(t *testing.T) {
 	t.Parallel()
 
-	merged, origin := mergeLayers([]Layer{
+	merged, origin := mergeLayers(normalised([]Layer{
 		layer("a.yaml", map[string]any{"Server": map[string]any{"Port": 1}}),
 		layer("b.yaml", map[string]any{"SERVER": map[string]any{"PORT": 2}}),
-	})
+	}))
 
 	server, ok := asStringMap(merged["server"])
 	if !ok {

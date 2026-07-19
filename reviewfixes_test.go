@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1378,5 +1379,125 @@ func TestApply_CreatingAFileCannotAddressALaterDocument(t *testing.T) {
 
 	if !errors.Is(err, ErrInvalidTarget) {
 		t.Errorf("err = %v, want ErrInvalidTarget", err)
+	}
+}
+
+// Strict mode asks whether a key was authored, and Origin names only the layer
+// that won — so a typo genuinely written into a config file stopped being
+// reported the moment anyone exported a variable that happened to override it.
+func TestValidate_StrictModeCatchesATypoEvenWhenShadowed(t *testing.T) {
+	t.Parallel()
+
+	type cfg struct {
+		Log struct {
+			Level string `config:"log.level"`
+		}
+	}
+
+	schema, err := NewSchema(WithStructSchema(cfg{}), WithStrictMode())
+	if err != nil {
+		t.Fatalf("NewSchema: %v", err)
+	}
+
+	// The file has a typo, and an environment variable overrides that same key.
+	if _, err := NewStore(context.Background(),
+		WithFiles(memFS(t, map[string]string{"/app.yaml": "log:\n  levle: info\n"}), "/app.yaml"),
+		WithEnv("APP", envOf("APP_LOG_LEVLE=debug")),
+		WithSchema(schema)); err == nil {
+		t.Error("a misspelled key in a file was ignored because an env var shadowed it")
+	}
+
+	// An ambient variable alone is still not the application's business.
+	if _, err := NewStore(context.Background(),
+		WithFiles(memFS(t, map[string]string{"/app.yaml": "log:\n  level: info\n"}), "/app.yaml"),
+		WithEnv("APP", envOf("APP_VERSION=1.2.3")),
+		WithSchema(schema)); err != nil {
+		t.Errorf("an unrelated environment variable tripped strict mode: %v", err)
+	}
+}
+
+// Validation and the accessors must agree: a value GetInt or GetDuration reads
+// happily is that type as far as this module is concerned. Hand-rolled tables
+// had drifted from the accessors in three places.
+func TestValidate_AgreesWithTheAccessors(t *testing.T) {
+	t.Parallel()
+
+	type cfg struct {
+		Timeout time.Duration `config:"timeout"`
+		Count   int           `config:"count"`
+	}
+
+	schema, err := NewSchema(WithStructSchema(cfg{}))
+	if err != nil {
+		t.Fatalf("NewSchema: %v", err)
+	}
+
+	cases := map[string]string{
+		"unitless duration from a file": "timeout: 500\ncount: 1\n",
+		"duration with a unit":          "timeout: 5s\ncount: 1\n",
+		"large positive integer":        "timeout: 1s\ncount: 9223372036854775807\n",
+	}
+
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			s, err := NewStore(context.Background(),
+				WithFiles(memFS(t, map[string]string{"/app.yaml": body}), "/app.yaml"),
+				WithSchema(schema))
+			if err != nil {
+				t.Fatalf("the schema rejected a value the accessors read: %v", err)
+			}
+
+			// And the accessor genuinely reads it, which is the agreement.
+			if s.View().GetDuration("timeout") == 0 {
+				t.Error("GetDuration read nothing from a value the schema accepted")
+			}
+		})
+	}
+
+	// Something that is not a duration at all is still refused.
+	if _, err := NewStore(context.Background(),
+		WithFiles(memFS(t, map[string]string{"/app.yaml": "timeout: half past two\ncount: 1\n"}), "/app.yaml"),
+		WithSchema(schema)); err == nil {
+		t.Error("a value that is not a duration was accepted")
+	}
+}
+
+// A path polled because it could not be watched natively must not be polled a
+// second time when the rest of the set degrades, or every change to it would be
+// reported twice.
+func TestCoverage_DoesNotPollTheSamePathTwice(t *testing.T) {
+	t.Parallel()
+
+	filesystem := memFS(t, map[string]string{"/app.yaml": "a: 1\n"})
+
+	var fired atomic.Int64
+
+	cover := &coverage{
+		poll:     &pollWatcher{fs: filesystem, interval: 5 * time.Millisecond},
+		ctx:      context.Background(),
+		onChange: func() { fired.Add(1) },
+	}
+
+	if err := cover.ensurePolled([]string{"/app.yaml"}); err != nil {
+		t.Fatalf("ensurePolled: %v", err)
+	}
+
+	// The same path again, as a runtime degrade would ask for.
+	if err := cover.ensurePolled([]string{"/app.yaml", "/other.yaml"}); err != nil {
+		t.Fatalf("second ensurePolled: %v", err)
+	}
+
+	defer cover.stop()
+
+	if err := afero.WriteFile(filesystem, "/app.yaml", []byte("a: 2\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	time.Sleep(80 * time.Millisecond)
+
+	if got := fired.Load(); got > 1 {
+		t.Errorf("one change reported %d times — the path is polled more than once", got)
 	}
 }

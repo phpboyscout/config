@@ -81,13 +81,22 @@ func fieldIsResolved(cfg Reader, prefix string, field reflect.StructField) bool 
 		return targetHasResolvedFields(cfg, prefix, field.Type)
 	}
 
-	for _, name := range append([]string{canonical}, aliases...) {
-		fieldKey := joinPath(prefix, name)
+	if resolvedUnder(cfg, prefix, canonical, field.Type) {
+		return true
+	}
 
-		if cfg.IsSet(fieldKey) || targetHasResolvedFields(cfg, fieldKey, field.Type) {
+	for _, alias := range aliases {
+		if resolvedUnder(cfg, prefix, alias, field.Type) {
 			return true
 		}
 	}
 
 	return false
+}
+
+// resolvedUnder reports whether one spelling of a field has a value.
+func resolvedUnder(cfg Reader, prefix, name string, typ reflect.Type) bool {
+	key := joinPath(prefix, name)
+
+	return cfg.IsSet(key) || targetHasResolvedFields(cfg, key, typ)
 }

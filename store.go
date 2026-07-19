@@ -510,7 +510,7 @@ func (s *Store) loadAll(ctx context.Context) ([]backendLayers, error) {
 	for i, backend := range s.backends {
 		got, err := backend.Load(ctx, flatten(loaded))
 		if err == nil {
-			loaded = append(loaded, backendLayers{backend: backend, layers: got})
+			loaded = append(loaded, backendLayers{backend: backend, layers: normalised(got)})
 
 			continue
 		}
@@ -844,7 +844,7 @@ func (s *Store) rebuild(ctx context.Context, pending map[string]Pending) ([]back
 
 	for _, bl := range s.loaded {
 		if staged, ok := pending[bl.backend.ID()]; ok {
-			next = append(next, backendLayers{backend: bl.backend, layers: staged.Layers()})
+			next = append(next, backendLayers{backend: bl.backend, layers: normalised(staged.Layers())})
 
 			continue
 		}
@@ -863,7 +863,7 @@ func (s *Store) rebuild(ctx context.Context, pending map[string]Pending) ([]back
 			return nil, err
 		}
 
-		next = append(next, backendLayers{backend: bl.backend, layers: layers})
+		next = append(next, backendLayers{backend: bl.backend, layers: normalised(layers)})
 	}
 
 	return next, nil
@@ -871,7 +871,7 @@ func (s *Store) rebuild(ctx context.Context, pending map[string]Pending) ([]back
 
 func collectKeys(values map[string]any, prefix string, seen map[string]bool, out *[]string) {
 	for k, v := range values {
-		path := joinPath(prefix, normaliseKey(k))
+		path := joinPath(prefix, k)
 
 		nested, isMap := asStringMap(v)
 		if isMap && len(nested) > 0 {
@@ -984,6 +984,13 @@ func (s *Store) Watch(ctx context.Context, opts ...WatchOption) (stop func(), er
 	var stops []func()
 
 	for _, b := range watchable {
+		if fb, ok := b.(*fileBackend); ok {
+			// A watch that degrades and cannot fall back is a failure of the
+			// hot-reload contract, so it travels on the channel already meant
+			// for one.
+			fb.onWatchError = s.notifier.notifyError
+		}
+
 		stop, err := b.Watch(ctx, cfg.interval, onChange)
 		if err != nil {
 			// One source that cannot be watched makes the set incomplete, and
@@ -1042,7 +1049,6 @@ func WithWatcher(w Watcher) WatchOption {
 	return func(c *watchConfig) { c.watcher = w }
 }
 
-// watchablePaths returns the file paths behind the Store's backends.
 // watchableBackends returns the backends that can report their own changes.
 //
 // Asked by interface rather than by concrete type. Reaching into *fileBackend

@@ -124,17 +124,6 @@ func (s *ObservedSection[T]) Version() uint64 {
 	return s.version
 }
 
-func (s *ObservedSection[T]) store(section Section[T]) uint64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	next := section
-	s.current = &next
-	s.version++
-
-	return s.version
-}
-
 // storeIfNewer adopts a section only if it is a genuine change derived from a
 // snapshot at least as new as the one already held.
 //
@@ -297,7 +286,7 @@ func ObserveSection[T any](
 		return nil, err
 	}
 
-	observed.store(initial)
+	observed.storeIfNewer(initial, 0, nil)
 	observed.apply = settings.apply
 
 	if binder != nil {

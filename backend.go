@@ -127,6 +127,10 @@ type Capabilities struct {
 // between documents and values must not be crossed. Values never come from
 // yamldoc; documents never come from the value parser.
 type fileBackend struct {
+	// onWatchError, when set, is told when watching this file degrades and the
+	// fallback cannot be established either.
+	onWatchError func(error)
+
 	fs   afero.Fs
 	path string
 
@@ -312,16 +316,11 @@ func (b *readerBackend) Load(ctx context.Context, _ []Layer) ([]Layer, error) {
 		return nil, err
 	}
 
-	kind := b.kind
-	if kind == "" {
-		kind = SourceDefault
-	}
-
 	// An in-memory source cannot be written back to, so its layers must say so
 	// or routing would offer it as a target.
 	for i := range layers {
 		layers[i].Source.Writable = false
-		layers[i].Source.Kind = kind
+		layers[i].Source.Kind = b.kind
 	}
 
 	return layers, nil
@@ -336,5 +335,10 @@ func (b *fileBackend) Watch(
 	interval time.Duration,
 	onChange func(),
 ) (func(), error) {
-	return NewWatcher(b.fs, interval).Watch(ctx, []string{b.path}, onChange)
+	w := NewWatcher(b.fs, interval)
+	if fs, ok := w.(*fsnotifyWatcher); ok {
+		fs.onError = b.onWatchError
+	}
+
+	return w.Watch(ctx, []string{b.path}, onChange)
 }

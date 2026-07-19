@@ -206,14 +206,8 @@ func (n *notifier) notify(snap *Snapshot) {
 		// already changed, and one component being unable to react is not a
 		// reason to withhold the change from the others — but it must not pass
 		// silently either.
-		n.reportObserverError(err)
+		n.dispatch(n.onObserveError, err)
 	}
-}
-
-// reportObserverError hands an error to every registered observer-error
-// callback, copying the list under the lock and calling outside it.
-func (n *notifier) reportObserverError(err error) {
-	n.dispatch(n.onObserveError, err)
 }
 
 // notifyError reports a rejected reload.

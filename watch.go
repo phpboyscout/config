@@ -89,6 +89,11 @@ func realPathResolver(filesystem afero.Fs) (func(string) string, bool) {
 // fsnotifyWatcher uses operating-system notification, falling back to polling
 // when it cannot be established.
 type fsnotifyWatcher struct {
+	// onError, when set, is told when watching degrades and the fallback cannot
+	// be established either. Without it the failure would pass silently, which
+	// is the one outcome this design refuses.
+	onError func(error)
+
 	// fs is the filesystem the caller's paths are expressed in, used to confirm
 	// that a resolved path really is the same file.
 	fs afero.Fs
@@ -163,29 +168,23 @@ func (w *fsnotifyWatcher) Watch(ctx context.Context, paths []string, onChange fu
 		return w.fallback.Watch(ctx, paths, onChange)
 	}
 
-	// Some watchable, some not: watch what can be watched and poll the rest, so
-	// the set is covered without downgrading the whole of it.
-	stopPolling := func() {}
-
-	// Written by the event goroutine when it degrades, read by whoever stops
-	// watching, so it is guarded rather than left to chance.
-	var (
-		degradeMu   sync.Mutex
-		stopDegrade func()
-	)
+	// Coverage is one idea with two moments: paths that cannot be watched
+	// natively now, and paths whose native watch stops being trustworthy later.
+	// Both are answered by polling them, and writing that twice let the two
+	// disagree — the construction-time gap failed loudly while the runtime one
+	// returned quietly, leaving the caller holding a stop function and nothing
+	// watching.
+	cover := &coverage{poll: w.fallback, ctx: ctx, onChange: onChange}
 
 	if len(unwatchable) > 0 {
-		stop, err := w.fallback.Watch(ctx, unwatchable, onChange)
-		if err != nil {
-			// Reporting success here would tell the caller the whole set is
-			// covered while a path is silently uncovered, which is the failure
-			// this design exists to prevent.
+		if err := cover.ensurePolled(unwatchable); err != nil {
+			// Reporting success would tell the caller the whole set is covered
+			// while a path is silently uncovered, which is the failure this
+			// design exists to prevent.
 			_ = watcher.Close()
 
 			return nil, err
 		}
-
-		stopPolling = stop
 	}
 
 	done := make(chan struct{})
@@ -196,18 +195,20 @@ func (w *fsnotifyWatcher) Watch(ctx context.Context, paths []string, onChange fu
 		once.Do(func() {
 			close(done)
 
-			stopPolling()
-
-			degradeMu.Lock()
-			stop := stopDegrade
-			degradeMu.Unlock()
-
-			if stop != nil {
-				stop()
-			}
+			cover.stop()
 
 			_ = watcher.Close()
 		})
+	}
+
+	// degrade takes over when native notification stops being trustworthy:
+	// polling is slower but it cannot silently stop working, which is the
+	// property that matters here. A failure to establish it is reported the
+	// same way as at construction, rather than passing quietly.
+	degrade := func() {
+		if err := cover.ensurePolled(paths); err != nil && w.onError != nil {
+			w.onError(err)
+		}
 	}
 
 	// The consumer releases too. Cancelling the context is the natural way to
@@ -215,24 +216,6 @@ func (w *fsnotifyWatcher) Watch(ctx context.Context, paths []string, onChange fu
 	// the returned stop function used to close the watcher, so a cancelled
 	// Watch leaked its inotify handle and left fsnotify's sender goroutine
 	// blocked on a channel nothing was draining.
-	// degrade takes over when native notification stops being trustworthy:
-	// polling is slower but it cannot silently stop working, which is the
-	// property that matters here.
-	var degradeOnce sync.Once
-
-	degrade := func() {
-		degradeOnce.Do(func() {
-			stop, err := w.fallback.Watch(ctx, paths, onChange)
-			if err != nil {
-				return
-			}
-
-			degradeMu.Lock()
-			stopDegrade = stop
-			degradeMu.Unlock()
-		})
-	}
-
 	go func() {
 		defer release()
 
@@ -240,6 +223,77 @@ func (w *fsnotifyWatcher) Watch(ctx context.Context, paths []string, onChange fu
 	}()
 
 	return release, nil
+}
+
+// coverage tracks which paths are being polled, so the same paths are never
+// polled twice and every stop is released exactly once.
+type coverage struct {
+	poll     Watcher
+	ctx      context.Context
+	onChange func()
+
+	mu     sync.Mutex
+	polled map[string]bool
+	stops  []func()
+}
+
+// ensurePolled starts polling any of the given paths not already covered.
+//
+// Merging rather than adding: a path polled at construction because it could
+// not be watched natively must not be polled a second time when the rest of the
+// set degrades, or every change to it would be reported twice.
+func (c *coverage) ensurePolled(paths []string) error {
+	c.mu.Lock()
+
+	if c.polled == nil {
+		c.polled = map[string]bool{}
+	}
+
+	var fresh []string
+
+	for _, p := range paths {
+		if !c.polled[p] {
+			c.polled[p] = true
+
+			fresh = append(fresh, p)
+		}
+	}
+
+	c.mu.Unlock()
+
+	if len(fresh) == 0 {
+		return nil
+	}
+
+	stop, err := c.poll.Watch(c.ctx, fresh, c.onChange)
+	if err != nil {
+		c.mu.Lock()
+
+		for _, p := range fresh {
+			delete(c.polled, p)
+		}
+
+		c.mu.Unlock()
+
+		return err
+	}
+
+	c.mu.Lock()
+	c.stops = append(c.stops, stop)
+	c.mu.Unlock()
+
+	return nil
+}
+
+func (c *coverage) stop() {
+	c.mu.Lock()
+	stops := c.stops
+	c.stops = nil
+	c.mu.Unlock()
+
+	for _, s := range stops {
+		s()
+	}
 }
 
 // consumeEvents forwards filesystem events until the context or the watcher

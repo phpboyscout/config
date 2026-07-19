@@ -2,10 +2,11 @@ package config
 
 import (
 	"fmt"
+
 	"slices"
-	"strconv"
 	"strings"
-	"time"
+
+	"github.com/spf13/cast"
 )
 
 // ValidationError contains details about a single validation failure.
@@ -184,61 +185,43 @@ func typeMatches(expected string, value any) bool {
 }
 
 func isString(v any) bool {
+	// Deliberately not cast.ToStringE, which accepts nearly anything. A schema
+	// saying "string" means the value is textual, not that it could be rendered
+	// as text.
 	_, ok := v.(string)
 
 	return ok
 }
 
+// The remaining checks defer to the same conversions the accessors use, because
+// validation and the accessors must agree: a value GetInt reads happily is an
+// int as far as this module is concerned, and validation calling it otherwise
+// is validation being wrong.
+//
+// Hand-rolled tables had already drifted from that in three places — an
+// unsigned integer failed both isInt and isDuration while both accessors read
+// it, and "500" from an environment variable failed isDuration while
+// GetDuration read it as nanoseconds.
 func isInt(v any) bool {
-	switch val := v.(type) {
-	case int, int8, int16, int32, int64:
-		return true
-	case string:
-		// A layer that can only carry strings still supplies real values. The
-		// environment and command-line flags are strings by nature — the
-		// operating system offers nothing else — so a schema declaring a field
-		// an int must accept "9090" from them exactly as it accepts 9090 from a
-		// file. What matters is whether the value denotes the declared type,
-		// not how the layer that carried it happened to encode it.
-		//
-		// The rule underneath: validation and the accessors must agree. GetInt
-		// reads such a value happily, so validation calling it the wrong type
-		// would be validation being wrong.
-		_, err := strconv.Atoi(val)
+	_, err := cast.ToIntE(v)
 
-		return err == nil
-	default:
-		return false
-	}
+	return err == nil
 }
 
 func isFloat(v any) bool {
-	switch val := v.(type) {
-	case float32, float64:
-		return true
-	case int, int8, int16, int32, int64:
-		// A whole number is a legitimate float. Rejecting 1 for a field
-		// declared float64 would fail a document nobody would think to write
-		// as 1.0.
-		return true
-	case string:
-		// See isInt: a string-only layer still supplies real values.
-		_, err := strconv.ParseFloat(val, 64)
+	_, err := cast.ToFloat64E(v)
 
-		return err == nil
-	default:
-		return false
-	}
+	return err == nil
 }
 
 func isBool(v any) bool {
-	switch val := v.(type) {
+	// Narrowed: cast reads any number as a bool, which is a coercion a schema
+	// declaring "bool" should not accept from a config file.
+	switch v.(type) {
 	case bool:
 		return true
 	case string:
-		// See isInt. ParseBool accepts the spellings a person actually types
-		// into an environment variable: true/false, 1/0, t/f, T/TRUE and so on.
-		_, err := strconv.ParseBool(val)
+		_, err := cast.ToBoolE(v)
 
 		return err == nil
 	default:
@@ -247,22 +230,9 @@ func isBool(v any) bool {
 }
 
 func isDuration(v any) bool {
-	switch val := v.(type) {
-	case time.Duration:
-		return true
-	case string:
-		_, err := time.ParseDuration(val)
+	_, err := cast.ToDurationE(v)
 
-		return err == nil
-	case int, int8, int16, int32, int64, float32, float64:
-		// A bare number is a duration in nanoseconds, which is how the accessor
-		// reads it. Rejecting it here would have validation and GetDuration
-		// disagree about the same value — the inconsistency the string cases
-		// above were added to remove, left in place for numbers.
-		return true
-	default:
-		return false
-	}
+	return err == nil
 }
 
 // configuredKeys lists the keys a schema should police: those someone wrote
@@ -279,7 +249,10 @@ func configuredKeys(view *View) []string {
 	out := make([]string, 0, len(all))
 
 	for _, key := range all {
-		if src, ok := view.Origin(key); ok && (src.Kind == SourceEnv || src.Kind == SourceFlag) {
+		// Shadowed, not Origin. Origin names only the layer that won, so a typo
+		// genuinely written into a config file stopped being reported the moment
+		// anyone exported a variable that happened to override it.
+		if !slices.ContainsFunc(view.Shadowed(key), Source.Authored) {
 			continue
 		}
 
