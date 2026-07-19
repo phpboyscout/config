@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	"github.com/spf13/afero"
 	"gitlab.com/phpboyscout/go/yamldoc"
@@ -107,7 +109,10 @@ type filePending struct {
 	fingerprint [32]byte
 	staged      []byte
 	layers      []Layer
-	tempPath    string
+	// target is the path actually written: the backend's path, or whatever it
+	// points at when it is a symlink.
+	target   string
+	tempPath string
 }
 
 // Prepare applies edits to the file's documents and stages the result.
@@ -120,6 +125,8 @@ func (b *fileBackend) Prepare(ctx context.Context, edits []Edit) (Pending, error
 	if err != nil {
 		return nil, err
 	}
+
+	target := resolveTarget(b.fs, b.path)
 
 	// The comparison point is what was read at load, so a change that landed
 	// between then and now is caught. Fingerprinting here instead would
@@ -150,7 +157,8 @@ func (b *fileBackend) Prepare(ctx context.Context, edits []Edit) (Pending, error
 		fingerprint: baseline,
 		staged:      staged,
 		layers:      layers,
-		tempPath:    b.path + ".yamldoc-tmp",
+		target:      target,
+		tempPath:    stagingPath(target),
 	}, nil
 }
 
@@ -295,10 +303,10 @@ func (p *filePending) Commit(ctx context.Context) error {
 		return err
 	}
 
-	if err := p.backend.fs.Rename(p.tempPath, p.backend.path); err != nil {
+	if err := p.backend.fs.Rename(p.tempPath, p.target); err != nil {
 		_ = p.backend.fs.Remove(p.tempPath)
 
-		return fmt.Errorf("config: committing %s: %w", p.backend.path, err)
+		return fmt.Errorf("config: committing %s: %w", p.target, err)
 	}
 
 	// The content just written is now what this backend knows the file to hold.
@@ -314,7 +322,7 @@ func (p *filePending) Commit(ctx context.Context) error {
 }
 
 func (p *filePending) writeTemp() error {
-	if dir := filepath.Dir(p.backend.path); dir != "" && dir != "." {
+	if dir := filepath.Dir(p.target); dir != "" && dir != "." {
 		if err := p.backend.fs.MkdirAll(dir, configDirMode); err != nil {
 			return fmt.Errorf("config: preparing %s: %w", dir, err)
 		}
@@ -339,7 +347,7 @@ func (p *filePending) mode() fs.FileMode {
 		return configFileMode
 	}
 
-	info, err := p.backend.fs.Stat(p.backend.path)
+	info, err := p.backend.fs.Stat(p.target)
 	if err != nil {
 		return configFileMode
 	}
@@ -359,14 +367,14 @@ func (p *filePending) Rollback(_ context.Context) error {
 
 	if !p.existed {
 		// The file is ours; removing it returns the world to how it was.
-		if err := p.backend.fs.Remove(p.backend.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := p.backend.fs.Remove(p.target); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("config: rolling back %s: %w", p.backend.path, err)
 		}
 
 		return nil
 	}
 
-	if err := afero.WriteFile(p.backend.fs, p.backend.path, p.original, p.mode()); err != nil {
+	if err := afero.WriteFile(p.backend.fs, p.target, p.original, p.mode()); err != nil {
 		return fmt.Errorf("config: rolling back %s: %w", p.backend.path, err)
 	}
 
@@ -508,4 +516,56 @@ func documentKey(doc *yamldoc.Document, parent, seg string) string {
 	}
 
 	return seg
+}
+
+// stagingCounter distinguishes concurrent staging files within one process.
+var stagingCounter atomic.Uint64
+
+// stagingPath returns a staging path unique to this write.
+//
+// A fixed name derived from the target let two writers stage over each other:
+// the second's content lands in the first's temporary file, and the first
+// renames it into place believing it wrote its own. The conflict check cannot
+// see that, because it inspects the target rather than the staging file.
+func stagingPath(target string) string {
+	return fmt.Sprintf("%s.%d-%d.yamldoc-tmp", target, os.Getpid(), stagingCounter.Add(1))
+}
+
+// resolveTarget follows a symlink to the file it points at.
+//
+// Committing is a rename over the target path, and rename replaces the link
+// itself rather than writing through it. A configuration file managed by a
+// dotfile tool is routinely a symlink into a tracked repository, so writing to
+// one used to silently replace the link with a regular file and leave the real
+// file untouched — the user's change absent from the repository they keep it
+// in, and the link they rely on gone.
+func resolveTarget(filesystem afero.Fs, path string) string {
+	reader, ok := filesystem.(afero.LinkReader)
+	if !ok {
+		return path
+	}
+
+	seen := map[string]bool{}
+	current := path
+
+	for range 16 {
+		if seen[current] {
+			return path
+		}
+
+		seen[current] = true
+
+		dest, err := reader.ReadlinkIfPossible(current)
+		if err != nil {
+			return current
+		}
+
+		if !filepath.IsAbs(dest) {
+			dest = filepath.Join(filepath.Dir(current), dest)
+		}
+
+		current = dest
+	}
+
+	return current
 }

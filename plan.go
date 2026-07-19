@@ -17,8 +17,10 @@ var (
 	// ErrInvalidPath is returned for a malformed dotted path.
 	ErrInvalidPath = errors.New("config: invalid path")
 
-	// ErrInvalidTarget is returned when a decode target cannot receive values.
-	ErrInvalidTarget = errors.New("config: invalid decode target")
+	// ErrInvalidTarget is returned when a target cannot receive what is being
+	// asked of it: a decode target that cannot hold values, a layer with no
+	// name, or a pinned write target naming no writable source.
+	ErrInvalidTarget = errors.New("config: invalid target")
 )
 
 // Change is a single edit to persist.
@@ -186,11 +188,16 @@ func routeOne(snap *Snapshot, targets, order []Source, values map[Source]map[str
 	}
 
 	if change.Target != nil {
+		pinned, err := matchTarget(targets, *change.Target)
+		if err != nil {
+			return Operation{}, err
+		}
+
 		return Operation{
 			Change:     change,
-			Target:     *change.Target,
-			Creates:    !layerDefines(snap, *change.Target, segs),
-			ShadowedBy: shadowedAbove(values, order, *change.Target, segs),
+			Target:     pinned,
+			Creates:    creates(change, layerDefines(snap, pinned, segs)),
+			ShadowedBy: shadowedAbove(values, order, pinned, segs),
 		}, nil
 	}
 
@@ -202,9 +209,39 @@ func routeOne(snap *Snapshot, targets, order []Source, values map[Source]map[str
 	return Operation{
 		Change:     change,
 		Target:     target,
-		Creates:    !defines,
+		Creates:    creates(change, defines),
 		ShadowedBy: shadowedAbove(values, order, target, segs),
 	}, nil
+}
+
+// creates reports whether an operation will add a key that is not there.
+//
+// A removal never creates anything. Computing it the same way for both meant a
+// dry run of removing an absent key read "remove x → app.yaml (new key)",
+// which describes the opposite of what would happen.
+func creates(change Change, defines bool) bool {
+	if change.Remove {
+		return false
+	}
+
+	return !defines
+}
+
+// matchTarget resolves a caller-pinned target against the sources that exist.
+//
+// Matching by name rather than by whole-struct equality, because a caller
+// constructing a Source by hand will not reproduce every field — Writable and
+// Document in particular — and an unmatched target used to route silently, plan
+// a plausible dry run, and then fail at apply with an internal-invariant error
+// blaming the module for the caller's typo.
+func matchTarget(targets []Source, want Source) (Source, error) {
+	for _, t := range targets {
+		if t.Name == want.Name && t.Document == want.Document {
+			return t, nil
+		}
+	}
+
+	return Source{}, fmt.Errorf("%w: no writable source named %q", ErrInvalidTarget, want.Name)
 }
 
 // findTarget walks the writable targets in reverse precedence for the first

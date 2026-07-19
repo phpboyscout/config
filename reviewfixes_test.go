@@ -2,8 +2,12 @@ package config
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/pflag"
@@ -498,5 +502,171 @@ func TestValidate_StrictModeIgnoresAmbientEnvironmentVariables(t *testing.T) {
 		WithFiles(memFS(t, map[string]string{"/app.yaml": "log:\n  levle: info\n"}), "/app.yaml"),
 		WithSchema(schema)); err == nil {
 		t.Error("strict mode accepted a misspelled key in a configuration file")
+	}
+}
+
+// A configuration file managed by a dotfile tool is routinely a symlink into a
+// tracked repository. Committing is a rename over the target path, and rename
+// replaces the link rather than writing through it — so the link was destroyed
+// and the file the user actually keeps their config in never changed.
+func TestApply_WritesThroughASymlink(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real.yaml")
+	link := filepath.Join(dir, "link.yaml")
+
+	if err := os.WriteFile(real, []byte("a: 1\n"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	s, err := NewStore(context.Background(), WithFiles(afero.NewOsFs(), link))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	if _, err := s.Apply(context.Background(), Set("a", 2)); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatalf("lstat: %v", err)
+	}
+
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Error("the symlink was replaced by a regular file")
+	}
+
+	body, err := os.ReadFile(real)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+
+	if !strings.Contains(string(body), "a: 2") {
+		t.Errorf("the file the link points at was not updated:\n%s", body)
+	}
+}
+
+// A pinned target naming no writable source is the caller's mistake, and it
+// used to plan a plausible dry run and then fail at apply with an internal
+// invariant error — the module blaming itself for a typo, and the preview
+// disagreeing with the write.
+func TestPlan_RejectsATargetThatNamesNothing(t *testing.T) {
+	t.Parallel()
+
+	s := storeOn(t, memFS(t, map[string]string{"/app.yaml": "a: 1\n"}), "/app.yaml")
+
+	bogus := Source{Kind: SourceFile, Name: "/typo.yaml", Writable: true}
+	change := Set("a", 2)
+	change.Target = &bogus
+
+	_, err := s.Plan(change)
+	if !errors.Is(err, ErrInvalidTarget) {
+		t.Fatalf("err = %v, want ErrInvalidTarget", err)
+	}
+
+	if !strings.Contains(err.Error(), "/typo.yaml") {
+		t.Errorf("the error does not name the target: %v", err)
+	}
+}
+
+// A pinned target built by hand will not reproduce every field of the Source
+// the Store holds, so matching has to be by identity rather than whole-struct
+// equality.
+func TestPlan_AcceptsATargetBuiltByHand(t *testing.T) {
+	t.Parallel()
+
+	s := storeOn(t, memFS(t, map[string]string{
+		"/base.yaml": "a: 1\n",
+		"/over.yaml": "b: 1\n",
+	}), "/base.yaml", "/over.yaml")
+
+	// Deliberately missing Writable, which a caller would not think to set.
+	pinned := Source{Kind: SourceFile, Name: "/base.yaml"}
+	change := Set("a", 2)
+	change.Target = &pinned
+
+	plan, err := s.Plan(change)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	if got := plan.Operations[0].Target.Name; got != "/base.yaml" {
+		t.Errorf("target = %s, want /base.yaml", got)
+	}
+
+	if plan.Operations[0].Creates {
+		t.Error("an existing key was reported as newly created")
+	}
+}
+
+// A removal never creates anything. Reporting otherwise made a dry run describe
+// the opposite of what it would do.
+func TestPlan_RemovingAnAbsentKeyDoesNotReportCreation(t *testing.T) {
+	t.Parallel()
+
+	s := storeOn(t, memFS(t, map[string]string{"/app.yaml": "a: 1\n"}), "/app.yaml")
+
+	plan, err := s.Plan(Remove("nothere"))
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	if plan.Operations[0].Creates {
+		t.Error("removing an absent key was reported as creating it")
+	}
+
+	if strings.Contains(plan.String(), "new key") {
+		t.Errorf("the dry run describes a removal as a creation: %q", plan.String())
+	}
+}
+
+// Cancelling the context is the natural way to stop watching, and it is why the
+// event loop watches ctx.Done at all — but only the returned stop function used
+// to close the watcher, leaking the handle and the goroutine feeding it.
+func TestWatch_CancellingTheContextReleasesTheWatcher(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "app.yaml")
+
+	if err := os.WriteFile(path, []byte("a: 1\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	w := NewWatcher(afero.NewOsFs(), time.Hour)
+
+	fired := make(chan struct{}, 4)
+
+	stop, err := w.Watch(ctx, []string{path}, func() {
+		select {
+		case fired <- struct{}{}:
+		default:
+		}
+	})
+	if err != nil {
+		t.Fatalf("Watch: %v", err)
+	}
+
+	defer stop()
+
+	cancel()
+	time.Sleep(100 * time.Millisecond)
+
+	if err := os.WriteFile(path, []byte("a: 2\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	select {
+	case <-fired:
+		t.Error("a cancelled watch is still delivering events")
+	case <-time.After(300 * time.Millisecond):
 	}
 }

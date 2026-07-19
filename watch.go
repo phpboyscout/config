@@ -177,9 +177,7 @@ func (w *fsnotifyWatcher) Watch(ctx context.Context, paths []string, onChange fu
 
 	var once sync.Once
 
-	go consumeEvents(ctx, watcher, done, onChange)
-
-	return func() {
+	release := func() {
 		once.Do(func() {
 			close(done)
 
@@ -187,7 +185,20 @@ func (w *fsnotifyWatcher) Watch(ctx context.Context, paths []string, onChange fu
 
 			_ = watcher.Close()
 		})
-	}, nil
+	}
+
+	// The consumer releases too. Cancelling the context is the natural way to
+	// shut down — it is why consumeEvents watches ctx.Done at all — but only
+	// the returned stop function used to close the watcher, so a cancelled
+	// Watch leaked its inotify handle and left fsnotify's sender goroutine
+	// blocked on a channel nothing was draining.
+	go func() {
+		defer release()
+
+		consumeEvents(ctx, watcher, done, onChange)
+	}()
+
+	return release, nil
 }
 
 // consumeEvents forwards filesystem events until the context or the watcher
@@ -204,7 +215,15 @@ func consumeEvents(ctx context.Context, watcher *fsnotify.Watcher, done <-chan s
 				return
 			}
 
-			rewatch(watcher, event)
+			if !rewatch(watcher, event) {
+				// The watch could not be re-established, so treat the path as
+				// unwatchable from here and let the caller notice rather than
+				// going quiet for the life of the process.
+				onChange()
+
+				return
+			}
+
 			onChange()
 		case _, ok := <-watcher.Errors:
 			if !ok {
@@ -219,13 +238,17 @@ func consumeEvents(ctx context.Context, watcher *fsnotify.Watcher, done <-chan s
 // Saving by writing a temporary file and renaming it replaces the inode, so
 // the original watch is left pointing at a file nothing will write to again
 // and every later save goes unnoticed.
-func rewatch(watcher *fsnotify.Watcher, event fsnotify.Event) {
+func rewatch(watcher *fsnotify.Watcher, event fsnotify.Event) bool {
 	if event.Op&(fsnotify.Rename|fsnotify.Remove) == 0 {
-		return
+		return true
 	}
 
 	_ = watcher.Remove(event.Name)
-	_ = watcher.Add(event.Name)
+
+	// A re-add can lose a race with the rename that triggered it, and the path
+	// is then watched by nothing. Reporting the failure lets the caller fall
+	// back rather than believing it is still being told about saves.
+	return watcher.Add(event.Name) == nil
 }
 
 // pollWatcher checks for changes on an interval.
