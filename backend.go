@@ -213,3 +213,48 @@ func decodeDocuments(path string, src []byte) ([]Layer, error) {
 
 	return layers, nil
 }
+
+// readerBackend contributes configuration from an in-memory source.
+//
+// This is how compiled-in defaults reach the configuration: an embedded asset
+// is read once at startup and contributes a layer like any other, so it takes
+// part in precedence and provenance rather than being a special case.
+type readerBackend struct {
+	name    string
+	content []byte
+}
+
+// NewReaderBackend returns a backend contributing YAML from bytes.
+//
+// The name appears in provenance, so give it something a user would recognise
+// — "embedded:defaults.yaml" rather than "reader1".
+func NewReaderBackend(name string, content []byte) Backend {
+	return &readerBackend{name: name, content: content}
+}
+
+func (b *readerBackend) ID() string { return b.name }
+
+// Capabilities reports an in-memory source as readable but not writable:
+// there is nowhere for a write to persist to.
+func (b *readerBackend) Capabilities() Capabilities {
+	return Capabilities{Writable: false}
+}
+
+func (b *readerBackend) Load(ctx context.Context) ([]Layer, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	layers, err := decodeDocuments(b.name, b.content)
+	if err != nil {
+		return nil, err
+	}
+
+	// An in-memory source cannot be written back to, so its layers must say so
+	// or routing would offer it as a target.
+	for i := range layers {
+		layers[i].Source.Writable = false
+	}
+
+	return layers, nil
+}

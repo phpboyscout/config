@@ -16,6 +16,9 @@ var (
 
 	// ErrInvalidPath is returned for a malformed dotted path.
 	ErrInvalidPath = errors.New("config: invalid path")
+
+	// ErrInvalidTarget is returned when a decode target cannot receive values.
+	ErrInvalidTarget = errors.New("config: invalid decode target")
 )
 
 // Change is a single edit to persist.

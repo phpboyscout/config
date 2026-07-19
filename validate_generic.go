@@ -41,7 +41,7 @@ func SchemaOf[T any](opts ...SchemaOption) (*Schema, error) {
 // ValidateStruct validates cfg against the schema derived from T, returning a
 // formatted error if any rule fails or nil if the configuration is valid.
 //
-// It takes the Containable interface, so callers do not need to type-assert
+// It takes the Reader interface, so callers do not need to type-assert
 // Props.Config down to the concrete *Container. It is the recommended way to
 // validate a command or feature's config slice:
 //
@@ -50,7 +50,7 @@ func SchemaOf[T any](opts ...SchemaOption) (*Schema, error) {
 //	}
 //
 // Schema options such as WithStrictMode may be passed through.
-func ValidateStruct[T any](cfg Containable, opts ...SchemaOption) error {
+func ValidateStruct[T any](cfg *View, opts ...SchemaOption) error {
 	schema, err := SchemaOf[T](opts...)
 	if err != nil {
 		return err

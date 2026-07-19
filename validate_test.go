@@ -1,7 +1,7 @@
 package config
 
 import (
-	"log/slog"
+	"context"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -9,23 +9,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newTestContainer(t *testing.T, yaml string) *Container {
+// newTestContainer builds a view over a single in-memory config file.
+func newTestContainer(t *testing.T, yaml string) *View {
 	t.Helper()
 
-	l := slog.New(slog.DiscardHandler)
 	fs := afero.NewMemMapFs()
+	require.NoError(t, afero.WriteFile(fs, "/config.yaml", []byte(yaml), 0o644))
 
-	err := afero.WriteFile(fs, "/config.yaml", []byte(yaml), 0o644)
+	s, err := NewStore(context.Background(), WithFiles(fs, "/config.yaml"))
 	require.NoError(t, err)
 
-	c, err := LoadFilesContainer(fs, WithLogger(l), WithConfigFiles("/config.yaml"))
-	require.NoError(t, err)
-	require.NotNil(t, c)
-
-	container, ok := c.(*Container)
-	require.True(t, ok)
-
-	return container
+	return s.View()
 }
 
 func TestValidate_RequiredFieldPresent(t *testing.T) {
@@ -233,63 +227,83 @@ func TestValidationResult_Error(t *testing.T) {
 	assert.Contains(t, errStr, "c.d: wrong type")
 }
 
-func TestLoadFilesContainerWithSchema_Valid(t *testing.T) {
-	// Not parallel — t.Setenv modifies process environment
-	t.Setenv("GITHUB_TOKEN", "")
+// A Store built with a schema validates before publishing, so an application
+// never starts on configuration it has said it cannot use.
+func TestStore_WithSchema_Valid(t *testing.T) {
+	t.Parallel()
 
-	l := slog.New(slog.DiscardHandler)
 	fs := afero.NewMemMapFs()
-
-	err := afero.WriteFile(fs, "/config.yaml", []byte(`
+	require.NoError(t, afero.WriteFile(fs, "/config.yaml", []byte(`
 github:
   token: "secret"
 log:
   level: info
-`), 0o644)
-	require.NoError(t, err)
+`), 0o644))
 
 	schema, err := NewSchema(WithStructSchema(testAppConfig{}))
 	require.NoError(t, err)
 
-	c, err := LoadFilesContainerWithSchema(fs, schema, WithLogger(l), WithConfigFiles("/config.yaml"))
+	s, err := NewStore(context.Background(), WithFiles(fs, "/config.yaml"), WithSchema(schema))
 	require.NoError(t, err)
-	require.NotNil(t, c)
 
-	assert.Equal(t, "secret", c.GetString("github.token"))
+	assert.Equal(t, "secret", s.View().GetString("github.token"))
 }
 
-func TestLoadFilesContainerWithSchema_Invalid(t *testing.T) {
-	// Not parallel — t.Setenv modifies process environment
-	t.Setenv("GITHUB_TOKEN", "")
+func TestStore_WithSchema_Invalid(t *testing.T) {
+	t.Parallel()
 
-	l := slog.New(slog.DiscardHandler)
 	fs := afero.NewMemMapFs()
-
-	err := afero.WriteFile(fs, "/config.yaml", []byte(`
-log:
-  level: info
-`), 0o644)
-	require.NoError(t, err)
+	require.NoError(t, afero.WriteFile(fs, "/config.yaml", []byte("log:\n  level: info\n"), 0o644))
 
 	schema, err := NewSchema(WithStructSchema(testAppConfig{}))
 	require.NoError(t, err)
 
-	c, err := LoadFilesContainerWithSchema(fs, schema, WithLogger(l), WithConfigFiles("/config.yaml"))
-	require.Error(t, err)
-	assert.Nil(t, c)
+	s, err := NewStore(context.Background(), WithFiles(fs, "/config.yaml"), WithSchema(schema))
+	require.ErrorIs(t, err, ErrInvalidConfig)
+	assert.Nil(t, s)
 	assert.Contains(t, err.Error(), "github.token")
 }
 
-func TestLoadFilesContainerWithSchema_FileNotFound(t *testing.T) {
+// Validation applies to the resolved configuration, not to any single layer:
+// a base that omits a required key is valid when an overlay supplies it.
+func TestStore_WithSchema_ValidatesTheResolvedConfiguration(t *testing.T) {
 	t.Parallel()
 
-	l := slog.New(slog.DiscardHandler)
 	fs := afero.NewMemMapFs()
+	require.NoError(t, afero.WriteFile(fs, "/base.yaml", []byte("log:\n  level: info\n"), 0o644))
+	require.NoError(t, afero.WriteFile(fs, "/over.yaml", []byte("github:\n  token: from-overlay\n"), 0o644))
 
 	schema, err := NewSchema(WithStructSchema(testAppConfig{}))
 	require.NoError(t, err)
 
-	c, err := LoadFilesContainerWithSchema(fs, schema, WithLogger(l), WithConfigFiles("/nonexistent.yaml"))
+	s, err := NewStore(context.Background(),
+		WithFiles(fs, "/base.yaml", "/over.yaml"), WithSchema(schema))
+	require.NoError(t, err, "neither file is complete alone, but together they are")
+	assert.Equal(t, "from-overlay", s.View().GetString("github.token"))
+}
+
+// A reload that fails validation leaves the previous configuration live:
+// last-known-good beats values the application has said it cannot use.
+func TestStore_WithSchema_FailedReloadRetainsLastKnownGood(t *testing.T) {
+	t.Parallel()
+
+	fs := afero.NewMemMapFs()
+	require.NoError(t, afero.WriteFile(fs, "/config.yaml",
+		[]byte("github:\n  token: good\nlog:\n  level: info\n"), 0o644))
+
+	schema, err := NewSchema(WithStructSchema(testAppConfig{}))
 	require.NoError(t, err)
-	assert.Nil(t, c)
+
+	s, err := NewStore(context.Background(), WithFiles(fs, "/config.yaml"), WithSchema(schema))
+	require.NoError(t, err)
+
+	var reported error
+
+	s.OnReloadError(func(e error) { reported = e })
+
+	require.NoError(t, afero.WriteFile(fs, "/config.yaml", []byte("log:\n  level: info\n"), 0o644))
+
+	require.ErrorIs(t, s.Reload(context.Background()), ErrInvalidConfig)
+	require.ErrorIs(t, reported, ErrInvalidConfig, "a rejection must reach the error channel")
+	assert.Equal(t, "good", s.View().GetString("github.token"), "the last known good value stands")
 }

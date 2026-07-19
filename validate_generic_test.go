@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -13,16 +14,16 @@ type greetTestConfig struct {
 	Style    string `config:"hello.style" enum:"plain,loud"`
 }
 
-func loadTestConfig(t *testing.T, yaml string) Containable {
+func loadTestConfig(t *testing.T, yaml string) *View {
 	t.Helper()
 
 	fs := afero.NewMemMapFs()
 	require.NoError(t, afero.WriteFile(fs, "/config.yaml", []byte(yaml), 0o644))
 
-	cfg, err := Load([]string{"/config.yaml"}, fs, false)
+	s, err := NewStore(context.Background(), WithFiles(fs, "/config.yaml"))
 	require.NoError(t, err)
 
-	return cfg
+	return s.View()
 }
 
 func TestValidateStruct_Valid(t *testing.T) {

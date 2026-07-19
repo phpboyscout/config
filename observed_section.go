@@ -98,7 +98,7 @@ type SectionBindingOption[T any] func(*SectionBindingConfig[T])
 type SectionBindingConfig[T any] struct {
 	defaults    T
 	hasDefaults bool
-	defaultFunc func(Containable) T
+	defaultFunc func(Observed) T
 	merge       func(defaults, overlay T) T
 	validate    func(T) error
 	equal       func(previous, current Section[T]) bool
@@ -118,7 +118,7 @@ func WithSectionDefaults[T any](defaults T, merge func(defaults, overlay T) T) S
 // WithSectionDefaultFunc starts each observed section from defaults derived
 // from the current config snapshot and merges the decoded section over it when
 // the section exists.
-func WithSectionDefaultFunc[T any](defaultFunc func(Containable) T, merge func(defaults, overlay T) T) SectionBindingOption[T] {
+func WithSectionDefaultFunc[T any](defaultFunc func(Observed) T, merge func(defaults, overlay T) T) SectionBindingOption[T] {
 	return func(cfg *SectionBindingConfig[T]) {
 		cfg.defaultFunc = defaultFunc
 		cfg.hasDefaults = true
@@ -149,10 +149,33 @@ func WithSectionApply[T any](apply func(SectionChange[T]) error) SectionBindingO
 	}
 }
 
-// ObserveSection unmarshals an initial typed section snapshot and registers a
-// config observer that rehydrates the snapshot on successful config reloads.
+// Binder is something that can be read and will report when it changes.
+//
+// A Store is one. The interface exists so a typed section can be bound to
+// anything that behaves like configuration — a fixed snapshot in a test, for
+// instance — without dragging in the machinery that loads one.
+type Binder interface {
+	// View returns a read surface over the current configuration.
+	View() *View
+	// AddObserverFunc registers a function to run when configuration changes.
+	AddObserverFunc(func(Observed) error)
+}
+
+// ObserveSection decodes a typed section and keeps it current.
+//
+// The returned value is the decoupling boundary this module exists for. A
+// reusable package declares a one-method interface of its own —
+//
+//	type SettingsSource interface { Current() *ServerSettings }
+//
+// — and *ObservedSection[T] satisfies it structurally, so the package can take
+// live, reloadable configuration without importing this module at all.
+//
+// Each snapshot is decoded in a single operation against a single
+// configuration snapshot, so the struct handed out can never hold some fields
+// from before a reload and some from after.
 func ObserveSection[T any](
-	cfg Containable,
+	binder Binder,
 	key string,
 	opts ...SectionBindingOption[T],
 ) (*ObservedSection[T], error) {
@@ -166,15 +189,20 @@ func ObserveSection[T any](
 
 	observed := &ObservedSection[T]{}
 
-	initial, err := loadObservedSection(cfg, key, settings)
+	var reader *View
+	if binder != nil {
+		reader = binder.View()
+	}
+
+	initial, err := loadObservedSection(reader, key, settings)
 	if err != nil {
 		return nil, err
 	}
 
 	observed.store(initial)
 
-	if cfg != nil {
-		cfg.AddObserverFunc(func(next Containable) error {
+	if binder != nil {
+		binder.AddObserverFunc(func(next Observed) error {
 			section, err := loadObservedSection(next, key, settings)
 			if err != nil {
 				return err
@@ -205,7 +233,7 @@ func ObserveSection[T any](
 }
 
 func loadObservedSection[T any](
-	cfg Containable,
+	cfg Observed,
 	key string,
 	settings SectionBindingConfig[T],
 ) (Section[T], error) {
@@ -229,7 +257,7 @@ func loadObservedSection[T any](
 }
 
 func applyObservedSectionDefaults[T any](
-	cfg Containable,
+	cfg Observed,
 	section Section[T],
 	settings SectionBindingConfig[T],
 ) (Section[T], error) {

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -101,7 +102,15 @@ func (v *View) Has(path string) bool { return v.snap.Has(v.qualify(path)) }
 func (v *View) IsSet(path string) bool { return v.Has(path) }
 
 // SectionExists reports whether a path holds a mapping.
+//
+// An empty path asks about the view's own root, which is a mapping whenever
+// there is any configuration at all — that is what lets a caller check a
+// scoped view without special-casing the top level.
 func (v *View) SectionExists(path string) bool {
+	if v.qualify(path) == "" {
+		return len(v.snap.Values()) > 0
+	}
+
 	got, ok := v.snap.Get(v.qualify(path))
 	if !ok {
 		return false
@@ -231,6 +240,21 @@ func (v *View) valuesForPrefix() any {
 // realistically needs: durations and times written as strings, and comma
 // separated values arriving as one string.
 func decodeInto(input, target any) error {
+	t := reflect.TypeOf(target)
+	if t == nil {
+		return fmt.Errorf("%w: nil target", ErrInvalidTarget)
+	}
+
+	if t.Kind() != reflect.Pointer {
+		return fmt.Errorf("%w: target must be a pointer, got %s", ErrInvalidTarget, t)
+	}
+
+	if reflect.ValueOf(target).IsNil() {
+		return fmt.Errorf("%w: result must be addressable — target pointer is nil", ErrInvalidTarget)
+	}
+
+	input = translateKeys(input, t)
+
 	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
 		Result:           target,
 		WeaklyTypedInput: true,
@@ -249,4 +273,120 @@ func decodeInto(input, target any) error {
 	}
 
 	return nil
+}
+
+// translateKeys rewrites input keys onto the names the struct decoder expects.
+//
+// Configuration structs in the wild are tagged three ways. A type shared with
+// an API carries `json`, one shared with a YAML document carries `yaml`, and
+// one written for this library carries `mapstructure`. Honouring only the last
+// would mean a field tagged either of the other two decodes as its zero value
+// — silently, with no error, which is the failure mode this module exists to
+// remove.
+//
+// So all three are honoured, in that order of specificity: an explicit
+// mapstructure tag wins, then yaml, then json, then the field name itself.
+func translateKeys(input any, target reflect.Type) any {
+	values, ok := asStringMap(input)
+	if !ok {
+		return input
+	}
+
+	target = deref(target)
+	if target.Kind() != reflect.Struct {
+		return input
+	}
+
+	out := make(map[string]any, len(values))
+	for k, v := range values {
+		out[k] = v
+	}
+
+	for i := range target.NumField() {
+		field := target.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+
+		canonical, aliases, squash, skip := fieldKeys(field)
+		if skip {
+			continue
+		}
+
+		if squash {
+			// A squashed struct's fields live at this level, so its aliases
+			// have to be resolved here too.
+			out, _ = asStringMap(translateKeys(out, field.Type))
+
+			continue
+		}
+
+		resolveAlias(out, canonical, aliases)
+
+		if nested, present := out[canonical]; present {
+			out[canonical] = translateKeys(nested, field.Type)
+		}
+	}
+
+	return out
+}
+
+// resolveAlias moves a value written under an alias to the canonical key.
+func resolveAlias(values map[string]any, canonical string, aliases []string) {
+	if _, ok := values[canonical]; ok {
+		return
+	}
+
+	for _, alias := range aliases {
+		if v, ok := values[alias]; ok {
+			values[canonical] = v
+
+			return
+		}
+	}
+}
+
+// fieldKeys reports the key a field decodes from, the alternative spellings
+// that should also match, and whether it is squashed or skipped.
+func fieldKeys(field reflect.StructField) (canonical string, aliases []string, squash, skip bool) {
+	mapTag, mapOpts := splitTag(field.Tag.Get("mapstructure"))
+	if mapTag == "-" {
+		return "", nil, false, true
+	}
+
+	if mapOpts["squash"] {
+		return "", nil, true, false
+	}
+
+	canonical = mapTag
+	if canonical == "" {
+		canonical = normaliseKey(field.Name)
+	}
+
+	for _, name := range []string{"yaml", "json"} {
+		if tag, _ := splitTag(field.Tag.Get(name)); tag != "" && tag != "-" && tag != canonical {
+			aliases = append(aliases, tag)
+		}
+	}
+
+	return canonical, aliases, false, false
+}
+
+func splitTag(tag string) (name string, opts map[string]bool) {
+	parts := strings.Split(tag, ",")
+	opts = map[string]bool{}
+
+	for _, o := range parts[1:] {
+		opts[o] = true
+	}
+
+	return parts[0], opts
+}
+
+func deref(t reflect.Type) reflect.Type {
+	for t != nil && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+
+	return t
 }

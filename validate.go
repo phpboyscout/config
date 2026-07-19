@@ -5,8 +5,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
-	"github.com/spf13/viper"
 )
 
 // ValidationError contains details about a single validation failure.
@@ -66,22 +64,31 @@ func (r *ValidationResult) addWarning(key, message, hint string) {
 
 // Validate checks the current configuration against the provided schema.
 // Returns a ValidationResult; callers should check result.Valid().
-func (c *Container) Validate(schema *Schema) *ValidationResult {
-	return validateViper(c.liveViper(), schema)
+// Validate checks a view's values against a schema.
+func (v *View) Validate(schema *Schema) *ValidationResult {
+	return validateSnapshot(v.snap, schema)
 }
 
-// validateViper checks an arbitrary viper instance against the schema. It is
-// used both by Container.Validate (over the live config) and by the hot-reload
-// path (over a candidate config, before it is swapped in).
-func validateViper(v *viper.Viper, schema *Schema) *ValidationResult {
+// validateSnapshot checks a snapshot against a schema.
+//
+// It validates the resolved configuration rather than any single layer,
+// because a layer can be legitimately incomplete on its own: a base file may
+// omit a key that an overlay supplies, and rejecting that would reject a
+// perfectly valid setup.
+func validateSnapshot(snap *Snapshot, schema *Schema) *ValidationResult {
 	result := &ValidationResult{}
 
-	for key, field := range schema.fields {
-		value := v.Get(key)
-		validateField(key, field, value, result)
+	if schema == nil || snap == nil {
+		return result
 	}
 
-	detectUnknownKeys(v.AllKeys(), schema.fields, result, schema.strict)
+	view := NewView(snap)
+
+	for key, field := range schema.fields {
+		validateField(key, field, view.Get(key), result)
+	}
+
+	detectUnknownKeys(snap.Keys(), schema.fields, result, schema.strict)
 
 	return result
 }

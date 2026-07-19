@@ -37,16 +37,16 @@ func (_m *MockObservable) EXPECT() *MockObservable_Expecter {
 }
 
 // Run provides a mock function for the type MockObservable
-func (_mock *MockObservable) Run(containable config.Containable) error {
-	ret := _mock.Called(containable)
+func (_mock *MockObservable) Run(cfg config.Observed) error {
+	ret := _mock.Called(cfg)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Run")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(config.Containable) error); ok {
-		r0 = returnFunc(containable)
+	if returnFunc, ok := ret.Get(0).(func(config.Observed) error); ok {
+		r0 = returnFunc(cfg)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -59,16 +59,16 @@ type MockObservable_Run_Call struct {
 }
 
 // Run is a helper method to define mock.On call
-//   - containable config.Containable
-func (_e *MockObservable_Expecter) Run(containable interface{}) *MockObservable_Run_Call {
-	return &MockObservable_Run_Call{Call: _e.mock.On("Run", containable)}
+//   - cfg config.Observed
+func (_e *MockObservable_Expecter) Run(cfg interface{}) *MockObservable_Run_Call {
+	return &MockObservable_Run_Call{Call: _e.mock.On("Run", cfg)}
 }
 
-func (_c *MockObservable_Run_Call) Run(run func(containable config.Containable)) *MockObservable_Run_Call {
+func (_c *MockObservable_Run_Call) Run(run func(cfg config.Observed)) *MockObservable_Run_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 config.Containable
+		var arg0 config.Observed
 		if args[0] != nil {
-			arg0 = args[0].(config.Containable)
+			arg0 = args[0].(config.Observed)
 		}
 		run(
 			arg0,
@@ -82,7 +82,7 @@ func (_c *MockObservable_Run_Call) Return(err error) *MockObservable_Run_Call {
 	return _c
 }
 
-func (_c *MockObservable_Run_Call) RunAndReturn(run func(containable config.Containable) error) *MockObservable_Run_Call {
+func (_c *MockObservable_Run_Call) RunAndReturn(run func(cfg config.Observed) error) *MockObservable_Run_Call {
 	_c.Call.Return(run)
 	return _c
 }

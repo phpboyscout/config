@@ -12,8 +12,14 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// ErrNoSources is returned when a Store is built with nothing to read.
-var ErrNoSources = errors.New("config: no sources configured")
+var (
+	// ErrNoSources is returned when a Store is built with nothing to read.
+	ErrNoSources = errors.New("config: no sources configured")
+
+	// ErrInvalidConfig is returned when a candidate configuration fails schema
+	// validation. The previous configuration, if any, is retained.
+	ErrInvalidConfig = errors.New("config: configuration is not valid")
+)
 
 // Store is the sole owner of configuration I/O.
 //
@@ -50,6 +56,12 @@ type Store struct {
 	// read already in progress.
 	current atomic.Pointer[Snapshot]
 	version atomic.Uint64
+
+	notifier notifier
+
+	// schema, when set, is checked against every candidate before it is
+	// published. A configuration that does not satisfy it never becomes live.
+	schema *Schema
 }
 
 // keyAware is an optional interface for a backend whose interpretation of its
@@ -89,6 +101,25 @@ func WithFiles(filesystem afero.Fs, paths ...string) StoreOption {
 	}
 }
 
+// WithReaders appends in-memory sources, in precedence order.
+//
+// Compiled-in defaults belong here: they contribute a layer like any other, so
+// they take part in precedence and provenance rather than being a special
+// case that has to be remembered.
+func WithReaders(sources ...NamedSource) StoreOption {
+	return func(s *Store) {
+		for _, src := range sources {
+			s.backends = append(s.backends, NewReaderBackend(src.Name, src.Content))
+		}
+	}
+}
+
+// NamedSource is in-memory configuration with an identity for provenance.
+type NamedSource struct {
+	Name    string
+	Content []byte
+}
+
 // WithEnv appends an environment backend reading variables under a prefix.
 //
 // Add it after the file sources: environment variables are expected to
@@ -106,6 +137,22 @@ func WithEnv(prefix string, opts ...EnvOption) StoreOption {
 func WithFlags(flags *pflag.FlagSet, opts ...FlagOption) StoreOption {
 	return func(s *Store) {
 		s.backends = append(s.backends, NewFlagBackend(flags, opts...))
+	}
+}
+
+// WithSchema validates every candidate configuration before it is published.
+//
+// Validation is fail-closed and applies to the resolved configuration rather
+// than to any single layer, because a layer can be legitimately incomplete on
+// its own — a base file may omit a key that an overlay supplies, and judging
+// it alone would reject a perfectly valid setup.
+//
+// A reload that fails validation leaves the previous configuration in place:
+// running on the last known good values is better than running on values the
+// application has said it cannot use.
+func WithSchema(schema *Schema) StoreOption {
+	return func(s *Store) {
+		s.schema = schema
 	}
 }
 
@@ -162,10 +209,48 @@ func (s *Store) Reload(ctx context.Context) error {
 
 	loaded, err := s.loadAll(ctx)
 	if err != nil {
+		// Fail-closed: the previous configuration stands, so observers are not
+		// told of a change that did not happen. The rejection goes to the
+		// error channel instead.
+		s.notifier.notifyError(err)
+
 		return err
 	}
 
-	s.publish(loaded)
+	if err := s.validate(loaded); err != nil {
+		s.notifier.notifyError(err)
+
+		return err
+	}
+
+	next := s.publish(loaded)
+
+	// Notification happens after the swap and outside the lock, so an observer
+	// reads the configuration it was told about and a slow one cannot block
+	// the next reload.
+	s.notifier.notify(next)
+
+	return nil
+}
+
+// validate checks a candidate against the schema without publishing it.
+//
+// Building a throwaway snapshot is deliberate: validation must see exactly
+// what a caller would, including how the layers merge, rather than inspecting
+// them individually and hoping the resolved result agrees.
+func (s *Store) validate(loaded []backendLayers) error {
+	if s.schema == nil {
+		return nil
+	}
+
+	var flat []Layer
+	for _, bl := range loaded {
+		flat = append(flat, bl.layers...)
+	}
+
+	if result := validateSnapshot(newSnapshot(0, flat), s.schema); !result.Valid() {
+		return fmt.Errorf("%w: %s", ErrInvalidConfig, result.Error())
+	}
 
 	return nil
 }
@@ -211,6 +296,36 @@ func (s *Store) loadAll(ctx context.Context) ([]backendLayers, error) {
 
 	return loaded, nil
 }
+
+// AddObserver registers a component to be told when configuration changes.
+func (s *Store) AddObserver(o Observable) { s.notifier.addObserver(o) }
+
+// AddObserverFunc registers a function to be told when configuration changes.
+func (s *Store) AddObserverFunc(f func(Observed) error) {
+	s.notifier.addObserver(ObserverFunc(f))
+}
+
+// Observers returns the registered observers, for tests and diagnostics.
+func (s *Store) Observers() []Observable {
+	s.notifier.mu.Lock()
+	defer s.notifier.mu.Unlock()
+
+	return append([]Observable(nil), s.notifier.observers...)
+}
+
+// OnObserverError registers a callback for observers that failed to react.
+//
+// Separate from OnReloadError because the two mean different things: a
+// rejected reload means the configuration did not change, whereas a failing
+// observer means it did and one component could not keep up.
+func (s *Store) OnObserverError(f func(error)) { s.notifier.addObserveErrorFunc(f) }
+
+// OnReloadError registers a callback for reloads that were rejected.
+//
+// Rejections travel on their own channel because nothing changed: telling
+// observers "configuration changed" when it did not would have them re-read
+// values identical to the ones they hold.
+func (s *Store) OnReloadError(f func(error)) { s.notifier.addErrorFunc(f) }
 
 // publish installs a new snapshot. The caller must hold the lock.
 func (s *Store) publish(loaded []backendLayers) *Snapshot {
@@ -284,7 +399,15 @@ func (s *Store) Apply(ctx context.Context, changes ...Change) (*Snapshot, error)
 		return nil, err
 	}
 
-	return s.publish(s.rebuild(pending)), nil
+	next := s.publish(s.rebuild(pending))
+
+	// Exactly one notification per logical change, however many sources it
+	// touched. A watcher-driven design cannot promise that: it sees N
+	// filesystem events and has to guess whether they were one edit or
+	// several.
+	s.notifier.notify(next)
+
+	return next, nil
 }
 
 // prepare groups a plan by backend and stages the edits for each.

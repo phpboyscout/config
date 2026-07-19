@@ -15,5 +15,9 @@ packages:
     config:
       all: false
     interfaces:
-      Containable:
+      Reader:
+      Observed:
       Observable:
+      Binder:
+      Backend:
+      WritableBackend:
