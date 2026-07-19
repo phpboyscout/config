@@ -867,6 +867,22 @@ decided against.
   unrepresentable; currently disproportionate, but reconsider if `With` proves
   under-reached-for in practice.
 - **Remote config as a coordination layer** (as distinct from D11/D12 backends).
+- **A consumer-facing diagnostics command.** `View.Explain` already answers "what is
+  this value, where did it come from, and what else defines it" in one line:
+
+  ```
+  host = flag-host (from flag:--host); also defined in /app.yaml, env:APP_HOST
+  ```
+
+  That is the first question of every configuration debugging session, and today it is
+  answered with grep. Surfacing it as a command in the toolkit's CLI framework — something
+  of the shape `<tool> config explain db.host`, plus a whole-config variant listing every
+  key with its winning source — would put it in front of the people who need it rather than
+  leaving it as an API only library authors find.
+
+  Deferred rather than dismissed: the data is already there and the library work is done,
+  so this is a presentation decision belonging to whichever CLI adopts it first. Worth
+  revisiting once a consumer is wired up and there is a real command surface to hang it on.
 
 ## Open questions
 
