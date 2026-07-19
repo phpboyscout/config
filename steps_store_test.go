@@ -11,7 +11,7 @@ import (
 	"github.com/cucumber/godog"
 	"github.com/spf13/afero"
 
-	"gitlab.com/phpboyscout/go/config"
+	. "gitlab.com/phpboyscout/go/config"
 )
 
 // world is the state one scenario operates on.
@@ -21,7 +21,7 @@ import (
 // suite pass in order and fail in isolation.
 type world struct {
 	fs    afero.Fs
-	store *config.Store
+	store *Store
 
 	// err holds the outcome of the last operation a step performed, so a Then
 	// step can assert on it rather than failing at the point of the call.
@@ -37,6 +37,64 @@ type world struct {
 	// deferred receives the result of a write an observer handed to another
 	// goroutine.
 	deferred chan error
+
+	// reloadErrors collects what OnReloadError was told, which is the separate
+	// channel a rejected reload travels on.
+	reloadErrors []error
+	// schema, when set, is attached to the next store built.
+	schema *Schema
+	// watcher lets a scenario decide exactly when a change is reported.
+	watcher *scriptedWatcher
+	// stopWatching releases the watcher at the end of a scenario.
+	stopWatching func()
+	// section is a typed section bound to the store, for the D10 contract.
+	section *ObservedSection[serverSection]
+	// applyErrs collects the outcome of concurrent writes.
+	applyErrs []error
+}
+
+// serverSection is the typed shape the typed-section scenarios bind to. It is
+// deliberately small: the contract under test is the binding, not the struct.
+type serverSection struct {
+	Host string `mapstructure:"host"`
+	Port int    `mapstructure:"port"`
+}
+
+// scriptedWatcher reports a change exactly when a scenario says so, rather than
+// waiting on a real filesystem or tolerating a sleep.
+type scriptedWatcher struct {
+	mu      sync.Mutex
+	fire    func()
+	stopped bool
+}
+
+func (w *scriptedWatcher) Watch(_ context.Context, _ []string, onChange func()) (func(), error) {
+	w.mu.Lock()
+	w.fire = onChange
+	w.mu.Unlock()
+
+	return func() {
+		w.mu.Lock()
+		w.stopped = true
+		w.mu.Unlock()
+	}, nil
+}
+
+func (w *scriptedWatcher) trigger() {
+	w.mu.Lock()
+	fire := w.fire
+	w.mu.Unlock()
+
+	if fire != nil {
+		fire()
+	}
+}
+
+func (w *scriptedWatcher) wasStopped() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	return w.stopped
 }
 
 func (w *world) reset() {
@@ -46,9 +104,22 @@ func (w *world) reset() {
 	w.notifications = nil
 	w.observerErr = nil
 	w.deferred = make(chan error, 1)
+	w.reloadErrors = nil
+	w.schema = nil
+	w.watcher = nil
+	w.stopWatching = nil
+	w.section = nil
+	w.applyErrs = nil
 }
 
-func (w *world) record(cfg config.Observed) {
+func (w *world) recordReloadError(err error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.reloadErrors = append(w.reloadErrors, err)
+}
+
+func (w *world) record(cfg Observed) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -105,6 +176,8 @@ func initStoreSteps(ctx *godog.ScenarioContext) {
 	ctx.Step(`^observers were notified (\d+) times?$`, w.observersWereNotified)
 	ctx.Step(`^the observer's write was refused$`, w.theObserversWriteWasRefused)
 	ctx.Step(`^the deferred write succeeds$`, w.theDeferredWriteSucceeds)
+
+	initLifecycleSteps(ctx, w)
 }
 
 // --- Given implementations -------------------------------------------------
@@ -122,7 +195,7 @@ func (w *world) aStoreReadingTwoFiles(base, overlay string) error {
 }
 
 func (w *world) openStore(paths ...string) error {
-	s, err := config.NewStore(context.Background(), config.WithFiles(w.fs, paths...))
+	s, err := NewStore(context.Background(), WithFiles(w.fs, paths...))
 	if err != nil {
 		return fmt.Errorf("opening a store over %v: %w", paths, err)
 	}
@@ -133,7 +206,7 @@ func (w *world) openStore(paths ...string) error {
 }
 
 func (w *world) anObserverThatRecords() error {
-	w.store.AddObserverFunc(func(cfg config.Observed) error {
+	w.store.AddObserverFunc(func(cfg Observed) error {
 		w.record(cfg)
 
 		return nil
@@ -143,13 +216,13 @@ func (w *world) anObserverThatRecords() error {
 }
 
 func (w *world) anObserverThatWritesWhileReacting(path string) error {
-	w.store.AddObserverFunc(func(cfg config.Observed) error {
+	w.store.AddObserverFunc(func(cfg Observed) error {
 		w.record(cfg)
 
 		w.mu.Lock()
 		defer w.mu.Unlock()
 
-		_, w.observerErr = w.store.Apply(context.Background(), config.Set(path, "written-by-observer"))
+		_, w.observerErr = w.store.Apply(context.Background(), Set(path, "written-by-observer"))
 
 		return nil
 	})
@@ -160,14 +233,14 @@ func (w *world) anObserverThatWritesWhileReacting(path string) error {
 func (w *world) anObserverThatDefersItsWrite() error {
 	var once sync.Once
 
-	w.store.AddObserverFunc(func(cfg config.Observed) error {
+	w.store.AddObserverFunc(func(cfg Observed) error {
 		w.record(cfg)
 
 		value := "derived-from-" + fmt.Sprint(cfg.Get("value"))
 
 		once.Do(func() {
 			go func() {
-				_, err := w.store.Apply(context.Background(), config.Set("derived", value))
+				_, err := w.store.Apply(context.Background(), Set("derived", value))
 				w.deferred <- err
 			}()
 		})
@@ -181,21 +254,21 @@ func (w *world) anObserverThatDefersItsWrite() error {
 // --- When implementations --------------------------------------------------
 
 func (w *world) iSetTo(path, value string) error {
-	_, w.err = w.store.Apply(context.Background(), config.Set(path, value))
+	_, w.err = w.store.Apply(context.Background(), Set(path, value))
 
 	return nil
 }
 
 func (w *world) iSetTwoValues(p1, v1, p2, v2 string) error {
 	_, w.err = w.store.Apply(context.Background(),
-		config.Set(p1, v1),
-		config.Set(p2, v2))
+		Set(p1, v1),
+		Set(p2, v2))
 
 	return nil
 }
 
 func (w *world) iRemove(path string) error {
-	_, w.err = w.store.Apply(context.Background(), config.Remove(path))
+	_, w.err = w.store.Apply(context.Background(), Remove(path))
 
 	return nil
 }
@@ -289,7 +362,7 @@ func (w *world) theObserversWriteWasRefused() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if !errors.Is(w.observerErr, config.ErrWriteFromObserver) {
+	if !errors.Is(w.observerErr, ErrWriteFromObserver) {
 		return fmt.Errorf("the write attempted from inside the observer returned %w, want ErrWriteFromObserver", w.observerErr)
 	}
 
