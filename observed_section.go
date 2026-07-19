@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/cockroachdb/errors"
+	"errors"
 )
 
 // ObservedSection stores the latest typed snapshot of an observed config

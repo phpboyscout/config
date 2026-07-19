@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/cockroachdb/errors"
+	"errors"
 )
 
 // schemaCache memoises schemas derived from a type's struct tags. A schema for a

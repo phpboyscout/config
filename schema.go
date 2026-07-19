@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/cockroachdb/errors"
+	"errors"
 )
 
 // Schema defines the expected structure and constraints for configuration values.
