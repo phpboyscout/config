@@ -3,6 +3,8 @@ package config
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -321,5 +323,126 @@ func TestPollWatcher_NothingToWatch(t *testing.T) {
 
 	if _, err := w.Watch(context.Background(), nil, func() {}); !errors.Is(err, ErrWatchUnavailable) {
 		t.Errorf("err = %v, want ErrWatchUnavailable", err)
+	}
+}
+
+// Native notification must actually fire, not merely be selected. The poll
+// interval here is an hour, so anything that arrives came from the operating
+// system.
+func TestWatch_NativeNotificationFires(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "app.yaml")
+
+	if err := os.WriteFile(path, []byte("a: 1\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	w := NewWatcher(afero.NewOsFs(), time.Hour)
+
+	if _, ok := w.(*fsnotifyWatcher); !ok {
+		t.Fatalf("watcher for a real filesystem is %T, want native notification", w)
+	}
+
+	fired := make(chan struct{}, 4)
+
+	stop, err := w.Watch(context.Background(), []string{path}, func() {
+		select {
+		case fired <- struct{}{}:
+		default:
+		}
+	})
+	if err != nil {
+		t.Fatalf("Watch: %v", err)
+	}
+
+	defer stop()
+
+	time.Sleep(50 * time.Millisecond)
+
+	if err := os.WriteFile(path, []byte("a: 2\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	select {
+	case <-fired:
+	case <-time.After(5 * time.Second):
+		t.Fatal("native notification did not fire within five seconds")
+	}
+}
+
+// Rooting a tool at a project directory is common, and it must not silently
+// downgrade to polling: the paths are virtual but the files are real.
+func TestWatch_BasePathFilesystemUsesNativeNotification(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dir, "app.yaml"), []byte("a: 1\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	rooted := afero.NewBasePathFs(afero.NewOsFs(), dir)
+
+	w := NewWatcher(rooted, time.Hour)
+	if _, ok := w.(*fsnotifyWatcher); !ok {
+		t.Fatalf("watcher for a rooted real filesystem is %T, want native notification", w)
+	}
+
+	fired := make(chan struct{}, 4)
+
+	stop, err := w.Watch(context.Background(), []string{"/app.yaml"}, func() {
+		select {
+		case fired <- struct{}{}:
+		default:
+		}
+	})
+	if err != nil {
+		t.Fatalf("Watch: %v", err)
+	}
+
+	defer stop()
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Written through the real path, seen through the virtual one.
+	if err := os.WriteFile(filepath.Join(dir, "app.yaml"), []byte("a: 2\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	select {
+	case <-fired:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a rooted filesystem fell back to polling instead of watching natively")
+	}
+}
+
+// A base-path wrapper produces real-looking paths for files that exist only in
+// memory. Watching the resolved location would report changes to whatever
+// unrelated file happens to sit there, so it must be recognised as unwatchable.
+func TestWatch_VirtualFilesBehindRealLookingPathsFallBackToPolling(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	// The path resolves under a directory that genuinely exists, but the file
+	// itself lives only in memory.
+	mem := afero.NewMemMapFs()
+	if err := afero.WriteFile(mem, "/app.yaml", []byte("a: 1\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "app.yaml"), []byte("unrelated: file\n"), 0o600); err != nil {
+		t.Fatalf("decoy: %v", err)
+	}
+
+	w, ok := NewWatcher(afero.NewBasePathFs(mem, dir), 10*time.Millisecond).(*fsnotifyWatcher)
+	if !ok {
+		t.Fatal("expected the native watcher to be selected before the per-path check")
+	}
+
+	if w.isReallyOnDisk("/app.yaml", filepath.Join(dir, "app.yaml")) {
+		t.Error("an in-memory file was mistaken for the unrelated file on disk")
 	}
 }
