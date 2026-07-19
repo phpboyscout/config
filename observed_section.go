@@ -1,11 +1,15 @@
 package config
 
 import (
+	"errors"
 	"reflect"
 	"sync"
-
-	"errors"
 )
+
+// ErrNoMergeFunc is returned when a section supplies defaults but no way to
+// combine them with the configured values. Silently preferring one over the
+// other would drop half the settings without saying so.
+var ErrNoMergeFunc = errors.New("config: section defaults require a merge function")
 
 // ObservedSection stores the latest typed snapshot of an observed config
 // section.
@@ -277,7 +281,7 @@ func applyObservedSectionDefaults[T any](
 	}
 
 	if settings.merge == nil {
-		return Section[T]{}, errors.New("section defaults require a merge function")
+		return Section[T]{}, ErrNoMergeFunc
 	}
 
 	section.Value = settings.merge(defaults, section.Value)

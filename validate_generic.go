@@ -1,10 +1,9 @@
 package config
 
 import (
+	"fmt"
 	"reflect"
 	"sync"
-
-	"errors"
 )
 
 // schemaCache memoises schemas derived from a type's struct tags. A schema for a
@@ -57,7 +56,7 @@ func ValidateStruct[T any](cfg *View, opts ...SchemaOption) error {
 	}
 
 	if result := cfg.Validate(schema); !result.Valid() {
-		return errors.New(result.Error())
+		return fmt.Errorf("%w: %s", ErrInvalidConfig, result.Error())
 	}
 
 	return nil

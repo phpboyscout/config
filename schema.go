@@ -1,12 +1,16 @@
 package config
 
 import (
+	"errors"
 	"maps"
 	"reflect"
 	"strings"
-
-	"errors"
 )
+
+// ErrEmptySchema is returned when schema construction produced no fields. A
+// schema that constrains nothing would validate everything, which is worse
+// than having none: the caller believes their configuration is checked.
+var ErrEmptySchema = errors.New("config: schema has no fields defined")
 
 // Schema defines the expected structure and constraints for configuration values.
 type Schema struct {
@@ -63,7 +67,7 @@ func NewSchema(opts ...SchemaOption) (*Schema, error) {
 	}
 
 	if len(cfg.fields) == 0 {
-		return nil, errors.New("schema has no fields defined")
+		return nil, ErrEmptySchema
 	}
 
 	return &Schema{
