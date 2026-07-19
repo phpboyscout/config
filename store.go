@@ -587,7 +587,12 @@ func (s *Store) apply(ctx context.Context, changes []Change) (*Snapshot, bool, e
 	// The candidate is what the Store will publish once this commits. Building
 	// it now means the schema judges the same configuration a reader would see,
 	// and it is judged while everything is still staged and abandonable.
-	candidate := s.rebuild(pending)
+	candidate, err := s.rebuild(ctx, pending)
+	if err != nil {
+		discardAll(ctx, pending)
+
+		return nil, false, err
+	}
 
 	if err := s.validateChange(s.loaded, candidate); err != nil {
 		discardAll(ctx, pending)
@@ -745,7 +750,7 @@ func discardAll(ctx context.Context, pending map[string]Pending) {
 // The pairing recorded at load is what makes this correct. Matching layers to
 // backends by name would work for files and silently drop any backend whose
 // layers are named after something else, such as an environment variable.
-func (s *Store) rebuild(pending map[string]Pending) []backendLayers {
+func (s *Store) rebuild(ctx context.Context, pending map[string]Pending) ([]backendLayers, error) {
 	next := make([]backendLayers, 0, len(s.loaded))
 
 	for _, bl := range s.loaded {
@@ -755,10 +760,34 @@ func (s *Store) rebuild(pending map[string]Pending) []backendLayers {
 			continue
 		}
 
-		next = append(next, bl)
+		// A backend whose reading of its own input depends on the keys beneath
+		// it has to be re-derived, because the write may have changed them. The
+		// environment backend is the case: it resolves a variable name against
+		// the existing key space, so a write introducing a second key spelled
+		// the same way makes that variable ambiguous.
+		//
+		// Carrying it over instead is what let a write validate, land, and then
+		// break the very reload it triggered — the file changed and the process
+		// left on last-known-good, which is precisely the outcome D15 exists to
+		// prevent.
+		aware, isAware := bl.backend.(keyAware)
+		if !isAware {
+			next = append(next, bl)
+
+			continue
+		}
+
+		aware.observeKnownKeys(keysOf(next))
+
+		layers, err := bl.backend.Load(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		next = append(next, backendLayers{backend: bl.backend, layers: layers})
 	}
 
-	return next
+	return next, nil
 }
 
 // keysOf lists every leaf key the layers loaded so far define.
