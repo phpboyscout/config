@@ -61,7 +61,14 @@ func (s Source) String() string {
 
 		return string(s.Kind) + ":" + s.Name
 	case SourceDefault, SourceOverride:
-		return string(s.Kind)
+		// Named, because a caller asking where a value came from needs to know
+		// which set of defaults or which runtime layer supplied it, not merely
+		// that it was one of them.
+		if s.Name == "" {
+			return string(s.Kind)
+		}
+
+		return string(s.Kind) + ":" + s.Name
 	default:
 		return string(s.Kind)
 	}

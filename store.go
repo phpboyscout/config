@@ -248,8 +248,7 @@ func (s *Store) AddLayer(ctx context.Context, name string, r io.Reader) error {
 		return fmt.Errorf("config: reading layer %q: %w", name, err)
 	}
 
-	previous, err := s.adoptBackend(NewReaderBackend(name, content))
-	if err != nil {
+	if err := s.adoptBackend(newOverrideBackend(name, content)); err != nil {
 		return err
 	}
 
@@ -259,7 +258,7 @@ func (s *Store) AddLayer(ctx context.Context, name string, r io.Reader) error {
 		// fail-closed, so the previous configuration still stands, and a
 		// backend that cannot load would otherwise break every reload after
 		// this one.
-		s.restoreBackends(previous)
+		s.withdrawBackend(name)
 
 		return err
 	}
@@ -273,29 +272,41 @@ func (s *Store) AddLayer(ctx context.Context, name string, r io.Reader) error {
 	return nil
 }
 
-// adoptBackend appends a backend at the highest precedence, returning the
-// previous list so it can be put back if the layer proves unusable.
-func (s *Store) adoptBackend(b Backend) ([]Backend, error) {
+// adoptBackend appends a backend at the highest precedence.
+func (s *Store) adoptBackend(b Backend) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for _, existing := range s.backends {
 		if existing.ID() == b.ID() {
-			return nil, fmt.Errorf("%w: a source named %q is already loaded", ErrInvalidTarget, b.ID())
+			return fmt.Errorf("%w: a source named %q is already loaded", ErrInvalidTarget, b.ID())
 		}
 	}
 
-	previous := s.backends
 	s.backends = append(append([]Backend(nil), s.backends...), b)
 
-	return previous, nil
+	return nil
 }
 
-func (s *Store) restoreBackends(previous []Backend) {
+// withdrawBackend removes one backend by name.
+//
+// Reinstating the list captured before the layer was adopted would discard any
+// layer another goroutine added in between — and that caller was told its
+// AddLayer succeeded, so its configuration would silently read back as absent.
+// Only the layer that failed is withdrawn.
+func (s *Store) withdrawBackend(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.backends = previous
+	out := make([]Backend, 0, len(s.backends))
+
+	for _, b := range s.backends {
+		if b.ID() != name {
+			out = append(out, b)
+		}
+	}
+
+	s.backends = out
 }
 
 // Snapshot returns the current configuration.

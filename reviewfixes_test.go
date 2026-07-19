@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -668,5 +669,104 @@ func TestWatch_CancellingTheContextReleasesTheWatcher(t *testing.T) {
 	case <-fired:
 		t.Error("a cancelled watch is still delivering events")
 	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// A layer that fails to load must withdraw itself and nothing else. Reinstating
+// the backend list captured before it was adopted discarded any layer another
+// goroutine added in between — and that caller had been told its AddLayer
+// succeeded, so its configuration silently read back as absent.
+func TestAddLayer_AFailingLayerWithdrawsOnlyItself(t *testing.T) {
+	t.Parallel()
+
+	s := storeOn(t, memFS(t, map[string]string{"/app.yaml": "a: 1\n"}), "/app.yaml")
+
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		goodErr  error
+		badErred bool
+	)
+
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+
+		err := s.AddLayer(context.Background(), "bad", strings.NewReader("a:\n  - x\n :\n"))
+
+		mu.Lock()
+		badErred = err != nil
+		mu.Unlock()
+	}()
+
+	go func() {
+		defer wg.Done()
+
+		err := s.AddLayer(context.Background(), "good", strings.NewReader("b: from-good\n"))
+
+		mu.Lock()
+		goodErr = err
+		mu.Unlock()
+	}()
+
+	wg.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if !badErred {
+		t.Error("an unparseable layer was accepted")
+	}
+
+	if goodErr != nil {
+		t.Fatalf("the good layer was refused: %v", goodErr)
+	}
+
+	// The good layer was reported as accepted, so it must actually be there.
+	if got := s.View().GetString("b"); got != "from-good" {
+		t.Errorf("b = %q — a layer reported as added is not contributing", got)
+	}
+}
+
+// An in-memory source is not a file, and saying it is invites the reader to
+// open something that does not exist. A compiled-in default and a layer added
+// at runtime are also different things, and provenance should say which.
+func TestProvenance_InMemorySourcesReportWhatTheyAre(t *testing.T) {
+	t.Parallel()
+
+	s, err := NewStore(context.Background(),
+		WithReaders(NamedSource{Name: "defaults.yaml", Content: []byte("log:\n  level: info\n")}))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	src, ok := s.View().Origin("log.level")
+	if !ok {
+		t.Fatal("no provenance for a compiled-in default")
+	}
+
+	if src.Kind != SourceDefault {
+		t.Errorf("kind = %q, want %q", src.Kind, SourceDefault)
+	}
+
+	if got := src.String(); got != "default:defaults.yaml" {
+		t.Errorf("rendered as %q, want it to name the source", got)
+	}
+
+	// A runtime layer is an override, not a default and not a file.
+	s2 := storeOn(t, memFS(t, map[string]string{"/app.yaml": "a: 1\n"}), "/app.yaml")
+
+	if err := s2.AddLayer(context.Background(), "computed", strings.NewReader("z: 1\n")); err != nil {
+		t.Fatalf("AddLayer: %v", err)
+	}
+
+	src2, _ := s2.View().Origin("z")
+	if src2.Kind != SourceOverride {
+		t.Errorf("kind = %q, want %q", src2.Kind, SourceOverride)
+	}
+
+	if got := src2.String(); got != "override:computed" {
+		t.Errorf("rendered as %q, want it to name the layer", got)
 	}
 }

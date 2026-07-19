@@ -232,6 +232,11 @@ func decodeDocuments(path string, src []byte) ([]Layer, error) {
 type readerBackend struct {
 	name    string
 	content []byte
+	// kind is what this source reports as, so provenance distinguishes a
+	// compiled-in default from a layer added at runtime. Both are in-memory,
+	// and calling either a file invites a user to open something that does not
+	// exist.
+	kind SourceKind
 }
 
 // NewReaderBackend returns a backend contributing YAML from bytes.
@@ -239,7 +244,13 @@ type readerBackend struct {
 // The name appears in provenance, so give it something a user would recognise
 // — "embedded:defaults.yaml" rather than "reader1".
 func NewReaderBackend(name string, content []byte) Backend {
-	return &readerBackend{name: name, content: content}
+	return &readerBackend{name: name, content: content, kind: SourceDefault}
+}
+
+// newOverrideBackend returns an in-memory source that reports as a runtime
+// override rather than a compiled-in default.
+func newOverrideBackend(name string, content []byte) Backend {
+	return &readerBackend{name: name, content: content, kind: SourceOverride}
 }
 
 func (b *readerBackend) ID() string { return b.name }
@@ -260,10 +271,16 @@ func (b *readerBackend) Load(ctx context.Context) ([]Layer, error) {
 		return nil, err
 	}
 
+	kind := b.kind
+	if kind == "" {
+		kind = SourceDefault
+	}
+
 	// An in-memory source cannot be written back to, so its layers must say so
 	// or routing would offer it as a target.
 	for i := range layers {
 		layers[i].Source.Writable = false
+		layers[i].Source.Kind = kind
 	}
 
 	return layers, nil
