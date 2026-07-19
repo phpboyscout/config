@@ -1002,31 +1002,31 @@ func (s *Store) Watch(ctx context.Context, opts ...WatchOption) (stop func(), er
 		opt(&cfg)
 	}
 
-	groups := s.watchableGroups()
-	if len(groups) == 0 {
-		return nil, fmt.Errorf("%w: no file-backed sources", ErrWatchUnavailable)
+	watchable := s.watchableBackends()
+	if len(watchable) == 0 {
+		return nil, fmt.Errorf("%w: no watchable sources", ErrWatchUnavailable)
 	}
 
 	onChange := func() {
-		// A watch event means the paths *may* have changed. Reload decides
+		// A watch event means the sources *may* have changed. Reload decides
 		// whether anything actually did, and only notifies observers if so.
 		_ = s.Reload(ctx)
 	}
 
-	// An injected watcher is a test double standing in for the whole set, so it
-	// sees every path at once rather than one group at a time.
+	// An injected watcher stands in for the whole set, which is how a test
+	// drives change detection without a real filesystem.
 	if cfg.watcher != nil {
-		return cfg.watcher.Watch(ctx, allPaths(groups), onChange)
+		return cfg.watcher.Watch(ctx, s.watchedPaths(), onChange)
 	}
 
 	var stops []func()
 
-	for _, g := range groups {
-		stop, err := NewWatcher(g.fs, cfg.interval).Watch(ctx, g.paths, onChange)
+	for _, b := range watchable {
+		stop, err := b.Watch(ctx, cfg.interval, onChange)
 		if err != nil {
-			// One group that cannot be watched makes the whole set incomplete,
-			// and reporting success would leave the caller believing it will
-			// hear about sources it never will.
+			// One source that cannot be watched makes the set incomplete, and
+			// reporting success would leave the caller believing it will hear
+			// about sources it never will.
 			stopAll(stops)
 
 			return nil, err
@@ -1038,10 +1038,18 @@ func (s *Store) Watch(ctx context.Context, opts ...WatchOption) (stop func(), er
 	return func() { stopAll(stops) }, nil
 }
 
-func allPaths(groups []watchGroup) []string {
+// watchedPaths lists the paths of file-backed sources, for an injected watcher
+// that expects them.
+func (s *Store) watchedPaths() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	var out []string
-	for _, g := range groups {
-		out = append(out, g.paths...)
+
+	for _, b := range s.backends {
+		if fb, ok := b.(*fileBackend); ok {
+			out = append(out, fb.path)
+		}
 	}
 
 	return out
@@ -1073,51 +1081,26 @@ func WithWatcher(w Watcher) WatchOption {
 }
 
 // watchablePaths returns the file paths behind the Store's backends.
-// watchGroup is the set of paths belonging to one filesystem.
-type watchGroup struct {
-	fs    afero.Fs
-	paths []string
-}
-
-// watchableGroups collects the file-backed sources, grouped by the filesystem
-// they live on.
+// watchableBackends returns the backends that can report their own changes.
 //
-// Grouping matters because a path means nothing without the filesystem it is
-// relative to. Taking the first backend's filesystem and using it for every
-// path meant a store mixing a real file with an in-memory one — the shape a
-// tool takes when it overlays a virtual worktree on real config — statted half
-// its sources against the wrong filesystem, found them permanently absent, and
-// reported watching as established while never noticing a change to them.
-func (s *Store) watchableGroups() []watchGroup {
+// Asked by interface rather than by concrete type. Reaching into *fileBackend
+// for its path and filesystem meant only a backend defined in this package
+// could ever be watched, and a consumer supplying its own — the one thing
+// WithBackend exists for — was silently omitted while Watch reported success.
+func (s *Store) watchableBackends() []WatchableBackend {
 	// Same reason as Sources: AddLayer reassigns s.backends under the lock.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var groups []watchGroup
+	var out []WatchableBackend
 
 	for _, b := range s.backends {
-		fb, ok := b.(*fileBackend)
-		if !ok {
-			continue
-		}
-
-		placed := false
-
-		for i := range groups {
-			if groups[i].fs == fb.fs {
-				groups[i].paths = append(groups[i].paths, fb.path)
-				placed = true
-
-				break
-			}
-		}
-
-		if !placed {
-			groups = append(groups, watchGroup{fs: fb.fs, paths: []string{fb.path}})
+		if w, ok := b.(WatchableBackend); ok {
+			out = append(out, w)
 		}
 	}
 
-	return groups
+	return out
 }
 
 // flatten collects every layer in precedence order, discarding which backend

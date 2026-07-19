@@ -203,6 +203,33 @@ are frozen — `ObservedSection[T]`, change-only delivery, monotonic `Version`, 
 `WithSection*` options — and the parameter types are not. The port is a rename plus twelve
 genuine sites, which belongs in the migration document D19 requires.
 
+### R5 — 2026-07-19: the Watchable seam D11 names is built
+
+**D11 declared `Watchable` alongside `Writable`. `Writable` was implemented as
+`WritableBackend`; `Watchable` was not, so watching type-asserted the unexported
+`*fileBackend` and read its unexported `fs` and `path` fields.**
+
+The consequence was not cosmetic. `WithBackend` exists so a consumer can supply its own
+source, and such a backend could never be watched — `Store.Watch` reported
+`ErrWatchUnavailable` with a real file on disk, or, in a set that also held a file backend,
+silently omitted it while reporting success. That is the failure `Store.Watch`'s own doc
+comment says the design prevents.
+
+**This is not what D12 defers.** D12 defers building additional *backends* and explicitly asks
+that the seam be defined now, so the coordination logic never becomes per-backend. It already
+had: the Store knew that a source is a path on an `afero.Fs`, which is a backend's fact about
+itself.
+
+`WatchableBackend` is now declared next to `WritableBackend`, `fileBackend` implements it, and
+`Store.Watch` collects watchable backends by interface assertion. The Store knows only that
+some backends can say when something moved, and decides for itself whether the resolved
+configuration actually changed.
+
+**Also fixed by the same change:** watching previously took the first file backend's
+filesystem and used it for every path, so a store mixing a real file with an in-memory one
+statted half its sources against the wrong filesystem and never noticed a change to them. Each
+backend now watches its own source, so the question cannot arise.
+
 ## Why this exists
 
 The module needs to write configuration back to the files it was loaded from — preserving
@@ -582,6 +609,10 @@ callback can no longer run twice for one logical edit (D9).
 discarding most of it via `DeepEqual`.
 
 ### D11 — Backends are asymmetric interfaces with declared capabilities
+
+> **Completed by [R5](#r5--2026-07-19-the-watchable-seam-d11-names-is-built).** The `Watchable`
+> seam this decision names was not built with the rest; watching reached through `Backend` into
+> a concrete unexported type instead. It now exists as `WatchableBackend`.
 
 A single `Backend{Load; Save}` interface is a trap. Reading is *fetch, parse, normalise*.
 Writing carries ownership, partial-vs-whole update, CAS, conflict detection,

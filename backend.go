@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"time"
 
 	"github.com/spf13/afero"
 	"gitlab.com/phpboyscout/go/yamldoc"
@@ -51,6 +52,28 @@ type Backend interface {
 	// Capabilities describes what this backend can do, so callers can adapt
 	// rather than discover limitations by hitting them.
 	Capabilities() Capabilities
+}
+
+// WatchableBackend is a backend that can report when its own sources change.
+//
+// Separate from Backend for the same reason writing is: being readable does not
+// make a source watchable, and only the backend knows how to notice a change to
+// whatever it reads — a file has a path on a filesystem, a remote store has a
+// subscription — and the Store should not have to know which.
+//
+// The Store's job is coordination: it asks each backend that can watch to say
+// when something moved, then decides for itself whether the resolved
+// configuration actually changed.
+type WatchableBackend interface {
+	Backend
+
+	// Watch calls onChange when this backend's sources may have changed. The
+	// returned function stops watching and releases whatever it holds.
+	//
+	// It reports *possible* change rather than actual change: a backend cannot
+	// know whether a write altered anything that resolves, and deciding that is
+	// the Store's job.
+	Watch(ctx context.Context, interval time.Duration, onChange func()) (stop func(), err error)
 }
 
 // Capabilities describes what a backend supports.
@@ -284,4 +307,16 @@ func (b *readerBackend) Load(ctx context.Context) ([]Layer, error) {
 	}
 
 	return layers, nil
+}
+
+// Watch reports changes to this backend's file.
+//
+// The backend owns the knowledge that its source is a path on a filesystem,
+// which is what keeps that knowledge out of the Store.
+func (b *fileBackend) Watch(
+	ctx context.Context,
+	interval time.Duration,
+	onChange func(),
+) (func(), error) {
+	return NewWatcher(b.fs, interval).Watch(ctx, []string{b.path}, onChange)
 }

@@ -960,3 +960,96 @@ func TestObserveSection_ConcurrentDeliveriesSettleOnTheNewest(t *testing.T) {
 		t.Errorf("host = %q, want host-31 — the newest delivery did not win", got)
 	}
 }
+
+// externalBackend stands in for a backend defined outside this package, which
+// is the case the seam exists for and the one the concrete type assertion made
+// impossible.
+type externalBackend struct {
+	mu       sync.Mutex
+	onChange func()
+	stopped  bool
+}
+
+func (e *externalBackend) ID() string { return "external" }
+
+func (e *externalBackend) Capabilities() Capabilities { return Capabilities{} }
+
+func (e *externalBackend) Load(context.Context) ([]Layer, error) {
+	return []Layer{{
+		Source: Source{Kind: SourceDefault, Name: "external"},
+		Values: map[string]any{"external": "value"},
+	}}, nil
+}
+
+func (e *externalBackend) Watch(
+	_ context.Context,
+	_ time.Duration,
+	onChange func(),
+) (func(), error) {
+	e.mu.Lock()
+	e.onChange = onChange
+	e.mu.Unlock()
+
+	return func() {
+		e.mu.Lock()
+		e.stopped = true
+		e.mu.Unlock()
+	}, nil
+}
+
+func (e *externalBackend) fire() {
+	e.mu.Lock()
+	fn := e.onChange
+	e.mu.Unlock()
+
+	if fn != nil {
+		fn()
+	}
+}
+
+// Watching asked for a concrete unexported type, so a backend supplied through
+// WithBackend — the one thing that option exists for — could never be watched,
+// and in a mixed set was silently omitted while Watch reported success.
+func TestWatch_UsesTheBackendSeamNotAConcreteType(t *testing.T) {
+	t.Parallel()
+
+	backend := &externalBackend{}
+
+	s, err := NewStore(context.Background(), WithBackend(backend))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	stop, err := s.Watch(context.Background())
+	if err != nil {
+		t.Fatalf("a watchable backend was refused: %v", err)
+	}
+
+	// It is genuinely wired up, not merely accepted.
+	backend.fire()
+
+	stop()
+
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
+
+	if !backend.stopped {
+		t.Error("stopping the Store did not stop the backend's watch")
+	}
+}
+
+// A backend that cannot watch is not watchable, and saying so is the point.
+func TestWatch_RefusesWhenNothingCanWatch(t *testing.T) {
+	t.Parallel()
+
+	s, err := NewStore(context.Background(), WithReaders(NamedSource{
+		Name: "embedded", Content: []byte("a: 1\n"),
+	}))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	if _, err := s.Watch(context.Background()); !errors.Is(err, ErrWatchUnavailable) {
+		t.Errorf("err = %v, want ErrWatchUnavailable", err)
+	}
+}
