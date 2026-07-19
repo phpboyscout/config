@@ -45,9 +45,7 @@ func targetHasResolvedFields(cfg Reader, prefix string, typ reflect.Type) bool {
 		return false
 	}
 
-	for typ.Kind() == reflect.Pointer {
-		typ = typ.Elem()
-	}
+	typ = deref(typ)
 
 	if typ.Kind() != reflect.Struct {
 		return cfg.IsSet(prefix)
@@ -84,7 +82,7 @@ func fieldIsResolved(cfg Reader, prefix string, field reflect.StructField) bool 
 	}
 
 	for _, name := range append([]string{canonical}, aliases...) {
-		fieldKey := joinConfigPath(prefix, name)
+		fieldKey := joinPath(prefix, name)
 
 		if cfg.IsSet(fieldKey) || targetHasResolvedFields(cfg, fieldKey, field.Type) {
 			return true
@@ -92,16 +90,4 @@ func fieldIsResolved(cfg Reader, prefix string, field reflect.StructField) bool 
 	}
 
 	return false
-}
-
-func joinConfigPath(prefix, name string) string {
-	if prefix == "" {
-		return name
-	}
-
-	if name == "" {
-		return prefix
-	}
-
-	return prefix + "." + name
 }

@@ -98,7 +98,7 @@ func parseStructTags(t reflect.Type, prefix string) map[string]FieldSchema {
 		}
 
 		if prefix != "" && !strings.Contains(configKey, ".") {
-			configKey = prefix + "." + configKey
+			configKey = joinPath(prefix, configKey)
 		}
 
 		fields[configKey] = buildFieldSchema(f)
@@ -119,10 +119,7 @@ func recurseUntaggedStruct(f reflect.StructField, prefix string, fields map[stri
 		return
 	}
 
-	sub := strings.ToLower(f.Name)
-	if prefix != "" {
-		sub = prefix + "." + sub
-	}
+	sub := joinPath(prefix, normaliseKey(f.Name))
 
 	maps.Copy(fields, parseStructTags(f.Type, sub))
 }

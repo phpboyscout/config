@@ -104,11 +104,7 @@ func mergeLayers(layers []Layer) (map[string]any, map[string]Source) {
 func mergeInto(dst map[string]any, origin map[string]Source, src map[string]any, source Source, prefix string) {
 	for rawKey, value := range src {
 		key := normaliseKey(rawKey)
-		path := key
-
-		if prefix != "" {
-			path = prefix + "." + key
-		}
+		path := joinPath(prefix, key)
 
 		nested, isMap := asStringMap(value)
 		if !isMap {
@@ -275,4 +271,23 @@ func leafKeys(layers []Layer) []string {
 	}
 
 	return keys
+}
+
+// joinPath appends a segment to a dotted path, tolerating either being empty.
+//
+// One definition, because the rule is the module's contract with dotted keys.
+// It existed three times — in the section probe, in the view's scoping, and
+// inline in schema construction — so a change to it, such as escaping a literal
+// dot in a key, would have had to be made everywhere and would eventually be
+// made somewhere.
+func joinPath(prefix, name string) string {
+	if prefix == "" {
+		return name
+	}
+
+	if name == "" {
+		return prefix
+	}
+
+	return prefix + "." + name
 }

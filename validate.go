@@ -63,9 +63,11 @@ func (r *ValidationResult) addWarning(key, message, hint string) {
 	r.Warnings = append(r.Warnings, ValidationError{Key: key, Message: message, Hint: hint})
 }
 
-// Validate checks the current configuration against the provided schema.
-// Returns a ValidationResult; callers should check result.Valid().
-// Validate checks a view's values against a schema.
+// Validate checks what this view describes against a schema.
+//
+// A scoped view validates its own subtree, so a schema written for a section
+// applies to that section rather than to the whole configuration. The result
+// carries errors and warnings separately; check [ValidationResult.Valid].
 func (v *View) Validate(schema *Schema) *ValidationResult {
 	if v == nil {
 		return &ValidationResult{}

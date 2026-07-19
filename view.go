@@ -55,15 +55,11 @@ func (v *View) Snapshot() *Snapshot { return v.pinned() }
 
 // qualify prepends the view's prefix to a path.
 func (v *View) qualify(path string) string {
-	if v == nil || v.prefix == "" {
+	if v == nil {
 		return path
 	}
 
-	if path == "" {
-		return v.prefix
-	}
-
-	return v.prefix + "." + path
+	return joinPath(v.prefix, path)
 }
 
 // Sub returns a view scoped to a subtree.

@@ -37,18 +37,24 @@ func SchemaOf[T any](opts ...SchemaOption) (*Schema, error) {
 	return NewSchema(append([]SchemaOption{WithStructSchema(*new(T))}, opts...)...)
 }
 
-// ValidateStruct validates cfg against the schema derived from T, returning a
-// formatted error if any rule fails or nil if the configuration is valid.
+// ValidateStruct checks a view against the schema derived from T's struct tags,
+// returning a formatted error if any rule fails and nil if it does not.
 //
-// It takes the Reader interface, so callers do not need to type-assert
-// Props.Config down to the concrete *Container. It is the recommended way to
-// validate a command or feature's config slice:
+// It is the shortest way to validate the slice of configuration a command or
+// feature cares about, without building a Schema by hand:
 //
-//	if err := config.ValidateStruct[MyConfig](props.Config); err != nil {
+//	if err := config.ValidateStruct[MyConfig](store.View()); err != nil {
 //		return err
 //	}
 //
-// Schema options such as WithStrictMode may be passed through.
+// A scoped view validates its own subtree, so a schema written for a section
+// can be applied to that section:
+//
+//	if err := config.ValidateStruct[Server](store.View().Sub("server")); err != nil {
+//		return err
+//	}
+//
+// Schema options such as [WithStrictMode] may be passed through.
 func ValidateStruct[T any](cfg *View, opts ...SchemaOption) error {
 	schema, err := SchemaOf[T](opts...)
 	if err != nil {

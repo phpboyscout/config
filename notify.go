@@ -213,13 +213,7 @@ func (n *notifier) notify(snap *Snapshot) {
 // reportObserverError hands an error to every registered observer-error
 // callback, copying the list under the lock and calling outside it.
 func (n *notifier) reportObserverError(err error) {
-	n.mu.Lock()
-	report := append([]func(error){}, n.onObserveError...)
-	n.mu.Unlock()
-
-	for _, f := range report {
-		f(err)
-	}
+	n.dispatch(n.onObserveError, err)
 }
 
 // notifyError reports a rejected reload.
@@ -228,8 +222,20 @@ func (n *notifier) reportObserverError(err error) {
 // nothing changed, so telling observers "configuration changed" would be a
 // lie — they would re-read values identical to the ones they already have.
 func (n *notifier) notifyError(err error) {
+	n.dispatch(n.onError, err)
+}
+
+// dispatch hands an error to every registered callback.
+//
+// The list is copied under the lock and the callbacks run outside it, so a slow
+// or misbehaving one cannot block the Store or stop the others being told.
+// Written once because the two error channels differ in which list they read
+// and in nothing else — and a change to how errors are delivered, such as
+// recovering a panicking callback, has to reach both.
+func (n *notifier) dispatch(callbacks []func(error), err error) {
 	n.mu.Lock()
-	funcs := append([]func(error){}, n.onError...)
+	funcs := make([]func(error), len(callbacks))
+	copy(funcs, callbacks)
 	n.mu.Unlock()
 
 	for _, f := range funcs {

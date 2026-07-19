@@ -398,17 +398,19 @@ func sameConfiguration(a, b *Snapshot) bool {
 // what a caller would, including how the layers merge, rather than inspecting
 // them individually and hoping the resolved result agrees.
 func (s *Store) validate(loaded []backendLayers) error {
-	if s.schema == nil {
+	errs := s.violations(loaded)
+	if len(errs) == 0 {
 		return nil
 	}
 
-	flat := flatten(loaded)
+	// Expressed through violations rather than beside it. The two used to build
+	// their own candidate snapshot, so a change to how a candidate is assembled
+	// had to be made twice — and the failure when it was not would be silent
+	// divergence between what a reload rejects and what a write rejects, which
+	// is precisely the drift validateChange promises cannot happen.
+	result := &ValidationResult{Errors: errs}
 
-	if result := validateSnapshot(newSnapshot(0, flat), s.schema); !result.Valid() {
-		return fmt.Errorf("%w: %s", ErrInvalidConfig, result.Error())
-	}
-
-	return nil
+	return fmt.Errorf("%w: %s", ErrInvalidConfig, result.Error())
 }
 
 // violations resolves a candidate and reports what the schema objects to.
@@ -862,10 +864,7 @@ func (s *Store) rebuild(ctx context.Context, pending map[string]Pending) ([]back
 
 func collectKeys(values map[string]any, prefix string, seen map[string]bool, out *[]string) {
 	for k, v := range values {
-		path := normaliseKey(k)
-		if prefix != "" {
-			path = prefix + "." + path
-		}
+		path := joinPath(prefix, normaliseKey(k))
 
 		nested, isMap := asStringMap(v)
 		if isMap && len(nested) > 0 {
