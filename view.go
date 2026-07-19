@@ -222,6 +222,15 @@ func (v *View) Unmarshal(target any) error {
 // this way is internally consistent by construction — it cannot contain some
 // fields from before a reload and some from after.
 func (v *View) UnmarshalKey(path string, target any) error {
+	// An empty key is the scope the view already describes, which is what a
+	// prefix-less binding means. Resolving it as a path found nothing and
+	// returned without decoding, so such a binding reported its section present
+	// and handed back an untouched target — while Unmarshal on the same view
+	// decoded it correctly.
+	if strings.TrimSpace(path) == "" {
+		return v.Unmarshal(target)
+	}
+
 	got, ok := v.pinned().Get(v.qualify(path))
 	if !ok {
 		return nil

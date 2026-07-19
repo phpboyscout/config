@@ -2,7 +2,6 @@ package config
 
 import (
 	"reflect"
-	"strings"
 )
 
 // Section is the result of unmarshalling an optional configuration section.
@@ -55,22 +54,7 @@ func targetHasResolvedFields(cfg Reader, prefix string, typ reflect.Type) bool {
 	}
 
 	for i := range typ.NumField() {
-		field := typ.Field(i)
-		if field.PkgPath != "" {
-			continue
-		}
-
-		name, inline, skip := configFieldName(field)
-		if skip {
-			continue
-		}
-
-		fieldKey := prefix
-		if !inline {
-			fieldKey = joinConfigPath(prefix, name)
-		}
-
-		if cfg.IsSet(fieldKey) || targetHasResolvedFields(cfg, fieldKey, field.Type) {
+		if fieldIsResolved(cfg, prefix, typ.Field(i)) {
 			return true
 		}
 	}
@@ -78,34 +62,36 @@ func targetHasResolvedFields(cfg Reader, prefix string, typ reflect.Type) bool {
 	return false
 }
 
-func configFieldName(field reflect.StructField) (name string, inline bool, skip bool) {
-	tag := field.Tag.Get("mapstructure")
-	if tag == "" {
-		tag = field.Tag.Get("json")
+// fieldIsResolved reports whether one struct field has a value configured under
+// any spelling the decoder would accept.
+//
+// Every spelling, because "is this section configured" and "which key do I read
+// it from" have to be the same question. Testing only one meant a field written
+// under an alias reported the section absent, and the caller silently received
+// a zero value the decoder would have filled in.
+func fieldIsResolved(cfg Reader, prefix string, field reflect.StructField) bool {
+	if field.PkgPath != "" {
+		return false
 	}
 
-	if tag == "" {
-		tag = field.Tag.Get("yaml")
+	canonical, aliases, inline, skip := fieldKeys(field)
+	if skip {
+		return false
 	}
 
-	if tag != "" {
-		parts := strings.Split(tag, ",")
-		if parts[0] == "-" {
-			return "", false, true
-		}
+	if inline {
+		return targetHasResolvedFields(cfg, prefix, field.Type)
+	}
 
-		for _, opt := range parts[1:] {
-			if opt == "squash" || opt == "inline" {
-				inline = true
-			}
-		}
+	for _, name := range append([]string{canonical}, aliases...) {
+		fieldKey := joinConfigPath(prefix, name)
 
-		if parts[0] != "" {
-			return parts[0], inline, false
+		if cfg.IsSet(fieldKey) || targetHasResolvedFields(cfg, fieldKey, field.Type) {
+			return true
 		}
 	}
 
-	return strings.ToLower(field.Name), inline, false
+	return false
 }
 
 func joinConfigPath(prefix, name string) string {

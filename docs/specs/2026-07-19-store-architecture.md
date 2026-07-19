@@ -322,6 +322,37 @@ later one has been applied, would hand the caller stale configuration and call i
 
 **Additive**, so D10's freeze holds: no existing signature or behaviour moves.
 
+### R9 — 2026-07-19: one owner for struct-tag precedence
+
+**Two functions answered "what config key does this struct field come from", and disagreed.**
+`configFieldName` took the first non-empty tag in order mapstructure → json → yaml and returned
+one name; `fieldKeys` treats mapstructure as canonical with yaml then json as aliases. They sat
+either side of the same call in `UnmarshalSection`: the first decided whether the section
+existed, the second decided what it decoded to.
+
+**Why there were two, since it is instructive.** `configFieldName` is inherited — it arrived
+with the extraction from `go-tool-base` and is byte-identical to the pre-rewrite container's.
+`fieldKeys` was written for this rewrite, when honouring all three tag families became a
+requirement, and it needs a different model: mapstructure can only match one name, so an
+alternate spelling has to be resolved *into* the canonical key before decoding. The probe only
+ever needed *a* name to test with, so first-non-empty was adequate on its own terms.
+
+The rewrite replaced the decode path and inherited the probe. Three things kept it hidden: they
+are in different files, the probe only decides anything when `SectionExists` is false, and no
+test covered a field carrying both a `json` and a `yaml` tag under a prefix-less binding.
+
+This is the same shape as R6 — an inherited mechanism left in place beside its replacement,
+quietly answering the same question differently.
+
+The probe now asks `fieldKeys` and tests the canonical name plus every alias, so a field written
+under any spelling the decoder accepts is found by the check that decides whether to decode at
+all.
+
+**Also fixed, found while reproducing it:** `UnmarshalKey("")` resolved an empty path, found
+nothing and returned without decoding — so a prefix-less binding reported its section present
+and handed back an untouched target, while `Unmarshal` on the same view decoded correctly. An
+empty key now means the scope the view describes, which is what such a binding plainly intends.
+
 ## Why this exists
 
 The module needs to write configuration back to the files it was loaded from — preserving

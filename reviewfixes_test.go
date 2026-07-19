@@ -1243,3 +1243,86 @@ func TestObserveSection_ApplyInitialIsANoOpAfterAChange(t *testing.T) {
 		t.Errorf("got %d deliveries, want the change alone", len(*got))
 	}
 }
+
+// "Is this section configured" and "which key do I read it from" have to be the
+// same question. The existence probe was inherited from the pre-rewrite
+// container and took the first non-empty tag; the decoder, written for the
+// rewrite, treats mapstructure as canonical with yaml and json as aliases. A
+// field written under an alias therefore reported the section absent, and the
+// caller received a zero value the decoder would have filled in.
+func TestUnmarshalSection_ProbeAndDecodeAgreeOnTagPrecedence(t *testing.T) {
+	t.Parallel()
+
+	type tagged struct {
+		Addr string `json:"addr" yaml:"address"`
+	}
+
+	// The section key is absent, so the probe alone decides existence.
+	s := storeOn(t, memFS(t, map[string]string{"/app.yaml": "address: 1.2.3.4\n"}), "/app.yaml")
+
+	got, err := UnmarshalSection[tagged](s.View(), "")
+	if err != nil {
+		t.Fatalf("UnmarshalSection: %v", err)
+	}
+
+	if !got.Exists {
+		t.Fatal("a configured section was reported absent")
+	}
+
+	if got.Value.Addr != "1.2.3.4" {
+		t.Errorf("Addr = %q — the probe and the decoder disagree about the tag", got.Value.Addr)
+	}
+
+	// A direct decode of the same view must agree.
+	var direct tagged
+	if err := s.View().Unmarshal(&direct); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	if direct.Addr != got.Value.Addr {
+		t.Errorf("section decode %q, direct decode %q — the two entry points disagree",
+			got.Value.Addr, direct.Addr)
+	}
+}
+
+// An empty key is the scope the view already describes, which is what a
+// prefix-less binding means. Resolving it as a path found nothing and returned
+// without decoding, so the caller got an untouched target.
+func TestUnmarshalKey_AnEmptyKeyMeansTheWholeScope(t *testing.T) {
+	t.Parallel()
+
+	type settings struct {
+		Host string `mapstructure:"host"`
+		Port int    `mapstructure:"port"`
+	}
+
+	s := storeOn(t, memFS(t, map[string]string{
+		"/app.yaml": "server:\n  host: h\n  port: 8080\n",
+	}), "/app.yaml")
+
+	var whole settings
+	if err := s.View().UnmarshalKey("", &whole); err != nil {
+		t.Fatalf("UnmarshalKey: %v", err)
+	}
+
+	// The root has no host, so this decodes nothing — but it must behave as
+	// Unmarshal does rather than silently skipping.
+	var viaUnmarshal settings
+	if err := s.View().Unmarshal(&viaUnmarshal); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	if whole != viaUnmarshal {
+		t.Errorf("UnmarshalKey(\"\") = %+v, Unmarshal = %+v — they describe the same view", whole, viaUnmarshal)
+	}
+
+	// Scoped to the section, an empty key decodes that section.
+	var scoped settings
+	if err := s.View().Sub("server").UnmarshalKey("", &scoped); err != nil {
+		t.Fatalf("scoped UnmarshalKey: %v", err)
+	}
+
+	if scoped.Host != "h" || scoped.Port != 8080 {
+		t.Errorf("scoped decode = %+v, want the server section", scoped)
+	}
+}
