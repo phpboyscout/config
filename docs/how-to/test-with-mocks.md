@@ -1,24 +1,38 @@
-# Test with the config mock
+# Test with the config mocks
 
-Code that reads configuration should take a `Containable`, not a concrete `*Container`
-— so tests can pass a mock and assert exactly which keys are read, or drive specific
-return values, without building a real config file. The module ships those mocks in
-the **`mocks`** package.
+Code that reads configuration should take a `config.Reader`, not a concrete `*Store` —
+so a test can pass a mock, assert exactly which keys are read, and drive specific
+return values without building a real configuration file. The module ships generated
+[testify](https://github.com/stretchr/testify) mocks in the **`mocks`** package.
+
+## What is in the package
+
+| Mock | Mocks | Use it when |
+|---|---|---|
+| `MockReader` | `config.Reader` | testing anything that only reads configuration |
+| `MockObserved` | `config.Observed` | testing an observer's `Run` in isolation |
+| `MockObservable` | `config.Observable` | asserting that your wiring registered an observer, or that it ran |
+| `MockBinder` | `config.Binder` | testing a typed section without a real `Store` |
+| `MockBackend` | `config.Backend` | testing a component that consumes a custom source |
+| `MockWritableBackend` | `config.WritableBackend` | as above, for one that can persist |
+
+Each has a `NewMockX(t)` constructor that registers cleanup asserting every
+expectation was met, so a read your code was supposed to perform and did not fails the
+test.
 
 ## Depend on the interface
 
 ```go
-// production code takes the interface
-func NewServer(cfg config.Containable) *Server {
+// production code takes the interface, not the store
+func NewServer(cfg config.Reader) *Server {
 	return &Server{addr: cfg.GetString("server.host"), port: cfg.GetInt("server.port")}
 }
 ```
 
-## Use the published mock
+`*config.View` satisfies `config.Reader`, so the wiring passes `store.View()` and the
+test passes a mock.
 
-`configmocks.MockContainable` is a [testify](https://github.com/stretchr/testify) mock
-of `Containable` (and `MockObservable` of `Observable`). Set expectations with the
-generated `EXPECT()` helpers:
+## Use the published mock
 
 ```go
 import (
@@ -26,11 +40,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	configmocks "gitlab.com/phpboyscout/go/config/mocks"
+	"gitlab.com/phpboyscout/go/config/mocks"
 )
 
 func TestNewServer(t *testing.T) {
-	cfg := configmocks.NewMockContainable(t) // fails the test on unexpected calls
+	cfg := mocks.NewMockReader(t) // fails the test on unexpected calls
 	cfg.EXPECT().GetString("server.host").Return("localhost")
 	cfg.EXPECT().GetInt("server.port").Return(8080)
 
@@ -41,91 +55,135 @@ func TestNewServer(t *testing.T) {
 }
 ```
 
-`NewMockContainable(t)` registers cleanup that asserts every expectation was met, so a
-missing read fails the test.
+Reach for this when the *keys read* are the thing under test. It is the only way to
+assert that a component reads `server.host` and nothing else, which is a genuine
+regression risk when someone adds a stray lookup.
 
-### Mocking nested sections
+## Test an observer's logic
 
-`Sub()` returns another `Containable`, so return a second mock from it:
-
-```go
-sub := configmocks.NewMockContainable(t)
-sub.EXPECT().GetString("host").Return("db.local")
-
-cfg := configmocks.NewMockContainable(t)
-cfg.EXPECT().Sub("database").Return(sub)
-```
-
-## When you want real behaviour
-
-If you're testing the *config* behaviour itself (merge, precedence, unmarshal) rather
-than a consumer, don't mock — build a real container from a reader, which needs no
-files:
+An observer is handed a `config.Observed`, so `MockObserved` drives it directly — no
+watcher, no files, no timing:
 
 ```go
-cfg := config.NewReaderContainer(afero.NewMemMapFs(),
-	config.WithConfigFormat("yaml"),
-	config.WithConfigReaders(strings.NewReader("server:\n  port: 8080\n")))
-
-assert.Equal(t, 8080, cfg.GetInt("server.port"))
-```
-
-!!! note "Readers need an explicit format"
-    `WithConfigFormat` is **required** for reader-backed containers — there is no
-    filename to infer `yaml`/`json`/`toml` from.
-
-Use the mock to test *consumers* of config; use a reader container to test config
-*itself*. For file-based tests, `afero.NewMemMapFs()` + `afero.WriteFile` gives you real
-merge behaviour with no disk.
-
-## Testing observers
-
-Observers often carry critical logic (restarting services, changing log levels), so test
-them — but you don't need a file watcher to do it.
-
-**Unit-test the logic** by calling it directly with a mock:
-
-```go
-cfg := configmocks.NewMockContainable(t)
+cfg := mocks.NewMockObserved(t)
 cfg.EXPECT().GetString("log.level").Return("debug")
 
 require.NoError(t, (&levelWatcher{}).Run(cfg))
 ```
 
-**Test registration** with a reader container. Reader containers never watch files, so
-run the registered observers yourself via `GetObservers()` — it exists precisely as a
-testability affordance:
+Observers often carry the riskiest logic in a service — restarting listeners, changing
+log levels — and this is the cheapest way to test it. For the reload machinery itself,
+see [hot-reload](hot-reload.md#testing-reload-behaviour), which drives change detection
+with a stub `Watcher`.
+
+`MockObserved.Sub` returns a `*config.View`, not another mock, because `Sub` is
+concrete on the read surface. Return `nil` for an absent key, or a real view built
+with `config.NewView(snapshot)` when the code under test descends into a subtree.
+
+## Test a typed section without a store
+
+`ObserveSection` takes a `config.Binder`, and `MockBinder` is one. This lets you assert
+that a component binds the section it claims to, and capture the observer it registers
+so you can fire it yourself:
 
 ```go
-cfg := config.NewReaderContainer(afero.NewMemMapFs(),
-	config.WithConfigFormat("yaml"),
-	config.WithConfigReaders(strings.NewReader("log:\n  level: debug\n")))
+var observer func(config.Observed) error
 
-registerObservers(cfg) // the code under test
+binder := mocks.NewMockBinder(t)
+binder.EXPECT().View().Return(source.View())
+binder.EXPECT().AddObserverFunc(mock.Anything).
+	Run(func(fn func(config.Observed) error) { observer = fn }).
+	Return()
 
-for _, o := range cfg.GetObservers() {
-	require.NoError(t, o.Run(cfg))
-}
+settings, err := config.ObserveSection[Server](binder, "server")
+require.NoError(t, err)
+require.Equal(t, 8080, settings.Value().Port)
+
+// Later: simulate a reload with whatever configuration you like.
+require.NoError(t, observer(next.View()))
 ```
 
-For genuine end-to-end reload tests see
-[hot-reload](hot-reload.md#testing-reload-behaviour) — inject a small debounce and poll.
+## When you want real behaviour
+
+If what you are testing is the *configuration* behaviour itself — merging, precedence,
+provenance, decoding — do not mock. Build a real `Store` from in-memory readers, which
+needs no filesystem at all:
+
+```go
+store, err := config.NewStore(ctx,
+	config.WithReaders(
+		config.NamedSource{Name: "defaults", Content: []byte("server:\n  port: 8080\n")},
+		config.NamedSource{Name: "overlay", Content: []byte("server:\n  port: 9090\n")},
+	),
+)
+require.NoError(t, err)
+
+assert.Equal(t, 9090, store.View().GetInt("server.port"))
+```
+
+For file behaviour — watching, writing, missing overlays — use `afero.NewMemMapFs()`,
+which gives you real merge and write behaviour with nothing on disk:
+
+```go
+fsys := afero.NewMemMapFs()
+require.NoError(t, afero.WriteFile(fsys, "/app.yaml", []byte("server:\n  port: 8080\n"), 0o644))
+
+store, err := config.NewStore(ctx, config.WithFiles(fsys, "/app.yaml"))
+require.NoError(t, err)
+```
+
+Note that `fsnotify` cannot see an in-memory filesystem, so `Watch` falls back to
+polling there — which is why a test that needs deterministic change detection should
+supply its own `Watcher` rather than rely on either.
+
+Use a mock to test *consumers* of configuration; use a real store to test
+configuration *itself*.
+
+## Test the environment without touching the process
+
+Process environment is global state, so mutating it makes parallel tests interfere with
+each other. `WithEnviron` supplies the variables instead:
+
+```go
+store, err := config.NewStore(ctx,
+	config.WithFiles(fsys, "/app.yaml"),
+	config.WithEnv("MYTOOL", config.WithEnviron(func() []string {
+		return []string{"MYTOOL_SERVER_PORT=9090"}
+	})),
+)
+```
+
+## Check which observers were registered
+
+`store.Observers()` returns the registered observers, which exists for exactly this —
+asserting that your wiring code registered what it should:
+
+```go
+registerObservers(store) // the code under test
+
+assert.Len(t, store.Observers(), 3)
+```
 
 ## Debugging a config surprise
 
-Three affordances for "why is this value what it is?":
+Three questions cover nearly every "why is this value what it is?":
 
 ```go
-cfg.Dump(os.Stdout)                    // every resolved value, as JSON, to a writer
-slog.Default().Info("config", "all", cfg.ToJSON())
-cfg.GetViper().AllSettings()           // sanctioned escape hatch for deep introspection
-cfg.ConfigFiles()                      // which files actually contributed, in merge order
+view := store.View()
+
+fmt.Println(view.Explain("server.port"))    // the whole provenance chain
+fmt.Println(view.Shadowed("server.port"))   // every layer defining it, lowest first
+fmt.Println(store.Sources())                // every backend, in precedence order
 ```
 
-When a value surprises you, walk the precedence chain: **flags → env → files (later
-override earlier) → embedded → defaults**.
+`view.Keys()` enumerates every leaf path, and `store.Snapshot().Values()` returns the
+merged configuration as a plain map — a copy, so printing or mutating it cannot affect
+the store. Remember that precedence is simply the order the sources were added, so
+`Sources()` is usually enough to explain a surprise on its own.
 
 ## Related
 
-- [Getting started](../getting-started.md)
+- [Load & merge configuration](load-and-merge.md)
 - [Use typed sections](typed-sections.md)
+- [React to changes with hot-reload](hot-reload.md)
+- [Getting started](../getting-started.md)

@@ -1,17 +1,19 @@
 # Use typed sections
 
-Reading `cfg.GetString("server.host")` everywhere is stringly-typed and easy to get
-wrong. A **section** projects a subtree of the config onto one of your structs, once,
-so the rest of your code works with ordinary Go data.
+Reading `view.GetString("server.host")` everywhere is stringly-typed and easy to get
+wrong. A **section** projects a subtree of the configuration onto one of your structs,
+once, so the rest of your code works with ordinary Go data.
 
 This is also the boundary that keeps packages reusable: a package should accept *its
-own settings struct*, not a config container. See
-[Why a wrapper](../explanation/why-a-wrapper.md#typed-sections-are-a-decoupling-boundary).
+own settings struct*, not a configuration store. The
+[last section of this page](#stay-extractable-depend-on-a-tiny-local-interface) shows
+how that works.
 
 ## Unmarshal a section
 
-`UnmarshalSection[T]` decodes the subtree at `key` into a `Section[T]`. Field tags are
-**relative to** the section key:
+`UnmarshalSection[T]` decodes the subtree at `key` into a `Section[T]`. It takes a
+`config.Reader`, so a `*View` — or a mock — will do. Field tags are **relative to**
+the section key:
 
 ```go
 type Server struct {
@@ -23,7 +25,7 @@ type Server struct {
 	} `mapstructure:"tls"`
 }
 
-section, err := config.UnmarshalSection[Server](cfg, "server")
+section, err := config.UnmarshalSection[Server](store.View(), "server")
 if err != nil {
 	return err
 }
@@ -44,7 +46,7 @@ if !section.Exists {
 
 `MustUnmarshalSection[T]` is the panic-on-error variant — use it **sparingly**, in tests
 or package defaults where a panic is acceptable; production code should handle the error.
-`cfg.SectionExists("server")` checks presence without decoding, which lets you
+`view.SectionExists("server")` checks presence without decoding, which lets you
 distinguish *absent* from *present-but-empty* (e.g. an optional provider block, or an
 "is this configured yet?" check).
 
@@ -60,13 +62,16 @@ distinguish *absent* from *present-but-empty* (e.g. an optional provider block, 
 performs the initial decode, registers a reload observer, validates each fresh
 snapshot, **preserves the last valid snapshot if a reload cannot be decoded or
 validated**, and optionally invokes an apply callback when the section actually
-changed:
+changed.
+
+Its first argument is a `config.Binder` — anything with a `View() *View` and an
+`AddObserverFunc`. A `*Store` is one, and so is a stub you write for a test:
 
 ```go
-settings, err := config.ObserveSection[Server](cfg, "server",
+settings, err := config.ObserveSection[Server](store, "server",
 	config.WithSectionValidator(func(next Server) error {
 		if next.Port <= 0 {
-			return fmt.Errorf("port must be positive")
+			return errors.New("port must be positive")
 		}
 		return nil
 	}),
@@ -84,9 +89,9 @@ if err != nil {
 | Method | Returns |
 |---|---|
 | `Value() T` | the current value (a copy) — **a method here**, unlike `Section[T].Value` |
-| `Current() *T` | pointer to the current snapshot, or `nil` when the section is absent |
-| `Exists() bool` | whether the section is present |
-| `Version() uint64` | bumps **only** when the typed section actually changed |
+| `Current() *T` | pointer to the current snapshot; when the section is absent it points at the zero value (or your defaults), not nil |
+| `Exists() bool` | whether the latest snapshot came from an explicit section |
+| `Version() uint64` | starts at 1 after the initial decode, and bumps **only** when the typed section actually changed |
 
 !!! warning "Snapshots are read-only, and you must re-read them"
     Treat the value behind `Current()` as **immutable** — never mutate it in place. It is
@@ -112,13 +117,16 @@ diffing individual keys.
 | `WithSectionValidator(func(T) error)` | reject an invalid snapshot; the previous good one is kept |
 | `WithSectionApply(func(SectionChange[T]) error)` | run on a real change — reconfigure your component |
 | `WithSectionDefaults(defaults T, merge func(defaults, overlay T) T)` | seed defaults and define how an overlay merges over them |
-| `WithSectionDefaultFunc(func(Containable) T, merge ...)` | as above, but defaults computed from the container |
+| `WithSectionDefaultFunc(func(Observed) T, merge func(defaults, overlay T) T)` | as above, but the defaults are computed from the configuration snapshot being decoded |
 | `WithSectionEqual(func(previous, current Section[T]) bool)` | custom change detection when the default comparison isn't right |
+
+Supplying defaults without a merge function returns `ErrNoMergeFunc`: silently
+preferring one over the other would drop half the settings without saying so.
 
 ```go
 defaults := Server{Host: "localhost", Port: 8080}
 
-section, err := config.UnmarshalSection[Server](cfg, "server",
+settings, err := config.ObserveSection[Server](store, "server",
 	config.WithSectionDefaults(defaults, func(defaults, overlay Server) Server {
 		if overlay.Host == "" {
 			overlay.Host = defaults.Host
@@ -144,13 +152,14 @@ type SettingsSource interface {
 func NewServer(src SettingsSource) *Server { ... }
 ```
 
-`*config.ObservedSection[ServerSettings]` satisfies that shape, so the wiring code
-passes it in and your package stays dependency-free. This is exactly how the
-phpboyscout toolkit modules were decoupled before extraction — the settings struct
+`*config.ObservedSection[ServerSettings]` satisfies that shape structurally, so the
+wiring code passes it in and your package stays dependency-free. This is exactly how
+the phpboyscout toolkit modules were decoupled before extraction — the settings struct
 and a one-method interface are the whole contract.
 
 ## Related
 
 - [React to changes with hot-reload](hot-reload.md)
 - [Validate configuration](validate-config.md)
-- [Why a wrapper over Viper](../explanation/why-a-wrapper.md)
+- [Load & merge configuration](load-and-merge.md)
+- [Test with the config mocks](test-with-mocks.md)
