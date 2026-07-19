@@ -105,7 +105,7 @@ func validateView(view *View, schema *Schema) *ValidationResult {
 		validateField(key, field, view.Get(key), view.Has(key), result)
 	}
 
-	detectUnknownKeys(view.Keys(), schema.fields, result, schema.strict)
+	detectUnknownKeys(configuredKeys(view), schema.fields, result, schema.strict)
 
 	return result
 }
@@ -261,6 +261,30 @@ func isDuration(v any) bool {
 	default:
 		return false
 	}
+}
+
+// configuredKeys lists the keys a schema should police: those someone wrote
+// into a configuration source, not those the ambient environment happened to
+// supply.
+//
+// Strict mode exists to catch a typo in a config file. An orchestrator setting
+// an unrelated prefixed variable — APP_VERSION, APP_HOME — would otherwise map
+// into the key space and be rejected as an unknown key, so a deployment
+// platform could stop an application starting by exporting a variable that has
+// nothing to do with it.
+func configuredKeys(view *View) []string {
+	all := view.Keys()
+	out := make([]string, 0, len(all))
+
+	for _, key := range all {
+		if src, ok := view.Origin(key); ok && (src.Kind == SourceEnv || src.Kind == SourceFlag) {
+			continue
+		}
+
+		out = append(out, key)
+	}
+
+	return out
 }
 
 func detectUnknownKeys(allKeys []string, fields map[string]FieldSchema, result *ValidationResult, strict bool) {

@@ -51,11 +51,11 @@ func (s *Store) With(fn func(*View) error) error {
 }
 
 // Snapshot returns the snapshot this view reads from.
-func (v *View) Snapshot() *Snapshot { return v.snap }
+func (v *View) Snapshot() *Snapshot { return v.pinned() }
 
 // qualify prepends the view's prefix to a path.
 func (v *View) qualify(path string) string {
-	if v.prefix == "" {
+	if v == nil || v.prefix == "" {
 		return path
 	}
 
@@ -74,16 +74,16 @@ func (v *View) qualify(path string) string {
 // Returns nil when the key is absent, so `if sub != nil` guards behave.
 func (v *View) Sub(key string) *View {
 	full := v.qualify(key)
-	if !v.snap.Has(full) {
+	if !v.pinned().Has(full) {
 		return nil
 	}
 
-	return &View{snap: v.snap, prefix: full}
+	return &View{snap: v.pinned(), prefix: full}
 }
 
 // Get returns the raw value at a path.
 func (v *View) Get(path string) any {
-	got, _ := v.snap.Get(v.qualify(path))
+	got, _ := v.pinned().Get(v.qualify(path))
 
 	return got
 }
@@ -91,7 +91,7 @@ func (v *View) Get(path string) any {
 // Has reports whether a path is present.
 //
 // A key whose value is an empty container is present: emptiness is a value.
-func (v *View) Has(path string) bool { return v.snap.Has(v.qualify(path)) }
+func (v *View) Has(path string) bool { return v.pinned().Has(v.qualify(path)) }
 
 // IsSet is an alias for Has.
 //
@@ -107,11 +107,15 @@ func (v *View) IsSet(path string) bool { return v.Has(path) }
 // there is any configuration at all — that is what lets a caller check a
 // scoped view without special-casing the top level.
 func (v *View) SectionExists(path string) bool {
-	if v.qualify(path) == "" {
-		return len(v.snap.values) > 0
+	if v == nil || v.snap == nil {
+		return false
 	}
 
-	got, ok := v.snap.Get(v.qualify(path))
+	if v.qualify(path) == "" {
+		return len(v.pinned().values) > 0
+	}
+
+	got, ok := v.pinned().Get(v.qualify(path))
 	if !ok {
 		return false
 	}
@@ -122,10 +126,10 @@ func (v *View) SectionExists(path string) bool {
 }
 
 // Origin reports which layer supplied the effective value at a path.
-func (v *View) Origin(path string) (Source, bool) { return v.snap.Origin(v.qualify(path)) }
+func (v *View) Origin(path string) (Source, bool) { return v.pinned().Origin(v.qualify(path)) }
 
 // Shadowed lists every layer defining a path, lowest precedence first.
-func (v *View) Shadowed(path string) []Source { return v.snap.Shadowed(v.qualify(path)) }
+func (v *View) Shadowed(path string) []Source { return v.pinned().Shadowed(v.qualify(path)) }
 
 // Explain describes where a value came from and what else defines it.
 //
@@ -134,20 +138,20 @@ func (v *View) Shadowed(path string) []Source { return v.snap.Shadowed(v.qualify
 func (v *View) Explain(path string) string {
 	full := v.qualify(path)
 
-	value, ok := v.snap.Get(full)
+	value, ok := v.pinned().Get(full)
 	if !ok {
 		return fmt.Sprintf("%s is not set", full)
 	}
 
-	src, hasOrigin := v.snap.Origin(full)
+	src, hasOrigin := v.pinned().Origin(full)
 	if !hasOrigin {
 		return fmt.Sprintf("%s is a subtree assembled from %s",
-			full, joinSources(v.snap.Shadowed(full)))
+			full, joinSources(v.pinned().Shadowed(full)))
 	}
 
 	out := fmt.Sprintf("%s = %v (from %s)", full, value, src)
 
-	if all := v.snap.Shadowed(full); len(all) > 1 {
+	if all := v.pinned().Shadowed(full); len(all) > 1 {
 		out += fmt.Sprintf("; also defined in %s", joinSources(all[:len(all)-1]))
 	}
 
@@ -189,7 +193,7 @@ func (v *View) GetStringSlice(path string) []string { return cast.ToStringSlice(
 
 // Keys returns every leaf path visible through this view, sorted.
 func (v *View) Keys() []string {
-	all := v.snap.Keys()
+	all := v.pinned().Keys()
 	if v.prefix == "" {
 		return all
 	}
@@ -218,7 +222,7 @@ func (v *View) Unmarshal(target any) error {
 // this way is internally consistent by construction — it cannot contain some
 // fields from before a reload and some from after.
 func (v *View) UnmarshalKey(path string, target any) error {
-	got, ok := v.snap.Get(v.qualify(path))
+	got, ok := v.pinned().Get(v.qualify(path))
 	if !ok {
 		return nil
 	}
@@ -228,10 +232,10 @@ func (v *View) UnmarshalKey(path string, target any) error {
 
 func (v *View) valuesForPrefix() any {
 	if v.prefix == "" {
-		return v.snap.Values()
+		return v.pinned().Values()
 	}
 
-	got, _ := v.snap.Get(v.prefix)
+	got, _ := v.pinned().Get(v.prefix)
 
 	return got
 }
@@ -258,7 +262,13 @@ func decodeInto(input, target any) error {
 	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
 		Result:           target,
 		WeaklyTypedInput: true,
-		Metadata:         nil,
+		// An embedded struct's fields belong to its parent. yaml and json both
+		// treat them that way by default, and a struct shared with either is
+		// embedded expecting exactly that — so without this the decoder looked
+		// for a nested key named after the embedded type, found nothing, and
+		// left every inherited field at its zero value with no error.
+		Squash:   true,
+		Metadata: nil,
 		DecodeHook: mapstructure.ComposeDecodeHookFunc(
 			mapstructure.StringToTimeDurationHookFunc(),
 			mapstructure.StringToSliceHookFunc(","),
@@ -420,7 +430,12 @@ func fieldKeys(field reflect.StructField) (canonical string, aliases []string, s
 		return "", nil, false, true
 	}
 
-	if mapOpts["squash"] {
+	// mapstructure calls it squash; yaml and json both call it inline. A struct
+	// shared with either — which is the whole reason the other tags are
+	// honoured — embeds with ",inline", and treating that as an ordinary field
+	// sent the decoder looking for a nested key that does not exist, so every
+	// embedded field decoded as its zero value with no error.
+	if mapOpts["squash"] || isInlined(field, "yaml") || isInlined(field, "json") {
 		return "", nil, true, false
 	}
 
@@ -455,4 +470,29 @@ func deref(t reflect.Type) reflect.Type {
 	}
 
 	return t
+}
+
+// isInlined reports whether a tag marks the field as inlined into its parent.
+//
+// mapstructure calls it squash; yaml and json both call it inline. A struct
+// shared with either — which is the whole reason those tags are honoured — is
+// embedded with ",inline".
+func isInlined(field reflect.StructField, tag string) bool {
+	name, opts := splitTag(field.Tag.Get(tag))
+
+	return opts["inline"] && name == ""
+}
+
+// pinned returns the snapshot this view reads, tolerating a nil view.
+//
+// Every Snapshot method already guards a nil receiver, so a view over nothing
+// reads as empty configuration. Reaching the field directly was the one step
+// that did not, which made a derived view of a missing key — the documented way
+// to ask for an optional section — crash instead of reading as absent.
+func (v *View) pinned() *Snapshot {
+	if v == nil {
+		return nil
+	}
+
+	return v.snap
 }

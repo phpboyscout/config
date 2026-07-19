@@ -77,7 +77,7 @@ func (b *flagBackend) Load(ctx context.Context) ([]Layer, error) {
 
 		layers = append(layers, Layer{
 			Source: Source{Kind: SourceFlag, Name: "--" + f.Name, Writable: false},
-			Values: nest(key, f.Value.String()),
+			Values: nest(key, flagValue(f)),
 		})
 	})
 
@@ -90,4 +90,24 @@ func (b *flagBackend) keyFor(name string) string {
 	}
 
 	return strings.ReplaceAll(name, "-", ".")
+}
+
+// flagValue extracts a flag's value, keeping a repeatable flag a list.
+//
+// String() renders a slice flag as "[a,b]" for display, and storing that gives
+// a single garbage element rather than the two values the user passed. pflag
+// exposes the elements through SliceValue, so ask for them.
+func flagValue(f *pflag.Flag) any {
+	if sv, ok := f.Value.(pflag.SliceValue); ok {
+		items := sv.GetSlice()
+
+		out := make([]any, len(items))
+		for i, item := range items {
+			out[i] = item
+		}
+
+		return out
+	}
+
+	return f.Value.String()
 }

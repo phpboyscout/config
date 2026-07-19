@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
+	"github.com/spf13/pflag"
 )
 
 // Commenting a configuration file out entirely is an ordinary thing to do, and
@@ -372,5 +373,130 @@ func TestValidate_AScopedViewValidatesItsOwnSubtree(t *testing.T) {
 	// The unscoped view genuinely does not have a top-level host.
 	if result := s.View().Validate(schema); result.Valid() {
 		t.Error("the unscoped view passed a schema describing a nested section")
+	}
+}
+
+// A View over nothing must read as empty configuration. Every Snapshot method
+// already guards a nil receiver; reaching the field did not, so a derived view
+// of a missing key — the documented way to ask for an optional section —
+// crashed instead of reading as absent.
+func TestView_IsNilTolerant(t *testing.T) {
+	t.Parallel()
+
+	empty := NewView(nil)
+
+	if empty.SectionExists("") || empty.Has("a") || empty.Get("a") != nil {
+		t.Error("a view over no snapshot did not read as empty")
+	}
+
+	if got := empty.Keys(); len(got) != 0 {
+		t.Errorf("Keys() = %v, want empty", got)
+	}
+
+	s := storeOn(t, memFS(t, map[string]string{"/app.yaml": "server:\n  host: h\n"}), "/app.yaml")
+
+	type opts struct {
+		A string `mapstructure:"a"`
+	}
+
+	// Sub of a missing key returns nil, which must still be usable.
+	section, err := UnmarshalSection[opts](s.View().Sub("missing"), "opts")
+	if err != nil {
+		t.Fatalf("UnmarshalSection over a missing section: %v", err)
+	}
+
+	if section.Exists {
+		t.Error("a section under a missing prefix reports that it exists")
+	}
+}
+
+// An embedded struct's fields belong to its parent. yaml and json both spell
+// that ",inline"; only mapstructure calls it squash. A struct shared with
+// either — the whole reason those tags are honoured — left every inherited
+// field at its zero value.
+func TestUnmarshal_EmbeddedStructsAreInlined(t *testing.T) {
+	t.Parallel()
+
+	type common struct {
+		Level string `yaml:"level"`
+	}
+
+	type section struct {
+		common `yaml:",inline"`
+		Name   string `yaml:"name"`
+	}
+
+	s := storeOn(t, memFS(t, map[string]string{
+		"/app.yaml": "sect:\n  level: debug\n  name: n\n",
+	}), "/app.yaml")
+
+	got, err := UnmarshalSection[section](s.View(), "sect")
+	if err != nil {
+		t.Fatalf("UnmarshalSection: %v", err)
+	}
+
+	if got.Value.Level != "debug" {
+		t.Errorf("embedded field = %q, want debug", got.Value.Level)
+	}
+
+	if got.Value.Name != "n" {
+		t.Errorf("Name = %q, want n", got.Value.Name)
+	}
+}
+
+// A repeatable flag is a list. String() renders one for display as "[a,b]", so
+// storing that gave a single garbage element instead of the values passed.
+func TestFlags_ARepeatableFlagStaysAList(t *testing.T) {
+	t.Parallel()
+
+	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	flags.StringSlice("tag", nil, "tags")
+
+	if err := flags.Parse([]string{"--tag", "a", "--tag", "b"}); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	s, err := NewStore(context.Background(),
+		WithFiles(memFS(t, map[string]string{"/app.yaml": "x: 1\n"}), "/app.yaml"),
+		WithFlags(flags))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	got := s.View().GetStringSlice("tag")
+	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Errorf("tag = %#v, want [a b]", got)
+	}
+}
+
+// Strict mode polices what someone wrote into a configuration source. An
+// orchestrator exporting an unrelated prefixed variable would otherwise stop
+// the application starting.
+func TestValidate_StrictModeIgnoresAmbientEnvironmentVariables(t *testing.T) {
+	t.Parallel()
+
+	type cfg struct {
+		Log struct {
+			Level string `config:"log.level"`
+		}
+	}
+
+	schema, err := NewSchema(WithStructSchema(cfg{}), WithStrictMode())
+	if err != nil {
+		t.Fatalf("NewSchema: %v", err)
+	}
+
+	if _, err := NewStore(context.Background(),
+		WithFiles(memFS(t, map[string]string{"/app.yaml": "log:\n  level: info\n"}), "/app.yaml"),
+		WithEnv("APP", envOf("APP_VERSION=1.2.3", "APP_HOME=/srv")),
+		WithSchema(schema)); err != nil {
+		t.Fatalf("an unrelated environment variable stopped the store: %v", err)
+	}
+
+	// A typo in the file itself is still caught.
+	if _, err := NewStore(context.Background(),
+		WithFiles(memFS(t, map[string]string{"/app.yaml": "log:\n  levle: info\n"}), "/app.yaml"),
+		WithSchema(schema)); err == nil {
+		t.Error("strict mode accepted a misspelled key in a configuration file")
 	}
 }
