@@ -1,0 +1,905 @@
+properties:
+  name: keryx
+  description: Generate and publish promo reels to social platforms
+  features:
+    - name: init
+      enabled: true
+    - name: update
+      enabled: true
+    - name: mcp
+      enabled: true
+    - name: docs
+      enabled: true
+release_source:
+  type: gitlab
+  host: gitlab.com
+  owner: phpboyscout
+  repo: keryx
+version:
+  gtb: v0.27.2
+hashes:
+  .gitignore: 4015ccfe8ae5d89ede38edc15a4f8f999d670c105f834048e291db3db414e16a
+  .gitlab-ci.yml: 2770e55964e0928d9745d373a605f44d25a88bafdb9cbfa1153c1b9d61681565
+  .gitlab/CODEOWNERS: 6384f3b0fa79ff53d5428c8499b4af97bd5c35328a3b7058df34164b2e875f2f
+  .golangci.yaml: 1affeb9f3f3e5e43312a877acc8b0e4cb963cb728c3f23b4f95d4e92d752f4ee
+  .goreleaser.yaml: e0d11491e0ad80f2678b00ea19597b878c27fed727c7d0664f6b444791fcf611
+  .mockery.yml: fdd3481872bf66b2b49262e79f7336608e545dab16e0706390f610b35fbd4fac
+  .pre-commit-config.yaml: a494d39ea9be936149684eaa33adeb5914dc119f64101a47c3a6bfed0374777c
+  CHANGELOG.md: 40b7817db7e740f0d886653d24d7486d87adbf4fac59e0209509739f8cbbb362
+  README.md: b390f55f1dff4d70132316094df68ce5de86167d6ec4ba39743e313531d7d7e8
+  docs/how-to/index.md: 43fd1edfb8871ddf8544929fffc13342d3d88e1eeff2a0bc35363c7d76599154
+  docs/index.md: fb498c46fb4262cb3d0ac0bcaec3c327a027f7c5647ed62f1dbc44f93ccd6f5a
+  go.mod: 5682d635ca8de347d5fe6cac693a7fc8b06f0eee3bd9da3408654ccf7cda7e95
+  justfile: 6246b193e80dff5fe7e8f965bdd07987660775e3dc634fc7d6da66fc05a592b3
+  pkg/cmd/root/assets/init/config.yaml: 468f94d2cad404b43d8b7abe4a938926c35f11c8bd0509639d87fe6489966195
+  zensical.toml: 04266b3849b9d0585711ae35269cd24f1bcbc14fd61bcf6dbb028628378f30ed
+commands:
+  - name: approve
+    description: Approve a platform's reel for posting (the posting gate)
+    long_description: |-
+      Approve a platform's reel for posting — the manual gate before `post` will publish (R-POST).
+      Records the approval (and an optional --at schedule the unattended runner consumes); --revoke
+      returns the platform to draft. Side-effecting, so it is absent from the MCP tool surface.
+    args: ExactArgs(1)
+    hashes:
+      cmd.go: 4130ae620f3607d4239a3710305a961ed42e0ba8ceb07c22b3ff54bd49af18e0
+    mcp_enabled: false
+    flags:
+      - name: workspace
+        type: string
+        description: reel workspace slug
+      - name: at
+        type: string
+        description: schedule (RFC3339) the unattended runner consumes
+      - name: revoke
+        type: bool
+        description: return the platform to draft
+        default: "false"
+  - name: auth
+    description: Authenticate a platform for posting (interactive OAuth)
+    long_description: |-
+      Authenticate a platform for posting via interactive OAuth, storing the tokens (keychain, or the
+      config fallback on headless hosts). --redirect sets the callback URI (must be registered in the
+      platform app; Instagram needs https); --code exchanges a pasted authorization code non-interactively.
+      Side-effecting, so it is absent from the MCP tool surface.
+    args: ExactArgs(1)
+    hashes:
+      cmd.go: 9006b9ea36aacb7af4e3384340d37af7eb4704e5bf2d59c5c3e8a70f9747fb01
+    mcp_enabled: false
+    flags:
+      - name: redirect
+        type: string
+        description: OAuth redirect URI (must be registered in the Meta app; Instagram needs https)
+      - name: code
+        type: string
+        description: exchange a pasted authorization code directly (non-interactive)
+    commands:
+      - name: refresh
+        description: Refresh/rotate platform tokens and alert on impending expiry
+        long_description: |-
+          Refresh/rotate the stored platform tokens and alert on impending expiry — the unattended
+          counterpart to `auth`, run from a scheduled pipeline. --dry-run reports token status without
+          changing anything. A silently stale token is the top unattended failure mode, so refresh failures
+          alert rather than pass quietly.
+        args: MaximumNArgs(1)
+        hashes:
+          cmd.go: 8a1311dae332aff1fdfb6e0251f9f7eda7babfb69288d1663d8a15e1a5e79a87
+        mcp_enabled: false
+        flags:
+          - name: dry-run
+            type: bool
+            description: validate only, report token status without changing anything
+            default: "false"
+  - name: avatar
+    description: Manage the avatar registry (recurring actors composited into reels)
+    long_description: |-
+      Manage the avatar registry — recurring actors (e.g. a mascot or Matt's likeness) composited into
+      reel cards via image-to-image. Subcommands: add (register + auto-analyse), list, show.
+    hashes:
+      cmd.go: 98a8d836ad35a4c6e5f97ecba538acafbed8e3d6ab14be12f275a9ce38560675
+    commands:
+      - name: add
+        description: Register an avatar and auto-analyse its likeness/style/palette
+        long_description: |-
+          Register an avatar from reference images and auto-analyse its likeness, style, and palette into a
+          reusable profile. Once registered, `cards gen --avatar <name>` (or `reel make --avatar`) renders
+          that actor into each panel, preserving likeness across the reel while applying the card theme.
+        args: ExactArgs(2)
+        hashes:
+          cmd.go: 2d3d1a10a3bd278bcfc5485be2a0f2b419e3871f40b21a065d32d55c9e5e804c
+      - name: list
+        description: List registered avatars
+        long_description: List the registered avatars (name + summary).
+        hashes:
+          cmd.go: 31ae7685676ccf1b37ad040d03d2e7cb12e7e2f9e836981ff2f1e11ac27505d8
+      - name: show
+        description: Show a registered avatar's profile
+        long_description: Show a registered avatar's full profile — its analysed likeness, style, and palette.
+        args: ExactArgs(1)
+        hashes:
+          cmd.go: 18ce4a84caf024f3906c168d10884c8d9b7c23df3e7534ac3cf1db307cff004e
+  - name: cards
+    description: Generate and select card illustrations; build the contact sheet
+    long_description: |-
+      Generate and select the per-card illustrations, and build the contact sheet. The take workflow is
+      gen (candidates) -> pick (promote one): `cards gen` writes candidates to cards/takes/, `cards pick`
+      promotes the chosen take to the card's selected slot. `cards set` wires a pre-rendered file instead,
+      and `cards sheet` renders a contact sheet of the takes for review.
+    hashes:
+      cmd.go: 79f34db1d9f4d6744f265a6e307190b8d650b14bdc2cc3ddfd9d6d4c3458fac8
+    commands:
+      - name: gen
+        description: Generate AI card illustrations as candidate takes (--takes)
+        long_description: |-
+          Generate AI card illustrations as candidate takes. --card N targets one storyboard card (0 = all
+          overlay cards); --takes M produces M candidates per card into cards/takes/NN-T.png. --theme sets the
+          card style and --avatar <name> renders a registered avatar into each panel (image-to-image actor),
+          preserving likeness. Choose a take with `cards pick <card> <take>`; screen panels for text leaks.
+        hashes:
+          cmd.go: 248c32c09ff6878aafdea12efdeafdf9c8d3a6b9af44821060d7c85ef43d53e0
+        flags:
+          - name: workspace
+            type: string
+            description: reel workspace slug
+          - name: card
+            type: int
+            description: storyboard card index (0 = all overlay cards)
+            default: "0"
+          - name: takes
+            type: int
+            description: number of candidate takes per card
+            default: "0"
+          - name: theme
+            type: string
+            description: reel theme keyword (card style)
+          - name: avatar
+            type: string
+            description: render a registered avatar into each panel (image-to-image actor)
+          - name: force
+            type: bool
+            description: bypass the content cache and regenerate (R-GEN-8)
+      - name: pick
+        description: Promote a generated card take to the selected slot
+        long_description: |-
+          Promote a generated card take to that card's selected slot (cards/NN.png), wiring it onto the
+          storyboard card's media so `reel build` uses it. Re-runnable; only the named card's selection
+          changes. Replaces hand-editing storyboard.json.
+        args: ExactArgs(2)
+        hashes:
+          cmd.go: 4028dc15a22345c30e19543a4bd26dcc7284f1909c9dad5ac5d4ef77e4113871
+        flags:
+          - name: workspace
+            type: string
+            description: reel workspace slug
+          - name: force
+            type: bool
+            description: overwrite a locked (approved) asset
+      - name: set
+        description: Set a card's selected slot from a pre-rendered file
+        long_description: |-
+          Set a card's selected slot from a pre-rendered file (an image or clip you supply) — the no-AI path
+          for using your own b-roll/artwork as-is. Wires the file onto the card's media for `reel build`.
+        args: ExactArgs(2)
+        hashes:
+          cmd.go: e5f7503db67a9d70e84c7e04ac1161a90b4b6fdceb24e99961348f9a6879951a
+        flags:
+          - name: workspace
+            type: string
+            description: reel workspace slug
+          - name: force
+            type: bool
+            description: overwrite a locked (approved) asset
+      - name: sheet
+        description: Build the contact-sheet screen from card takes
+        long_description: |-
+          Build a contact-sheet image from a card's candidate takes — a single screen laying out the
+          options so they can be compared and a take chosen.
+        hashes:
+          cmd.go: 9b7508f1f1804648d7aebf33ef015a7dafe1a7cd9f5e0c45fb62ebd35d1355b2
+        flags:
+          - name: workspace
+            type: string
+            description: reel workspace slug
+          - name: out
+            type: string
+            description: contact-sheet output path
+      - name: screen
+        description: OCR-screen card takes for accidental text (R-GEN-26)
+        long_description: OCR-screen card takes for accidental text (R-GEN-26)
+        hashes:
+          cmd.go: 146b8343605c017fa5c85b7e6abc66036e0eadd5a780f68216f3602e72ad7f5e
+        flags:
+          - name: workspace
+            type: string
+            description: reel workspace slug
+            shorthand: w
+          - name: card
+            type: int
+            description: screen one card (0 = all)
+          - name: force
+            type: bool
+            description: re-OCR even cached takes
+  - name: cover
+    description: Generate themed cover art for a reel
+    long_description: Generate cover art — the reel's bookend image — from the article theme's style plus an optional --scene, or a verbatim --prompt. Writes --n samples under --out via the configured image provider (Gemini Imagen by default); the selected one bookends the reel.
+    hashes:
+      cmd.go: 47a0d9958cdf9cdab38db2f937d3d1c7f07c3d09d7544d5f33f98759ad2d2650
+    flags:
+      - name: scene
+        type: string
+        description: per-post scene appended to the theme style
+      - name: theme
+        type: string
+        description: article theme keyword
+      - name: "n"
+        type: int
+        description: number of samples
+        default: "0"
+      - name: out
+        type: string
+        description: output path prefix
+      - name: model
+        type: string
+        description: force a specific image model id (else config/default chain)
+      - name: prompt
+        type: string
+        description: use this fully-formed prompt verbatim (bypass theme style + scene)
+  - name: music
+    description: Generate and select the music bed (ElevenLabs Music)
+    long_description: |-
+      Generate and select the reel's music bed (ElevenLabs Music). `music gen` composes it — standalone
+      (--prompt --out) or as workspace candidates (--takes); `music pick` promotes a take. In take mode the
+      bed defaults to the VO-driven reel total so it covers the whole reel (--length overrides).
+    hashes:
+      cmd.go: c7aef9226b552536664cfdbb362f885fd0d282d93ece56d8308e6170de3fdaba
+    commands:
+      - name: gen
+        description: Compose a music bed (standalone --prompt, or --takes into a workspace)
+        long_description: |-
+          Compose a music bed (ElevenLabs Music). Two modes: standalone (--prompt "..." --out bed.mp3) writes
+          one bed; workspace take mode (--workspace <slug> --takes M) writes M candidates to music/takes/ to
+          audition and `music pick`. In take mode the bed length defaults to the VO-driven reel total (so the
+          music covers the whole reel, not a fixed cap); --length overrides it explicitly. Prompt/tone default
+          from the reel theme's music settings.
+        hashes:
+          cmd.go: 92ce98263e127fb621b7a74c5daae6734aa127186d9891fa79959b25202edafe
+        flags:
+          - name: prompt
+            type: string
+            description: music bed description
+          - name: length
+            type: string
+            description: bed length (e.g. 35s)
+          - name: out
+            type: string
+            description: output mp3 path
+          - name: theme
+            type: string
+            description: reel theme for music defaults
+          - name: workspace
+            type: string
+            description: reel workspace slug (take mode)
+          - name: takes
+            type: int
+            description: number of candidate beds to generate
+            default: "0"
+          - name: force
+            type: bool
+            description: bypass the content cache and regenerate (R-GEN-8)
+      - name: pick
+        description: Promote a generated bed take to the selected slot
+        long_description: Promote a generated bed take (music/takes/T.mp3) to the workspace's selected music.mp3.
+        args: ExactArgs(1)
+        hashes:
+          cmd.go: c97708899af9fad902f529872d15f2b65bdeb83c1dc5b27e6fd5de50dc1ff78d
+        flags:
+          - name: workspace
+            type: string
+            description: reel workspace slug
+          - name: force
+            type: bool
+            description: overwrite a locked (approved) asset
+  - name: portrait
+    description: Generate a stylised avatar portrait (image-to-image)
+    long_description: Generate a stylised avatar portrait from one or more --ref reference photos via image-to-image, rendered in the portrait theme's style. Writes --n variants under --out via the configured image provider (Gemini by default); used as a recurring on-screen actor composited into reels.
+    hashes:
+      cmd.go: 8a2cee8ea1af46fb4c5415214a88dddebd3601824b72158060bf413f2e4c7c79
+    flags:
+      - name: ref
+        type: stringarray
+        description: reference photo (repeatable)
+        default: '[]'
+      - name: theme
+        type: string
+        description: portrait theme keyword
+      - name: "n"
+        type: int
+        description: number of variants
+        default: "0"
+      - name: out
+        type: string
+        description: output path prefix
+      - name: model
+        type: string
+        description: force a specific image model id (else config/default chain)
+  - name: post
+    description: Post an approved reel to a platform (or all/due)
+    long_description: |-
+      Post an approved reel to a platform — or `post all` / `post due` to fan out across enabled,
+      approved platforms and report per-platform results. Refuses platforms that aren't approved (the
+      `approve` gate). --dry-run validates without posting; --force re-posts an already-posted platform.
+    args: ExactArgs(1)
+    hashes:
+      cmd.go: bc0a4517a77ddbefa28d4b348e18123323753570bcbfc4befc2836de5b6cbaf8
+    mcp_enabled: false
+    flags:
+      - name: workspace
+        type: string
+        description: reel workspace slug
+      - name: dry-run
+        type: bool
+        description: validate only; post nothing
+        default: "false"
+      - name: force
+        type: bool
+        description: re-post an already-posted platform
+        default: "false"
+  - name: reel
+    description: Build and manage reels
+    long_description: |-
+      Create and manage reel workspaces and assemble the finished mp4. A workspace holds the storyboard,
+      takes, selected inputs, and output. Typical flow: `reel new` -> author the storyboard -> generate +
+      select VO/cards/music (or `reel make` for one-pass) -> `reel build`. keryx keeps no state itself —
+      the workspace lives in the owning project's repo.
+    hashes:
+      cmd.go: 1ffe18cedf3b745461889538d744ad63cf48a17c0c8d0eb1e76fc3d854b8b782
+    commands:
+      - name: build
+        description: Assemble a reel from a storyboard
+        long_description: |-
+          Assemble a reel from a storyboard into an mp4. VO clips drive per-card timing (each card = its
+          narration length + lead + tail; cards crossfade) with the music bed mixed under at reduced gain;
+          --silent renders a no-audio timing/format proof. Reads a --workspace <slug> (or a standalone
+          --storyboard path); --cover bookends, --theme sets palette/fonts, --out overrides the output path.
+          Renders over any backend selected by providers.render (local ffmpeg or in-memory afmpeg).
+        hashes:
+          cmd.go: e63f294decdf9f3e4c83a485a2e6c87a5dd7b7a90c907f7326809ae235422b0f
+        flags:
+          - name: storyboard
+            type: string
+            description: storyboard.json path (standalone)
+          - name: cover
+            type: string
+            description: cover image path
+          - name: theme
+            type: string
+            description: reel theme keyword
+          - name: out
+            type: string
+            description: output mp4 path
+          - name: workspace
+            type: string
+            description: reel workspace dir
+          - name: silent
+            type: bool
+            description: render without audio
+            default: "false"
+      - name: duplicate
+        description: Duplicate a reel workspace (resets posting status)
+        long_description: |-
+          Duplicate a reel workspace's authoring inputs to a new slug, resetting posting status — for
+          spinning a variant without re-authoring from scratch.
+        hashes:
+          cmd.go: b0c9fcdf51997c6b8306b237ed62a7ee6156c18af83aca40338f809e042be773
+      - name: link
+        description: Associate a reel with a content directory
+        long_description: Associate a reel workspace with a content directory (the owning post) for bundle resolution.
+        hashes:
+          cmd.go: 210c9f1711031395f481a4be1fbb4490856962cd386a7900db393e4ff5025721
+      - name: list
+        description: List the project's reels
+        long_description: List the project's reel workspaces with their status (draft / social / posted).
+        hashes:
+          cmd.go: 5ac8af99f8e55040b711fe028d87520a3c3e47b23341f398202b9ec820c9f46f
+      - name: make
+        description: Generate every artefact + build the reel in one pass
+        long_description: |-
+          Generate every missing artefact and build the reel in one pass over an existing storyboard (spec
+          0020): VO + music + cards (+ optional --cover) are generated and each auto-picked (take 1), then
+          `reel build` runs. Idempotent — it generates only what has no selection yet, so a re-run resumes and
+          already-selected (or locked) assets are left untouched. Prints a plan + spend estimate first
+          (--dry-run to preview, --yes to skip the confirm); --takes sets candidates per stage, --silent skips
+          audio, --no-music keeps VO only.
+        hashes:
+          cmd.go: a32306b217c7b60a3114bd2deaebd7f8fbab7cc6d95d2326f0a6d9554f07755a
+        flags:
+          - name: workspace
+            type: string
+            description: Reel workspace slug (required)
+            shorthand: w
+          - name: takes
+            type: int
+            description: Candidate takes per stage (default 1; auto-picks take 1)
+            default: "0"
+          - name: theme
+            type: string
+            description: Theme for cards/cover/VO/music
+          - name: avatar
+            type: string
+            description: Render overlay cards from this avatar (image-to-image)
+          - name: cover
+            type: string
+            description: Also generate a themed cover from this scene
+          - name: silent
+            type: bool
+            description: Text-only timing — skip VO + music; build a silent reel
+            default: "false"
+          - name: no-music
+            type: bool
+            description: Skip the music bed (keep VO)
+            default: "false"
+          - name: dry-run
+            type: bool
+            description: Print the plan + provider-call estimate; generate nothing
+            default: "false"
+          - name: "yes"
+            type: bool
+            description: Skip the spend confirmation (unattended/CI)
+            default: "false"
+      - name: new
+        description: Create a reel workspace
+        long_description: |-
+          Create a reel workspace under the project's reel root: storyboard.json, the vo/ and cards/ dirs,
+          the disposable takes/ + .cache/ dirs, and a .gitignore. --from-post seeds an AI-drafted storyboard
+          from a post (marked unreviewed); --theme sets the reel theme, --bundle links a content dir, --force
+          overwrites an existing workspace.
+        hashes:
+          cmd.go: 27c2732fb9649f88321bb98a37b0d200ffa5da44afbcd01328e2d9f7b17631cc
+        flags:
+          - name: theme
+            type: string
+            description: reel theme keyword
+          - name: bundle
+            type: string
+            description: associate a content directory
+          - name: from-post
+            type: string
+            description: seed from a post (AI draft; Phase 1.5 LLM)
+          - name: force
+            type: bool
+            description: overwrite an existing workspace
+            default: "false"
+      - name: prune
+        description: Drop candidate takes + cache (keep selected)
+        long_description: |-
+          Drop the disposable candidate takes and generation cache (vo/takes, cards/takes, music/takes,
+          .cache), keeping every selected input and the output. Reclaims space without affecting the reel.
+        hashes:
+          cmd.go: 1a29d7e36ad195402b1ae9bd0eebc6e3311128adcdec821af929cd9ca3cac318
+        flags:
+          - name: workspace
+            type: string
+            description: reel workspace slug
+      - name: rename
+        description: Rename a reel workspace
+        long_description: Rename a reel workspace (re-slug), preserving its contents.
+        hashes:
+          cmd.go: d2605e97ce2925906e897ce03533067418de56dbd4c17a325d05a66a1b65adb2
+      - name: rm
+        description: Remove a reel workspace
+        long_description: Remove a reel workspace. Refuses without --yes (there is no interactive prompt).
+        hashes:
+          cmd.go: cd1429c89c5357a8c38c6cbf232964c80f16e716345a7d2fbe8ebba6cfb55370
+        flags:
+          - name: "yes"
+            type: bool
+            description: skip the confirmation prompt
+            default: "false"
+      - name: plan
+        description: Show VO-driven timing + pre-build sanity for a reel workspace
+        long_description: |-
+          Report a reel workspace's real timing and pre-build readiness — read-only, generating and
+          rendering nothing. With promoted VO it prints the VO-driven total and per-card timing (dur,
+          start, vo_delay) identical to what `reel build` assembles, plus the music-bed length
+          `music gen --takes` would request; with no VO it degrades to the storyboard dur (silent)
+          timing and says so. It also flags pre-build gaps: lines missing VO, generated-but-unpromoted
+          takes, overlay cards missing media, a missing cover, and an absent music bed. --output json
+          emits the timing + gaps for the studio / CI. Probes VO through the backend selected by
+          providers.render (local ffmpeg or in-memory afmpeg).
+        hashes:
+          cmd.go: ea1933f2fbd4ab515da0d673c313050d787b38d18918a3e87d8c357f8b0c53a3
+        flags:
+          - name: workspace
+            type: string
+            description: reel workspace slug
+            shorthand: w
+      - name: lock
+        description: Mark a selected asset as reviewed/approved (immutable until unlocked)
+        long_description: |-
+          Record that a selected asset has been reviewed and approved, so tooling treats it as immutable:
+          a `voice pick` / `cards pick` / `cards set` / `music pick` or take re-roll of it refuses without
+          --force, and `reel make` leaves it alone. This is the durable fix for take variance re-mangling
+          an approved read on regeneration (spec 0025). kind is vo|card|music|cover; index is the 1-based
+          line/card for vo/card and omitted for the singleton music/cover. The asset must already be
+          selected. State is recorded under `locked` in workspace.yaml (auditable, survives `reel prune`).
+        hashes:
+          cmd.go: 930d3f8e255d40a8623b5061fc732ae0812d337f633ff789d5aa48a77048aba2
+        flags:
+          - name: workspace
+            type: string
+            description: reel workspace slug
+            shorthand: w
+      - name: unlock
+        description: Clear the reviewed/approved state for an asset
+        long_description: |-
+          Clear the reviewed/approved (locked) state for an asset, so it can be re-picked or regenerated
+          again without --force (the inverse of `reel lock`; spec 0025). kind is vo|card|music|cover;
+          index is the 1-based line/card for vo/card and omitted for the singleton music/cover. Idempotent
+          — unlocking something not locked is a no-op.
+        hashes:
+          cmd.go: c8379be1d8d2d7fa462861ad415bfdcc42aa8303991549bee5002e7c0108ca70
+        flags:
+          - name: workspace
+            type: string
+            description: reel workspace slug
+            shorthand: w
+  - name: social
+    description: Compose per-platform social copy
+    long_description: |-
+      Compose the per-platform social copy that ships with a posted reel. `social gen` drafts
+      platform-appropriate caption/title/tags/link via the LLM; `social set` injects fields by hand;
+      `social show` displays the set with per-platform constraint checks.
+    hashes:
+      cmd.go: e207144f442443cd345fd6dadb5b04bbab07e01d6f937b67ba197d619fe63166
+    commands:
+      - name: gen
+        description: Generate per-platform copy (LLM)
+        long_description: |-
+          Generate per-platform social copy (caption, title, tags, link) with the LLM, tuned to each
+          platform's conventions and limits. --platform limits to one platform; otherwise it drafts for every
+          enabled platform. Review/adjust with `social set` and `social show`.
+        hashes:
+          cmd.go: cbf20c5cbe0b84be18b8976cb8fb43bc249df8525b9fec381f9b02defd84e4c6
+        flags:
+          - name: workspace
+            type: string
+            description: reel workspace slug
+          - name: platform
+            type: string
+            description: limit to one platform
+      - name: set
+        description: Set a platform's social fields (inject)
+        long_description: |-
+          Set a platform's social fields by hand (inject), bypassing the LLM: --text (primary post body),
+          --title (YouTube), --link, and repeatable --tags (hashtags).
+        hashes:
+          cmd.go: ef323e3f64db7d8be5674a6e2e4f0c49c6d70194e5e758a699e50768b06177c1
+        flags:
+          - name: workspace
+            type: string
+            description: reel workspace slug
+          - name: text
+            type: string
+            description: primary post text
+          - name: title
+            type: string
+            description: title (youtube)
+          - name: link
+            type: string
+            description: link url
+          - name: tags
+            type: stringslice
+            description: hashtags (repeatable)
+            default: '[]'
+      - name: show
+        description: Show the social set with constraint checks
+        long_description: |-
+          Show the composed social set for the workspace with per-platform constraint checks (length, tag,
+          and field rules) so issues surface before posting.
+        hashes:
+          cmd.go: d52693bdc371137516f12306a54117b082057c6daf34cb39431d310567a70496
+        flags:
+          - name: workspace
+            type: string
+            description: reel workspace slug
+  - name: storyboard
+    description: Author the storyboard (draft from a post or inject)
+    long_description: |-
+      Author the reel's storyboard — the ordered cards (on-screen text + vo narration + scene) that
+      drive everything downstream. `storyboard draft` seeds it from a post via the LLM, or injects a
+      provided storyboard.json verbatim. The schema matches the reference Python scripts.
+    hashes:
+      cmd.go: 25ac133ac17942efbc732101a822cd57a1d9a6cd467d1afd2e4badeae076539e
+    commands:
+      - name: draft
+        description: Draft a storyboard from a post (LLM) or inject one
+        long_description: |-
+          Draft a storyboard from a post using the LLM, or inject a ready-made one. --inject writes a
+          provided storyboard.json with no LLM call; otherwise the post is distilled into cards (one idea per
+          card, accent words marked). --workspace targets a reel; --out writes a standalone file; --theme is a
+          tone hint. Review the draft before generating media (it lands marked unreviewed).
+        hashes:
+          cmd.go: a023463559ad676bb8ebbd73e04775aedb40b69c88970c46bb55be0530ab019f
+        flags:
+          - name: out
+            type: string
+            description: output storyboard.json path
+          - name: inject
+            type: string
+            description: write a provided storyboard.json (no LLM)
+          - name: workspace
+            type: string
+            description: reel workspace slug
+          - name: theme
+            type: string
+            description: reel theme (tone hint)
+  - name: studio
+    description: Run the local web studio (authoring UI over a reel workspace)
+    long_description: |-
+      Run the local web studio — the browser authoring UI over a reel workspace (author, preview,
+      render, publish). --port binds a port (0 picks a free one); --host 0.0.0.0 exposes it on the LAN.
+      Mirrors the CLI cores, so studio and CLI takes are identical.
+    hashes:
+      cmd.go: 1e869289e5ba475246010beb6eb6f8f42d57c3c64047c70fcc4015025dbcb255
+    mcp_enabled: false
+    flags:
+      - name: port
+        type: int
+        description: Bind port, 0 picks a free port
+        shorthand: p
+        default: "0"
+      - name: host
+        type: string
+        description: Bind host, 0.0.0.0 exposes on the LAN
+        shorthand: H
+        default: 127.0.0.1
+  - name: theme
+    description: Manage the theme catalog (config-driven aesthetics)
+    long_description: |-
+      Manage the theme catalog — the config-driven aesthetic profiles (image style, palette, music tone,
+      voice) keyed by keyword and typed (article / reel / portrait). Each generation command takes
+      --theme <keyword>, falling back to the configured default for its type. `init` seeds the house
+      themes. Subcommands: add, edit, list, show, rm.
+    hashes:
+      cmd.go: e176acd6e5ec3483b1690b471701dfbe98460456891e360fa2549899ba6949ac
+    commands:
+      - name: add
+        description: Register a new theme
+        long_description: |-
+          Register a new theme in the catalog. --type sets its kind (article|reel|portrait), --from clones an
+          existing theme as a starting point, and repeatable --set key=value populates fields (palette, style,
+          voice, music). Themes are config, never code — wire aesthetics here, not as constants.
+        hashes:
+          cmd.go: a5e9b66f24c8c69db6f4cc46d92235b549714f43b3a800acda8f26a56db179f7
+        flags:
+          - name: type
+            type: string
+            description: theme type
+          - name: from
+            type: string
+            description: clone from keyword
+          - name: set
+            type: stringarray
+            description: set key=value (repeatable)
+            default: '[]'
+      - name: edit
+        description: Edit an existing theme
+        long_description: |-
+          Edit an existing theme's fields via repeatable --set key=value (--type selects which typed theme).
+          Changes are written to the config theme catalog.
+        hashes:
+          cmd.go: 8fc43737ce6851440a3249e920f9a660e7b140565549e5aa0fed7f34bc3e6e10
+        flags:
+          - name: type
+            type: string
+            description: theme type
+          - name: set
+            type: stringarray
+            description: set key=value (repeatable)
+            default: '[]'
+      - name: list
+        description: List the theme catalog grouped by type
+        long_description: List the theme catalog grouped by type; --type filters to article|reel|portrait.
+        hashes:
+          cmd.go: c007de24a157b5b8bacc76197e2179bc2532a754cd45ccada1715b810a628120
+        flags:
+          - name: type
+            type: string
+            description: filter by type (article|reel|portrait)
+      - name: rm
+        description: Remove a theme
+        long_description: Remove a theme from the catalog (--type selects the typed theme).
+        hashes:
+          cmd.go: cb803c96e85e9a574a2091aa3144f72a108117e238ce4ac648d279b03bd91718
+        flags:
+          - name: type
+            type: string
+            description: theme type
+      - name: show
+        description: Show a theme's full definition
+        long_description: Show a theme's full resolved definition (--type selects the typed theme).
+        hashes:
+          cmd.go: 5aed2d3edc5ca7888e8ff7baf8cb56998ceeff361108022f13bdb8e58406df6d
+        flags:
+          - name: type
+            type: string
+            description: theme type
+  - name: voice
+    description: Generate and select voice-over narration (ElevenLabs)
+    long_description: |-
+      Generate and select the voice-over narration in the configured clone voice (ElevenLabs). The take
+      workflow is gen -> pick: `voice gen` synthesizes candidates (per storyboard line, or standalone),
+      `voice pick <line> <take>` promotes one to vo/NN.mp3. Selected VO drives per-card timing at build.
+    hashes:
+      cmd.go: ddeb6cc51ccdba82c34396f4344f43fdf7ca939bf81ebfd8d85ce125b52b1a33
+    commands:
+      - name: gen
+        description: Synthesize narration (standalone --text, or --takes into a workspace)
+        long_description: |-
+          Synthesize voice-over narration in the configured clone voice (ElevenLabs).
+
+          Two modes:
+            - Workspace take mode (--workspace <slug> --line N --takes M): generate M
+              candidate takes for storyboard line N into vo/takes/NN-T.mp3, then choose
+              one with `keryx voice pick <line> <take>`. Re-roll a line freely; other
+              lines' takes and selections are untouched.
+            - Standalone (--text "..." --out path.mp3): synthesize a single line straight
+              to a file, honouring the resolved theme voice.
+
+          Voice settings default from the resolved reel theme's `voice` and can be
+          overridden per call with --stability/--similarity/--style/--speed. The vo text
+          is passed through verbatim, including control tags (SSML <break>, phonetic
+          spellings). Unchanged text + settings hit the cache (no re-spend).
+        hashes:
+          cmd.go: f6e294cefa7364b5c2c0197abe4e33c05d057d2527797b60be8146cb43e0755d
+        flags:
+          - name: text
+            type: string
+            description: line to narrate (standalone mode)
+          - name: out
+            type: string
+            description: output mp3 path
+          - name: voice
+            type: string
+            description: override the clone voice id
+          - name: stability
+            type: float64
+            description: override voice stability
+            default: "0.0"
+          - name: similarity
+            type: float64
+            description: override voice similarity
+            default: "0.0"
+          - name: theme
+            type: string
+            description: reel theme for voice defaults
+          - name: workspace
+            type: string
+            description: reel workspace slug (take mode)
+          - name: line
+            type: int
+            description: storyboard line index for take generation
+            default: "0"
+          - name: takes
+            type: int
+            description: number of candidate takes to generate
+            default: "0"
+          - name: style
+            type: float64
+            description: voice style/exaggeration 0-1 (higher = more expressive, can drift accent)
+            default: "0.0"
+          - name: speed
+            type: float64
+            description: speech rate 0.7 (slow) to 1.2 (fast); default 1.0
+            default: "0.0"
+          - name: model
+            type: string
+            description: TTS model id (empty = theme/default eleven_multilingual_v2)
+          - name: allow-unknown-model
+            type: bool
+            description: accept a --model outside the known allowlist
+          - name: lines
+            type: string
+            description: re-roll exactly these lines (e.g. 3,5,7 or 3-6); --line N is the single-line alias
+          - name: force
+            type: bool
+            description: bypass the content cache and regenerate (R-GEN-8)
+      - name: pick
+        description: Promote a generated VO take to the selected slot
+        long_description: |-
+          Promote a generated VO take (vo/takes/NN-T.mp3) to the selected slot (vo/NN.mp3) for that
+          storyboard line, so `reel build` uses it and the line's timing is set. Re-runnable; only the named
+          line's selection changes. Replaces the manual copy step. `voice pick <line> <take>` promotes a
+          take you chose; `voice pick --best <line>` stilt-screens the line and promotes the cleanest take
+          for you (duration + internal-silence ranking; spec 0023 R-GEN-39).
+        args: MaximumNArgs(2)
+        hashes:
+          cmd.go: 31ee1054c6c01835c505e6c0544191b3f340afe4d34ead44955ee4a91c0abbb4
+        flags:
+          - name: workspace
+            type: string
+            description: reel workspace slug
+          - name: force
+            type: bool
+            description: overwrite a locked (approved) asset
+          - name: best
+            type: int
+            description: Auto-promote the cleanest take for this storyboard line (stilt-screened); replaces the <line> <take> args
+      - name: takes
+        description: List VO candidate takes with durations + the selected marker
+        long_description: |-
+          List a workspace's VO candidate takes (vo/takes/NN-T.mp3) per storyboard line, with each take's
+          duration and a marker on the promoted one — so the "re-roll these lines and choose the best"
+          loop can be screened without leaving the CLI (spec 0023). Durations probe through the backend
+          selected by providers.render (best-effort: listing degrades to no durations rather than failing).
+          Actual listening stays out-of-band or in the studio. --line filters to one line; --output json
+          emits the listing for the studio / scripts. --screen stilt-screens each line — ranking takes by
+          duration deviation + internal silence and flagging lines whose best take still reads over-paused
+          (reword/respell). Pair with `voice gen --lines 3,5,7 --takes M` to re-roll a subset and
+          `voice pick <line> <take>` (or `voice pick --best <line>`) to promote a winner.
+        hashes:
+          cmd.go: 0f2ce160d361075fa94b2f3217d2f40aea955e79ef0a65e24bdab977e39b24ef
+        flags:
+          - name: workspace
+            type: string
+            description: reel workspace slug
+            shorthand: w
+          - name: line
+            type: int
+            description: list only this storyboard line (0 = all)
+          - name: screen
+            type: bool
+            description: 'Stilt-screen the takes: rank by duration + internal-silence and flag over-paused lines'
+      - name: lexicon
+        description: Manage the pronunciation dictionary from a local pronunciation.yaml
+        long_description: Manage the pronunciation dictionary from a local pronunciation.yaml
+        hashes:
+          cmd.go: a05029195a993206be2cf7f9d01fcb845d47130e49675a10be55b555d7d850d1
+        commands:
+          - name: list
+            description: List the pronunciation rules declared in pronunciation.yaml
+            long_description: List the pronunciation rules declared in pronunciation.yaml
+            hashes:
+              cmd.go: 01914f75e5eb2d0668aec864cb2eddf45601354fc2f694fc1b7750908e467379
+            flags:
+              - name: file
+                type: string
+                description: pronunciation rules file (default pronunciation.yaml)
+          - name: add
+            description: Add or update a pronunciation rule in pronunciation.yaml
+            long_description: Add or update a pronunciation rule in pronunciation.yaml
+            hashes:
+              cmd.go: 6b389c3fa3dcca2fbdf129573fb2b231604087604949c52fec7c8558a33e27b0
+            flags:
+              - name: file
+                type: string
+                description: pronunciation rules file (default pronunciation.yaml)
+              - name: ipa
+                type: string
+                description: IPA phoneme string for the word (mutually exclusive with --alias)
+              - name: alias
+                type: string
+                description: plain-spelling alias for the word (mutually exclusive with --ipa)
+          - name: sync
+            description: Push pronunciation.yaml rules to the voice provider's dictionary
+            long_description: Push pronunciation.yaml rules to the voice provider's dictionary
+            hashes:
+              cmd.go: 063af5cc433e8e52677909299a5ca26009c2d74aa83d4d6b6e0a151b6b5f04e5
+            flags:
+              - name: file
+                type: string
+                description: pronunciation rules file (default pronunciation.yaml)
+              - name: dict
+                type: string
+                description: 'dictionary id to sync into (default: config voice.pronunciation; empty creates a new dictionary)'
+              - name: name
+                type: string
+                description: name for a newly created dictionary (only used when creating)
+              - name: theme
+                type: string
+                description: 'reel theme whose voice.pronunciation dictionary to sync into (default: the default reel theme)'
+      - name: quota
+        description: Show the voice provider's character quota (used / limit / remaining)
+        long_description: Show the voice provider's character quota (used / limit / remaining)
+        hashes:
+          cmd.go: 66c02e7dfdb4d9708be6b690a2e0b214f4423117228ab41178b8dfedada4207e

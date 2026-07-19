@@ -1,0 +1,9 @@
+# keryx studio content source (spec 0033) — post-first reel picker reads this.
+content:
+  profile: hugo
+  sources:
+    - name: post
+      match: "content/post/*/index.md"
+      map:
+        slug: slug        # this blog uses date-prefixed dirs + explicit frontmatter slug
+        summary: gist     # the blog's rich per-post summary field

@@ -1,0 +1,84 @@
+# Mechanical voice/style rules consumed by scripts/check-post-style.py.
+#
+# When Matt flags a new banned word, phrase, construction or tic, add it here in
+# the right bucket and update AGENTS.md / blog-voice-pass if the prose guidance
+# also needs to teach future agents why it matters.
+
+banned_words:
+  message: banned AI-tell vocabulary
+  words:
+    - delve
+    - leverage
+    - seamless
+    - robust
+    - boasts
+    - realm
+    - tapestry
+    - testament
+    - crucial
+    - notably
+    - underscore
+    - elevate
+    - streamline
+    - holistic
+    - moreover
+    - furthermore
+
+patterns:
+  - name: em-dash
+    regex: "—"
+    flags: ""
+    message: replace em-dash with punctuation Matt uses
+  - name: tl-dr
+    regex: "\\*\\*\\s*TL;DR\\s*:\\s*\\*\\*"
+    message: do not use a bold TL;DR opener
+  - name: banned-phrase
+    regex: "\\bin today[’']s\\b"
+    message: avoid 'in today''s...' framing
+  - name: banned-phrase
+    regex: "\\bit[’']s worth noting\\b"
+    message: avoid 'it''s worth noting'
+  - name: banned-phrase
+    regex: "\\bgame-changer\\b"
+    message: banned AI-tell vocabulary
+  - name: banned-shape
+    regex: "\\bnot\\s+just\\b.{0,100}\\bbut\\b"
+    message: avoid 'not just X, but Y'
+  - name: announced-honesty
+    regex: "\\blet me be honest\\b"
+    message: do not announce candour
+  - name: announced-honesty
+    regex: "\\bto be honest\\b"
+    message: do not announce candour
+  - name: announced-honesty
+    regex: "\\bin all honesty\\b"
+    message: do not announce candour
+  - name: announced-honesty
+    regex: "\\bI won[’']t pretend\\b"
+    message: do not announce candour
+  - name: announced-honesty
+    regex: "\\bI[’']ll be straight\\b"
+    message: do not announce candour
+  - name: announced-honesty
+    regex: "\\bI have to admit\\b"
+    message: do not announce candour
+  - name: announced-honesty
+    regex: "\\bas ever\\b"
+    message: announced-honesty tic
+  - name: announced-honesty
+    regex: "\\b(an?|the)\\s+honest\\s+(fix|limit|answer|starting point)\\b"
+    message: avoid adjectival 'honest' tic
+  - name: self-satisfaction
+    regex: "\\bI[’']m quietly proud of this\\b"
+    message: avoid self-satisfaction framing
+  - name: self-satisfaction
+    regex: "\\bI was rather pleased with\\b"
+    message: avoid self-satisfaction framing
+  - name: self-satisfaction
+    regex: "\\bthe bit I[’']m pleased about\\b"
+    message: avoid self-satisfaction framing
+
+tic_watchlist:
+  - term: seam
+    regex: "\\bseams?\\b"
+    message: "tic watchlist: prefer interface/boundary/literal term"

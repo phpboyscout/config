@@ -1,0 +1,232 @@
+log:
+  level: info
+
+server:
+  grpc:
+    reflection: true
+
+# Posting platforms (spec 0001 §4). `enabled` opts a platform into `post all` /
+# `post due`. Secrets (access tokens) are NEVER stored here — they come from the
+# environment / keychain (e.g. INSTAGRAM_ACCESS_TOKEN). Non-secret settings like
+# the account id live here. Build order: Instagram first (no app review).
+platforms:
+  instagram:
+    enabled: false          # `keryx auth instagram` sets this true on success
+    app_id: ""              # Instagram app ID (Meta app → API setup with Instagram login)
+    user_id: ""             # set by `keryx auth instagram`
+    # access_token is written here only as a fallback when no OS keychain exists
+    # (headless dev server / CI). The app secret comes from INSTAGRAM_APP_SECRET.
+  youtube:
+    enabled: false          # `keryx auth youtube` sets this true on success
+    client_id: ""           # Google OAuth *Desktop app* client ID (Cloud Console)
+    channel_id: ""          # set by `keryx auth youtube`
+    privacy: private        # private | unlisted | public (forced private until the app is audited)
+    category_id: "22"       # YouTube category (22 = People & Blogs)
+    # refresh_token is written here only as a fallback when no OS keychain exists.
+    # The client secret comes from YOUTUBE_CLIENT_SECRET.
+  tiktok:
+    enabled: false          # `keryx auth tiktok` sets this true on success
+    client_key: ""          # TikTok app client key (note: "client key", not "client id")
+    open_id: ""             # set by `keryx auth tiktok`
+    privacy: SELF_ONLY      # SELF_ONLY until the app is audited; then PUBLIC_TO_EVERYONE etc.
+    # refresh_token is written here only as a fallback when no keychain exists.
+    # The client secret comes from TIKTOK_CLIENT_SECRET. The refresh token is the
+    # durable secret: each post mints a fresh ~24h access token from it and
+    # persists any rotated refresh token TikTok returns.
+  linkedin:
+    enabled: false          # `keryx auth linkedin` sets this true on success
+    client_id: ""           # LinkedIn app client id
+    author_urn: ""          # set by `keryx auth linkedin` (urn:li:person:xxxx)
+    api_version: "202606"   # LinkedIn-Version header (YYYYMM); bump as LinkedIn rolls
+    visibility: PUBLIC      # PUBLIC | CONNECTIONS (LinkedIn has no "only me")
+    # access_token (+ access_token_expires_at, + refresh_token only for MDP apps)
+    # are written here only as a fallback when no keychain exists. The client
+    # secret comes from LINKEDIN_CLIENT_SECRET. A standard app has no refresh
+    # token (~60-day access token) — re-run `keryx auth linkedin` before it expires.
+
+# Token refresh (spec 0010). `keryx auth refresh [platform|all]` rotates/refreshes
+# tokens where it can and alerts where it can't (LinkedIn). Both the write-back
+# (where refreshed tokens are persisted) and the alert channel are pluggable,
+# config-selected backends — run the refresh on a schedule in the owning project.
+auth:
+  writeback:
+    backend: local        # local (keychain/config) | gitlab (CI variable API)
+    # gitlab:
+    #   project: "phpboyscout/blog"           # project path or id whose CI variables hold the tokens
+    #                                          #   (defaults to CI_PROJECT_ID in a pipeline)
+    #   api_url: "https://gitlab.com/api/v4"   # self-hosted base (defaults to CI_API_V4_URL in a pipeline)
+    #   # the API token comes from GITLAB_TOKEN (a project/group token, api scope), never committed.
+    #   # The target variable must already exist, masked + protected; the refresh job updates its value.
+  alerts:
+    backend: none         # none (red pipeline only) | webhook (Slack/Teams) | email (SMTP)
+    # webhook:
+    #   url: ""           # or set ALERT_WEBHOOK_URL in the environment
+    # email:
+    #   host: "smtp.example.com"
+    #   port: 587
+    #   from: "keryx@phpboyscout.uk"
+    #   to: ["matt@phpboyscout.uk"]
+    #   # credentials come from ALERT_SMTP_USERNAME / ALERT_SMTP_PASSWORD, never committed
+
+# Git (spec 0011 §2.2, R-GIT-3). The studio commits a reel's workspace to the
+# project's git repo on Save — gated on a valid `git user.name`/`user.email`
+# (a missing identity saves the file but skips the commit, with a clear notice).
+git:
+  commit_on_save: true    # commit each Save to the project repo (set false to save-only)
+  auto_push: true         # for a remote project, push after each commit (set false to commit-only)
+
+# Theme catalog — config-driven aesthetics (spec 0001 §6). Seeded by `keryx init`
+# at parity with the blog Python scripts (gen-cover.py STYLES, gen-reel.py
+# PALETTE, gen-portrait.py DEFAULT_PROMPT, gen-vo.py voice settings). Edit these
+# (or via `keryx theme edit`) rather than changing code — generators never carry
+# hardcoded thematic constants.
+themes:
+  # Default keyword per type, used when --theme is omitted.
+  defaults:
+    article: editorial
+    reel: editorial
+    portrait: default
+
+  # article themes drive cover art (gen-cover): palette + style prompt prefix.
+  article:
+    editorial:
+      palette: &palette
+        teal: "#14534F"
+        amber: "#E8923B"
+        cream: "#F2EAD8"
+        charcoal: "#282A2C"
+      aspect: "16:9"
+      prompt: >-
+        Editorial conceptual illustration, flat screen-print / risograph
+        aesthetic: bold simplified shapes, clean confident linework, a light
+        grainy overprint texture and subtle halftone shading, one strong central
+        visual metaphor. Strict limited palette matching the publication: deep
+        petrol-teal, warm amber-orange accent, soft cream background, dark
+        charcoal lines and detail. Smart, a little wry, the feel of a quality
+        magazine op-ed illustration. Flat 2D, absolutely no 3D rendering. Wide
+        16:9 banner, subject centred with generous negative space. No text,
+        letters, numbers, logos or brand marks anywhere.
+    clay:
+      palette: *palette
+      aspect: "16:9"
+      prompt: >-
+        Isometric 3D illustration, 3/4 top-down angle, soft matte clay-render
+        style with smooth rounded forms, gentle soft shadows and light from the
+        upper-left. Strict limited palette: deep petrol-teal, warm amber-orange
+        accent, soft cream, dark charcoal details. Friendly, clean, modern
+        developer-marketing look. Wide 16:9 banner, subject centered on a plain
+        soft cream background with generous empty space. No text, letters,
+        numbers, logos or brand marks anywhere.
+    blueprint:
+      palette: *palette
+      aspect: "16:9"
+      prompt: >-
+        Technical blueprint / schematic illustration on a soft cream background:
+        the subject drawn as a precise annotated plan in clean thin petrol-teal
+        construction lines, with warm amber-orange highlights on key parts, dark
+        charcoal detailing and a faint grid. The look of a draughtsman's plan or
+        assembly diagram (callout marks, dotted guide lines), but with no actual
+        text, numbers or dimensions. Friendly, modern, instructional. Wide 16:9
+        banner, subject centred with generous empty space. No text, letters,
+        numbers, logos or brand marks anywhere.
+
+  # reel themes drive the 9:16 reel (gen-reel + music + voice). They share the
+  # palette and voice clone but differ in card treatment + illustration style.
+  reel:
+    editorial:
+      palette: *palette
+      card:
+        mode: overlay
+        scrim: {from: 0.52, color: charcoal}
+        font_bold: DejaVuSans-Bold
+        font_mono: DejaVuSansMono-Bold
+        style: >-
+          Editorial conceptual illustration, flat screen-print / risograph
+          aesthetic: bold simplified shapes, clean confident linework, light
+          grainy overprint texture, one strong central visual metaphor. Strict
+          palette: deep petrol-teal, warm amber-orange accent, soft cream, dark
+          charcoal. Vertical 9:16, generous negative space in the lower half for
+          an overlaid caption. Wordless: no text, letters, numbers, logos or
+          brand marks anywhere.
+      music: {prompt: "restrained editorial bed, sober and understated", gain: 0.16}
+      voice: &voice {id: MhaH9hcD2Ulcr80j28Z1, stability: 0.6, similarity: 0.92}
+    clay:
+      palette: *palette
+      card:
+        mode: overlay
+        scrim: {from: 0.52, color: charcoal}
+        font_bold: DejaVuSans-Bold
+        font_mono: DejaVuSansMono-Bold
+        style: >-
+          Isometric 3D clay-render illustration, soft matte rounded forms, gentle
+          soft shadows, light from the upper-left. Strict palette: deep
+          petrol-teal, warm amber-orange accent, soft cream, dark charcoal.
+          Vertical 9:16, subject centred with generous empty space in the lower
+          half for an overlaid caption. Wordless: no text, letters, numbers,
+          logos or brand marks anywhere.
+      music: {prompt: "warm, gently rounded bed, optimistic and unhurried", gain: 0.16}
+      voice: *voice
+    blueprint:
+      palette: *palette
+      card:
+        mode: overlay
+        scrim: {from: 0.52, color: charcoal}
+        font_bold: DejaVuSans-Bold
+        font_mono: DejaVuSansMono-Bold
+        style: >-
+          Technical blueprint / schematic illustration on a soft cream
+          background: thin petrol-teal construction lines, warm amber-orange
+          highlights, dark charcoal detailing, faint grid, callout marks and
+          dotted guide lines but no real text or dimensions. Vertical 9:16,
+          generous empty space in the lower half for an overlaid caption.
+          Wordless: no text, letters, numbers, logos or brand marks anywhere.
+      music: {prompt: "precise, instructional, light and methodical bed", gain: 0.16}
+      voice: *voice
+
+  # portrait theme drives the avatar (gen-portrait): palette + prompt.
+  portrait:
+    default:
+      palette: *palette
+      prompt: >-
+        Create a stylised editorial portrait avatar of the man in the reference
+        photo(s), in a flat screen-print / risograph illustration style: bold
+        simplified shapes, clean confident linework, a light grainy overprint
+        texture and subtle halftone shading. Strict limited palette: deep
+        petrol-teal, warm amber-orange accent, soft cream background, dark
+        charcoal lines and detail. Keep his likeness clearly recognisable: short
+        brown hair, a full reddish-brown beard, fair skin, a friendly confident
+        expression. Head and shoulders, facing the viewer, subject centred on a
+        plain soft cream background with even framing so it crops cleanly to a
+        circular profile avatar. Flat 2D, absolutely no 3D rendering, no
+        photographic realism. No text, letters, numbers, logos or brand marks
+        anywhere.
+
+# Avatar registry — recurring characters you can drop into any reel theme as a
+# first-hand "actor" (cards gen --avatar <name>). likeness/style/palette describe
+# the character; `style` is the avatar's OWN look, used by default and overridden
+# only when you opt into a theme (--theme) to restyle them. `ref` is the owning
+# project's asset (keryx holds none). likeness/style are a starting point — edit
+# them, or let first-use analysis capture them. Direct the actor per card via the
+# storyboard `scene` (pose + prop + gaze + an EXPLICIT emotion; the avatar
+# defaults to a friendly expression, so name it every time, smile only on
+# positive beats).
+# Voice registry — named voice clones. A reel's default voice is the reel theme's
+# `voice`; a storyboard line can pick a different speaker (`voice: {speaker: jane}`)
+# for multi-author narration. Same fields as a theme voice (id + the ElevenLabs
+# knobs). Add a co-author's clone here as another entry.
+voices:
+  matt:
+    id: MhaH9hcD2Ulcr80j28Z1
+    stability: 0.6
+    similarity: 0.92
+
+avatars:
+  matt:
+    ref: assets/images/avatar-mc.webp
+    likeness: >-
+      a man with short brown hair, a full reddish-brown beard and fair skin
+    style: >-
+      a flat screen-print / risograph illustration with bold simplified shapes,
+      clean confident linework, light grainy overprint texture and subtle
+      halftone shading
+    palette: deep petrol-teal, warm amber-orange, soft cream, dark charcoal
