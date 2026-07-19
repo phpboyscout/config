@@ -80,9 +80,20 @@ type WatchableBackend interface {
 //
 // Declaring them is what lets a heterogeneous set of backends coexist without
 // the weakest one setting the contract for all of them.
+//
+// Nothing here says whether a backend can be written to or watched. Those are
+// answered by implementing [WritableBackend] and [WatchableBackend], so the
+// type system checks them once instead of every caller checking a flag at
+// runtime — and so a backend cannot claim one thing and do another.
+//
+// The fields below are declared ahead of the backend that will need them,
+// because each carries a consequence worth recording before it is discovered:
+// a value from a Sensitive source must never be written into a layer that is
+// not (the environment-secret leak in a new costume), the comment guarantee is
+// document-backend-only and must be scoped rather than implied, cross-backend
+// atomicity is impossible and must be refused or declared, and foreign-change
+// latency differs per backend and must be stated.
 type Capabilities struct {
-	// Writable reports whether this backend can persist changes at all.
-	Writable bool
 	// PreservesComments reports whether an edit retains comments and
 	// formatting. True for document-like sources; meaningless for key-value
 	// stores, which have nowhere to put a comment.
@@ -135,7 +146,6 @@ func (b *fileBackend) ID() string { return b.path }
 
 func (b *fileBackend) Capabilities() Capabilities {
 	return Capabilities{
-		Writable:          true,
 		PreservesComments: true,
 		AtomicMultiKey:    true, // a file is replaced in one rename
 		NativeWatch:       false,
@@ -281,7 +291,7 @@ func (b *readerBackend) ID() string { return b.name }
 // Capabilities reports an in-memory source as readable but not writable:
 // there is nowhere for a write to persist to.
 func (b *readerBackend) Capabilities() Capabilities {
-	return Capabilities{Writable: false}
+	return Capabilities{}
 }
 
 func (b *readerBackend) Load(ctx context.Context) ([]Layer, error) {

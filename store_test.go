@@ -338,13 +338,36 @@ func TestStore_ConcurrentReadsAndReloads(t *testing.T) {
 func TestFileBackend_Capabilities(t *testing.T) {
 	t.Parallel()
 
-	c := NewFileBackend(afero.NewMemMapFs(), "/a.yaml").Capabilities()
+	backend := NewFileBackend(afero.NewMemMapFs(), "/a.yaml")
+	c := backend.Capabilities()
 
-	if !c.Writable || !c.PreservesComments {
-		t.Errorf("a file backend should be writable and comment-preserving: %+v", c)
+	if !c.PreservesComments {
+		t.Errorf("a file backend preserves comments: %+v", c)
 	}
 
 	if c.Sensitive {
 		t.Error("a plain file backend should not be marked sensitive")
+	}
+
+	// Whether a backend can be written to or watched is answered by the type
+	// system, not by a flag a backend could contradict.
+	if _, ok := backend.(WritableBackend); !ok {
+		t.Error("a file backend should implement WritableBackend")
+	}
+
+	if _, ok := backend.(WatchableBackend); !ok {
+		t.Error("a file backend should implement WatchableBackend")
+	}
+
+	// An in-memory source implements neither, which is how routing and watching
+	// know to skip it.
+	reader := NewReaderBackend("embedded", []byte("a: 1\n"))
+
+	if _, ok := reader.(WritableBackend); ok {
+		t.Error("an in-memory source must not be writable")
+	}
+
+	if _, ok := reader.(WatchableBackend); ok {
+		t.Error("an in-memory source must not be watchable")
 	}
 }

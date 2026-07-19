@@ -53,7 +53,7 @@ func (b *flagBackend) ID() string { return "flags" }
 // Capabilities reports flags as readable but never writable: a flag lives for
 // one invocation, so persisting to it is meaningless.
 func (b *flagBackend) Capabilities() Capabilities {
-	return Capabilities{Writable: false}
+	return Capabilities{}
 }
 
 func (b *flagBackend) Load(ctx context.Context) ([]Layer, error) {

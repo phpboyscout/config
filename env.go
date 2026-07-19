@@ -70,7 +70,7 @@ func (b *envBackend) observeKnownKeys(keys []string) {
 // Capabilities reports the environment as readable but never writable.
 // Persisting to it would not survive the process, so routing must skip it.
 func (b *envBackend) Capabilities() Capabilities {
-	return Capabilities{Writable: false, NativeWatch: false}
+	return Capabilities{}
 }
 
 func (b *envBackend) Load(ctx context.Context) ([]Layer, error) {

@@ -230,6 +230,36 @@ filesystem and used it for every path, so a store mixing a real file with an in-
 statted half its sources against the wrong filesystem and never noticed a change to them. Each
 backend now watches its own source, so the question cannot arise.
 
+### R6 — 2026-07-19: Capabilities carries no writability flag
+
+**D11 expresses writability through an optional interface and its `Capabilities` struct has no
+such field. The implementation added `Capabilities.Writable`, which created a second gate that
+disagreed with the first.**
+
+Writability was decided three ways: by `Layer.Source.Writable` for a backend that had
+contributed layers, by the `WritableBackend` assertion **and** `Capabilities().Writable` for one
+that had not, and by the assertion alone in `prepare`. A backend implementing `WritableBackend`
+while reporting `Writable: false` was therefore excluded as a write target while its file was
+missing and routed the moment it existed — the same source writable or not depending on whether
+it happened to exist yet.
+
+The flag is removed. Writability is the `WritableBackend` assertion, as D11 designs it and as
+`prepare` already required, so the type system checks it once rather than every caller checking
+a flag at runtime — and a backend can no longer claim one thing and do another. R5 puts
+watchability on the same footing.
+
+**The remaining four fields stay, and are not dead weight.** D12 records a specific consequence
+for each, deliberately, so it is not discovered when a second backend lands: a value from a
+`Sensitive` source must never be written into a layer that is not, the comment guarantee is
+document-backend-only and must be scoped rather than implied, cross-backend atomicity is
+impossible and must be refused or declared, and foreign-change latency differs per backend and
+must be stated. Deleting them would delete that record.
+
+**`CompareAndSwap`, which D11 lists, is not implemented and is not restored.** The
+prepare/verify/commit protocol already expresses compare-and-swap: `Pending.Verify` is the
+comparison and `Commit` is the swap. Declaring a field for it would describe the same property
+twice, in two places that could disagree.
+
 ## Why this exists
 
 The module needs to write configuration back to the files it was loaded from — preserving

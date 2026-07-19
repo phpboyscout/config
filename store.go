@@ -959,7 +959,7 @@ func (s *Store) sourceOrder() []Source {
 			continue
 		}
 
-		if _, ok := bl.backend.(WritableBackend); ok && bl.backend.Capabilities().Writable {
+		if _, ok := bl.backend.(WritableBackend); ok {
 			out = append(out, Source{
 				Kind:     SourceFile,
 				Name:     bl.backend.ID(),
