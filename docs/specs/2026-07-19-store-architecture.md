@@ -50,6 +50,58 @@ already imported **directly**. The estimate was made before D6 and never revisit
 it, for four commits. An implementation MUST NOT diverge from an approved decision without the
 spec being amended first; this revision is the correction, not a precedent.
 
+### R2 — 2026-07-19: writing from inside an observer is refused
+
+**D8's claim that a cascade is "unrepresentable" is true only of the watcher loop. It was read
+as covering observer-initiated writes, which it never did.** Those are now refused with
+`ErrWriteFromObserver`.
+
+**What was actually unrepresentable.** A write does not come back round through the watcher —
+the Store builds the next snapshot from what it just wrote, so there is no filesystem round
+trip to re-trigger it. That still holds and is unchanged.
+
+**What was not.** `Apply → notify → observer → Apply → notify` is a loop entirely inside the
+Store, and nothing prevented it. Measured depth 21 in a probe, bounded only because the probe
+bailed out.
+
+**Two defects were masking it,** and both are fixed independently of this decision:
+
+1. **The file fingerprint never advanced past load.** `fileBackend.loaded` was set only when
+   reading, and the Store deliberately never re-reads after committing, so the *second* write
+   to any file compared against load-time content and was reported as a conflict with the
+   first. The cascade test's nested write failed with `ErrConflict` before it could publish, so
+   the test saw a bounded loop and passed. **Two consecutive writes to one file could never
+   succeed** — a defect well beyond the cascade it was hiding.
+2. **`Apply` notified unconditionally; `Reload` did not.** Reload has always had
+   `if !changed { return nil }`. Apply had no equivalent, so a write resolving to the
+   configuration already published was still announced as a change. An *idempotent* observer
+   therefore looped forever: its second write was a no-op, notified anyway, and asked for the
+   same no-op again. The two entry points disagreed about what counts as a change.
+
+**Why refusal rather than accommodation.** With (2) fixed, a convergent observer settles by
+itself. A non-convergent one — every reaction producing a genuinely new value — cannot
+converge under any design; the only choice is what it gets. Suppressing nested notification
+would leave other observers indefinitely stale; coalescing needs an iteration cap that is
+itself arbitrary; a depth ceiling turns a crash into an error without making the program
+correct. None is worth the complexity for a program that is already broken. **Writing while
+reacting to a write is a breakdown of the ownership model and is refused.**
+
+**The sanctioned pattern.** An observer that must change configuration records what is needed,
+returns, and writes from outside the observation — a worker goroutine, a queue, the next tick.
+Serialising and de-duplicating those deferred writes is the consumer's responsibility, being
+the only party that knows which still matter.
+
+**Why the check is goroutine-scoped.** Notification runs outside the Store lock, by design
+(holding it across an observer deadlocks the Store). An unrelated goroutine may therefore
+write while observers execute, and that write is legitimate. A flag or mutex cannot separate it
+from the observer's own re-entrant call, and refusing it would be a worse defect than the
+cascade. `goroutine.go` documents why goroutine identity is required and why a marked context
+threaded through `Observable.Run` was rejected — an observer passing `context.Background()`
+would defeat it silently, turning a guaranteed refusal into a cooperative one.
+
+**Breaking:** `Store.Apply` and `Store.Reload` return `ErrWriteFromObserver` when called from
+within an observer callback.
+
 ## Why this exists
 
 The module needs to write configuration back to the files it was loaded from — preserving
@@ -360,6 +412,11 @@ The Store owns change detection for foreign writes, with a backend-appropriate m
 fsnotify over an OS filesystem, **polling** over any other `afero.Fs`, and polling as the
 required fallback for NFS/SMB/FUSE and hosts with exhausted watch descriptors.
 
+> **Scope clarified by [R2](#r2--2026-07-19-writing-from-inside-an-observer-is-refused).** The
+> cascade this decision makes unrepresentable is the *watcher* loop: an own write never returns
+> through the watcher. It was read more broadly than that. An observer that writes back
+> cascades entirely inside the Store, and is refused rather than prevented.
+
 **A watcher that cannot function MUST fail loudly at construction.** The present
 implementation calls `fsnotify.Add()` regardless of filesystem, fails on `MemMapFs`, and
 swallows the error at Debug level — so hot-reload is silently dead on the in-memory worktrees
@@ -367,8 +424,16 @@ keryx uses. Silent absence of a declared capability is prohibited.
 
 ### D9 — Notification is exactly-once per logical change, after the swap, and fail-closed
 
+> **Extended by [R2](#r2--2026-07-19-writing-from-inside-an-observer-is-refused).** Two points
+> below were stated but not implemented: a write that resolves to no change is not a logical
+> change and MUST NOT notify (`Apply` lacked the guard `Reload` had), and an observer MUST NOT
+> write from within its callback — that is now refused, not merely discouraged.
+
 - **Exactly once** per logical change. A multi-file `Apply` emits one notification, not one
   per file. Own writes achieve this by construction (D4); foreign changes coalesce.
+- **A write that changes nothing is not a logical change.** A write may still rewrite the file
+  — reflowing comments, moving a key into the layer that should own it — without altering the
+  resolved configuration. Observers react to configuration, so that write MUST NOT notify.
 - **After the swap.** An observer reading the container it is handed must see the new values.
   Copy observers under lock, invoke outside it — the existing discipline, preserved.
 - **Fail-closed.** A snapshot that fails to build or validate is rejected: no swap, no
