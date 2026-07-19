@@ -67,7 +67,11 @@ func (r *ValidationResult) addWarning(key, message, hint string) {
 // Returns a ValidationResult; callers should check result.Valid().
 // Validate checks a view's values against a schema.
 func (v *View) Validate(schema *Schema) *ValidationResult {
-	return validateSnapshot(v.snap, schema)
+	if v == nil {
+		return &ValidationResult{}
+	}
+
+	return validateView(v, schema)
 }
 
 // validateSnapshot checks a snapshot against a schema.
@@ -77,27 +81,48 @@ func (v *View) Validate(schema *Schema) *ValidationResult {
 // omit a key that an overlay supplies, and rejecting that would reject a
 // perfectly valid setup.
 func validateSnapshot(snap *Snapshot, schema *Schema) *ValidationResult {
+	if snap == nil {
+		return &ValidationResult{}
+	}
+
+	return validateView(NewView(snap), schema)
+}
+
+// validateView checks whatever the view describes against a schema.
+//
+// Going through the view rather than the snapshot is what makes a scoped view
+// validate its own subtree: a schema written for a section is meant to be
+// applied to that section, and reading the snapshot directly would silently
+// judge the whole configuration against it instead.
+func validateView(view *View, schema *Schema) *ValidationResult {
 	result := &ValidationResult{}
 
-	if schema == nil || snap == nil {
+	if schema == nil || view == nil {
 		return result
 	}
 
-	view := NewView(snap)
-
 	for key, field := range schema.fields {
-		validateField(key, field, view.Get(key), result)
+		validateField(key, field, view.Get(key), view.Has(key), result)
 	}
 
-	detectUnknownKeys(snap.Keys(), schema.fields, result, schema.strict)
+	detectUnknownKeys(view.Keys(), schema.fields, result, schema.strict)
 
 	return result
 }
 
-func validateField(key string, field FieldSchema, value any, result *ValidationResult) {
-	// Check required
+func validateField(key string, field FieldSchema, value any, present bool, result *ValidationResult) {
+	// Required means the key is present and carries a value. Presence is the
+	// test for every type except a string, because false and 0 are deliberate
+	// values: judging required by zero-ness rejected a boolean set to false, so
+	// an operator turning a feature off was told the setting was missing and the
+	// application refused to start because they had configured it.
+	//
+	// An empty string is the exception. YAML writes an absent value as the empty
+	// string, so the two are indistinguishable at this layer, and a required
+	// credential that is present but blank is not configured in any useful
+	// sense.
 	if field.Required {
-		if value == nil || isZeroValue(value) {
+		if !present || isBlankString(value) {
 			envKey := envName(key)
 			result.addError(key, "required field is missing",
 				fmt.Sprintf("add %s to your config file or set the %s environment variable", key, envKey))
@@ -132,21 +157,11 @@ func validateField(key string, field FieldSchema, value any, result *ValidationR
 	}
 }
 
-func isZeroValue(v any) bool {
-	switch val := v.(type) {
-	case string:
-		return val == ""
-	case int:
-		return val == 0
-	case int64:
-		return val == 0
-	case float64:
-		return val == 0
-	case bool:
-		return !val
-	default:
-		return false
-	}
+// isBlankString reports an empty string, which YAML uses for an absent value.
+func isBlankString(v any) bool {
+	s, ok := v.(string)
+
+	return ok && s == ""
 }
 
 func typeMatches(expected string, value any) bool {

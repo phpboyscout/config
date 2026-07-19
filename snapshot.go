@@ -28,7 +28,17 @@ func newSnapshot(version uint64, layers []Layer) *Snapshot {
 	owned := make([]Layer, 0, len(layers))
 
 	for _, l := range layers {
-		owned = append(owned, Layer{Source: l.Source, Values: cloneMap(l.Values)})
+		// Normalised as well as cloned. Merging lowercases keys on the way into
+		// the resolved values, but the layers kept whatever spelling their
+		// source used — so a lookup by normalised path found a key in the merged
+		// view and missed it in the layer that supplied it.
+		//
+		// Everything that asks a layer a question was affected: Shadowed missed
+		// the file defining a mixed-case key, and routing declared it a new key
+		// and wrote it to a different file, leaving the original behind and
+		// stale. That is the layer-correctness this module exists for, defeated
+		// by a spelling.
+		owned = append(owned, Layer{Source: l.Source, Values: normaliseValues(l.Values)})
 	}
 
 	values, origin := mergeLayers(owned)

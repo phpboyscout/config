@@ -229,3 +229,148 @@ func TestApply_ACreatedFileIsOwnerOnly(t *testing.T) {
 		t.Errorf("mode = %v, want %v for a file this module created", got, configFileMode)
 	}
 }
+
+// A layer keeps the spelling its source used, while every lookup normalises.
+// Routing therefore declared a mixed-case key brand new and wrote it to a
+// different file, leaving the file that owns it holding a stale value — the
+// layer-correctness this module exists for, defeated by a spelling.
+func TestApply_RoutesAMixedCaseKeyToTheFileThatOwnsIt(t *testing.T) {
+	t.Parallel()
+
+	filesystem := memFS(t, map[string]string{
+		"/base.yaml": "logLevel: debug\n",
+		"/over.yaml": "other: 1\n",
+	})
+
+	s, err := NewStore(context.Background(), WithFiles(filesystem, "/base.yaml", "/over.yaml"))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	plan, err := s.Plan(Set("logLevel", "info"))
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	if got := plan.Operations[0].Target.Name; got != "/base.yaml" {
+		t.Errorf("routed to %s, want the file that defines the key", got)
+	}
+
+	if plan.Operations[0].Creates {
+		t.Error("an existing key was reported as newly created")
+	}
+
+	if _, err := s.Apply(context.Background(), Set("logLevel", "info")); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	if got := readFile(t, filesystem, "/base.yaml"); !strings.Contains(got, "logLevel: info") {
+		t.Errorf("the owning file was not updated:\n%s", got)
+	}
+
+	if got := readFile(t, filesystem, "/over.yaml"); strings.Contains(got, "logLevel") {
+		t.Errorf("the key was duplicated into another file:\n%s", got)
+	}
+
+	// And the layer still reports as defining it, which is what Shadowed needs.
+	if defs := s.View().Shadowed("logLevel"); len(defs) != 1 {
+		t.Errorf("Shadowed = %v, want the one file defining it", defs)
+	}
+}
+
+// The document layer matches literally, so a caller addressing server.port as
+// Server.Port used to get a second, differently cased block written beside the
+// real one while the original value stayed put.
+func TestApply_AMixedCasePathEditsTheExistingKey(t *testing.T) {
+	t.Parallel()
+
+	filesystem := memFS(t, map[string]string{"/app.yaml": "server:\n  port: 8080\n"})
+
+	s, err := NewStore(context.Background(), WithFiles(filesystem, "/app.yaml"))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	if _, err := s.Apply(context.Background(), Set("Server.Port", 9090)); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	got := readFile(t, filesystem, "/app.yaml")
+
+	if strings.Contains(got, "Server:") || strings.Contains(got, "Port:") {
+		t.Errorf("a differently cased duplicate was written:\n%s", got)
+	}
+
+	if !strings.Contains(got, "port: 9090") {
+		t.Errorf("the existing key was not updated:\n%s", got)
+	}
+
+	if v := s.View().GetInt("server.port"); v != 9090 {
+		t.Errorf("server.port = %d, want 9090", v)
+	}
+}
+
+// Required means configured, and false is a configuration. Judging it by
+// zero-ness told an operator who had deliberately turned a feature off that
+// they had not set it, and refused to start.
+func TestValidate_RequiredAcceptsADeliberateZeroValue(t *testing.T) {
+	t.Parallel()
+
+	type cfg struct {
+		Telemetry struct {
+			Enabled bool `config:"telemetry.enabled" validate:"required"`
+			Retries int  `config:"telemetry.retries" validate:"required"`
+		}
+	}
+
+	schema, err := NewSchema(WithStructSchema(cfg{}))
+	if err != nil {
+		t.Fatalf("NewSchema: %v", err)
+	}
+
+	if _, err := NewStore(context.Background(),
+		WithFiles(memFS(t, map[string]string{
+			"/app.yaml": "telemetry:\n  enabled: false\n  retries: 0\n",
+		}), "/app.yaml"),
+		WithSchema(schema)); err != nil {
+		t.Fatalf("a deliberately disabled feature was rejected as unset: %v", err)
+	}
+
+	// Genuinely absent is still an error.
+	if _, err := NewStore(context.Background(),
+		WithFiles(memFS(t, map[string]string{"/app.yaml": "other: 1\n"}), "/app.yaml"),
+		WithSchema(schema)); err == nil {
+		t.Error("an absent required field was accepted")
+	}
+}
+
+// A schema written for a section is meant to be applied to that section.
+// Validate read the whole snapshot regardless of the view's scope, so a scoped
+// validation reported every field of the section as missing.
+func TestValidate_AScopedViewValidatesItsOwnSubtree(t *testing.T) {
+	t.Parallel()
+
+	type section struct {
+		Host string `config:"host" validate:"required"`
+	}
+
+	schema, err := NewSchema(WithStructSchema(section{}))
+	if err != nil {
+		t.Fatalf("NewSchema: %v", err)
+	}
+
+	s, err := NewStore(context.Background(),
+		WithFiles(memFS(t, map[string]string{"/app.yaml": "server:\n  host: h\n"}), "/app.yaml"))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	if result := s.View().Sub("server").Validate(schema); !result.Valid() {
+		t.Errorf("a scoped view failed validation of its own subtree: %v", result.Errors)
+	}
+
+	// The unscoped view genuinely does not have a top-level host.
+	if result := s.View().Validate(schema); result.Valid() {
+		t.Error("the unscoped view passed a schema describing a nested section")
+	}
+}

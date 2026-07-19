@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/afero"
 	"gitlab.com/phpboyscout/go/yamldoc"
@@ -232,16 +233,17 @@ func applyOne(path string, docs []*yamldoc.Document, edit Edit) error {
 	}
 
 	target := docs[edit.Document]
+	addressed := documentPath(target, edit.Path)
 
 	if !edit.Remove {
-		if err := target.Set(edit.Path, edit.Value); err != nil {
+		if err := target.Set(addressed, edit.Value); err != nil {
 			return fmt.Errorf("config: setting %s in %s: %w", edit.Path, path, err)
 		}
 
 		return nil
 	}
 
-	if err := target.Remove(edit.Path); err != nil {
+	if err := target.Remove(addressed); err != nil {
 		// Removing something already absent reaches the desired end state, so
 		// it is not worth failing a batch over.
 		if errors.Is(err, yamldoc.ErrNotFound) {
@@ -462,4 +464,48 @@ func preamble(original []byte) []byte {
 	}
 
 	return out
+}
+
+// documentPath renders a config path in the spelling the document already uses.
+//
+// Keys are matched case-insensitively everywhere else in the module, so a
+// caller may address server.port as Server.Port and routing will resolve it to
+// the layer that defines it. The document layer has no such rule: it matches
+// literally, so handing it the caller's spelling wrote a second, differently
+// cased block beside the real one — leaving the file holding both and the
+// original value untouched.
+//
+// Each segment is therefore resolved against the keys actually present. A
+// segment that matches nothing is a key being created, and takes the module's
+// normalised form.
+func documentPath(doc *yamldoc.Document, path string) string {
+	segs := splitPath(path)
+	if segs == nil {
+		return path
+	}
+
+	resolved := make([]string, 0, len(segs))
+
+	for _, seg := range segs {
+		resolved = append(resolved, documentKey(doc, strings.Join(resolved, "."), seg))
+	}
+
+	return strings.Join(resolved, ".")
+}
+
+// documentKey returns the document's own spelling of a key, or the normalised
+// form when the document does not have it.
+func documentKey(doc *yamldoc.Document, parent, seg string) string {
+	keys, ok := doc.Keys(parent)
+	if !ok {
+		return seg
+	}
+
+	for _, k := range keys {
+		if normaliseKey(k) == seg {
+			return k
+		}
+	}
+
+	return seg
 }

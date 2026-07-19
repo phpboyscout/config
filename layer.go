@@ -226,3 +226,32 @@ func cloneMap(m map[string]any) map[string]any {
 
 	return out
 }
+
+// normaliseValues deep-copies a value map, normalising every key on the way, so
+// a layer can be queried with the same normalised paths as the merged view.
+func normaliseValues(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+
+	for k, v := range m {
+		out[normaliseKey(k)] = normaliseNested(v)
+	}
+
+	return out
+}
+
+func normaliseNested(v any) any {
+	if nested, ok := asStringMap(v); ok {
+		return normaliseValues(nested)
+	}
+
+	if items, ok := v.([]any); ok {
+		out := make([]any, len(items))
+		for i, item := range items {
+			out[i] = normaliseNested(item)
+		}
+
+		return out
+	}
+
+	return cloneValues(v)
+}
