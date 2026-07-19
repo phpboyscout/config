@@ -148,7 +148,7 @@ func (p *Plan) String() string {
 // value set is the value read back. Writing to the base instead would leave
 // the edit immediately shadowed by an overlay, which looks to the user like
 // the write silently failed.
-func route(snap *Snapshot, changes []Change) (*Plan, error) {
+func route(snap *Snapshot, targets []Source, changes []Change) (*Plan, error) {
 	if len(changes) == 0 {
 		return nil, ErrNoChanges
 	}
@@ -160,7 +160,7 @@ func route(snap *Snapshot, changes []Change) (*Plan, error) {
 	plan := &Plan{Operations: make([]Operation, 0, len(changes))}
 
 	for _, change := range changes {
-		op, err := routeOne(snap, change)
+		op, err := routeOne(snap, targets, change)
 		if err != nil {
 			return nil, err
 		}
@@ -171,7 +171,7 @@ func route(snap *Snapshot, changes []Change) (*Plan, error) {
 	return plan, nil
 }
 
-func routeOne(snap *Snapshot, change Change) (Operation, error) {
+func routeOne(snap *Snapshot, targets []Source, change Change) (Operation, error) {
 	segs := splitPath(change.Path)
 	if segs == nil {
 		return Operation{}, fmt.Errorf("%w: %q", ErrInvalidPath, change.Path)
@@ -186,7 +186,7 @@ func routeOne(snap *Snapshot, change Change) (Operation, error) {
 		}, nil
 	}
 
-	target, defines, ok := findTarget(snap, segs)
+	target, defines, ok := findTarget(snap, targets, segs)
 	if !ok {
 		return Operation{}, fmt.Errorf("%w: %s", ErrNoWritableLayer, change.Path)
 	}
@@ -199,38 +199,23 @@ func routeOne(snap *Snapshot, change Change) (Operation, error) {
 	}, nil
 }
 
-// findTarget walks layers in reverse precedence for the first writable match.
-func findTarget(snap *Snapshot, segs []string) (target Source, defines, ok bool) {
-	var fallback Source
+// findTarget walks the writable targets in reverse precedence for the first
+// one that already defines the path, falling back to the highest-precedence
+// writable target for a key that is new everywhere.
+func findTarget(snap *Snapshot, targets []Source, segs []string) (target Source, defines, ok bool) {
+	if len(targets) == 0 {
+		return Source{}, false, false
+	}
 
-	var haveFallback bool
-
-	for i := len(snap.layers) - 1; i >= 0; i-- {
-		layer := snap.layers[i]
-		if !layer.Source.Writable {
-			// Environment variables, flags and compiled-in defaults are
-			// readable but cannot be persisted to, so routing skips them
-			// rather than attempting a write that cannot work.
-			continue
-		}
-
-		if !haveFallback {
-			fallback = layer.Source
-			haveFallback = true
-		}
-
-		if _, found := lookup(layer.Values, segs); found {
-			return layer.Source, true, true
+	for i := len(targets) - 1; i >= 0; i-- {
+		if layerDefines(snap, targets[i], segs) {
+			return targets[i], true, true
 		}
 	}
 
-	if haveFallback {
-		// No writable layer defines the key, so it is new. The
-		// highest-precedence writable layer is where it will be visible.
-		return fallback, false, true
-	}
-
-	return Source{}, false, false
+	// Nothing defines it, so it is new. The highest-precedence writable target
+	// is where it will be visible.
+	return targets[len(targets)-1], false, true
 }
 
 // layerDefines reports whether a specific layer already holds a path.

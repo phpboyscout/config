@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +22,10 @@ var (
 
 	// ErrBackendParse is returned when a source is not valid for its format.
 	ErrBackendParse = errors.New("config: source could not be parsed")
+
+	// ErrInternal is returned when an invariant of this module does not hold.
+	// It is never the caller's fault and is always worth reporting.
+	ErrInternal = errors.New("config: internal invariant violated")
 )
 
 // Backend is a source of configuration layers.
@@ -82,6 +87,19 @@ type Capabilities struct {
 type fileBackend struct {
 	fs   afero.Fs
 	path string
+
+	// loaded is a hash of the content this backend last read, and whether it
+	// read anything at all.
+	//
+	// Conflict detection compares against what was read at load, not at the
+	// start of the write. Routing decisions were made against the loaded
+	// content, so a change that landed since then invalidates them — taking
+	// the fingerprint at write time would compare the intruder's file with
+	// itself and find nothing wrong.
+	//
+	// Access is serialised by the Store, which is the only caller.
+	loaded      [32]byte
+	loadedExist bool
 }
 
 // NewFileBackend returns a backend reading YAML from a path on the given
@@ -123,7 +141,15 @@ func (b *fileBackend) Load(ctx context.Context) ([]Layer, error) {
 		return nil, err
 	}
 
-	return decodeDocuments(b.path, src)
+	layers, err := decodeDocuments(b.path, src)
+	if err != nil {
+		return nil, err
+	}
+
+	b.loaded = sha256.Sum256(src)
+	b.loadedExist = true
+
+	return layers, nil
 }
 
 // checkEditable reports whether a source can be edited without risking
