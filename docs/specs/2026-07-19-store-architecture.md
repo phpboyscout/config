@@ -4,11 +4,51 @@ date: 2026-07-19
 author: matt.cockayne
 status: approved
 approved: 2026-07-19
+revised: 2026-07-19
 issue: phpboyscout/go/config#1
 supersedes: 2026-07-18-structure-preserving-config-writes.md
 ---
 
 # Store architecture
+
+## Revisions
+
+### R1 — 2026-07-19: viper is removed outright, superseding D6
+
+**D6 said viper is retained as a resolution engine behind the snapshot boundary, and the
+"Replacing viper" alternative was rejected at an estimated 8,000–12,000 LOC. Both are now
+wrong. Viper is gone: absent from `go.mod`, `go.sum` and every source file.**
+
+This was not decided; it fell out of implementing D6, and was noticed only after the fact
+during a dependency review. Recording it properly rather than editing D6 silently, because the
+reasoning for the original estimate is worth keeping — it was sound against what it measured,
+and it measured the wrong thing.
+
+**Why the estimate was ten times too high.** It priced replacing viper *whole*: config search
+paths, merge, precedence, provenance, watching, writing, multi-document handling. But D6 made
+moving every one of those into the Store a **prerequisite**. Once that landed, viper's residual
+job was two things — cast a resolved value to a type, and decode a map into a struct — and its
+implementations of those are `spf13/cast` and `go-viper/mapstructure`, which this module
+already imported **directly**. The estimate was made before D6 and never revisited after it.
+
+**Measured residue:** 781 LOC across `view.go` (392), `env.go` (175), `unmarshal.go` (121) and
+`flag.go` (93), against a 4,084 LOC module.
+
+**What this changes:**
+
+- D6's mechanism stands unchanged — the Store hands the read surface pre-merged data plus
+  provenance, and nothing below that boundary sees a file. Only the identity of what sits
+  *behind* the boundary changed, from viper to `View`.
+- D6's closing note — "replacing it later is a swap … not a rewrite" — was correct, and the
+  swap has happened. It cost less than the note implied because D6 itself was the expensive
+  part.
+- Every defect D6 claims to resolve structurally is still resolved, by the same argument.
+- The breaking changes in D6 (`GetViper()`, `NewContainerFromViper`, `WriteConfigAs`) are
+  unaffected: all three were already removed.
+
+**Process note.** The approved spec said viper was retained while the implementation removed
+it, for four commits. An implementation MUST NOT diverge from an approved decision without the
+spec being amended first; this revision is the correction, not a precedent.
 
 ## Why this exists
 
@@ -197,6 +237,11 @@ rule and a test.
 
 
 ### D6 — Viper is reduced to a resolution engine behind the snapshot boundary
+
+> **Superseded in part by [R1](#r1--2026-07-19-viper-is-removed-outright-superseding-d6).**
+> The snapshot boundary and everything it structurally resolves stand. Viper no longer sits
+> behind it — the boundary is now `View` over a `Snapshot`, and viper is not a dependency.
+> Read "viper" below as "the resolution engine".
 
 The Store hands the Container **pre-merged data plus provenance**. Viper never sees a file
 again: it resolves typed values, env bindings, flag precedence and unmarshalling from data
@@ -894,10 +939,16 @@ decided against.
 fragility it required: a commit lease, fingerprint checks, feedback-loop breaking and index
 invalidation, all consequences of three components sharing the filesystem with no owner.
 
-**Replacing viper.** Considered at length this session and rejected: no Go library exceeds
-~42% of a greenfield requirement set, none combines provenance with layer-correct writes, and
-the replacement is an estimated 8,000–12,000 LOC. D6 makes it a contained future change rather
+**Replacing viper.** ~~Considered at length this session and rejected~~ — **reversed by
+[R1](#r1--2026-07-19-viper-is-removed-outright-superseding-d6); viper was removed.** The
+original reasoning, kept because the first two clauses still hold: no Go library exceeds ~42%
+of a greenfield requirement set, none combines provenance with layer-correct writes, and the
+replacement is an estimated 8,000–12,000 LOC. D6 makes it a contained future change rather
 than a prerequisite.
+
+The estimate was the error. It priced replacing viper *whole*, but D6 had already made moving
+merge, precedence, provenance, watching and writing into the Store a prerequisite. The residue
+was 781 LOC over two libraries already imported directly. See R1.
 
 **Unifying document and value models.** Retaining comments in the read-path value model. No
 system in any language does this successfully: Rust's `toml` was built on `toml_edit` and
