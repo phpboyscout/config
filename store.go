@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"reflect"
 	"strings"
@@ -210,6 +211,91 @@ func NewStore(ctx context.Context, opts ...StoreOption) (*Store, error) {
 	}
 
 	return s, nil
+}
+
+// AddLayer contributes configuration from an in-memory source at runtime, at
+// the highest precedence.
+//
+// This is how a tool supplies configuration it computed rather than read: a
+// resolved path, a value negotiated with a server, a toggle that applies to
+// this run only. It is an ordinary layer, so precedence, provenance, merging
+// and shadowing all work on it exactly as they do on a file, and nothing
+// special has to be remembered about it.
+//
+// It is never a write target. An in-memory source has nowhere to persist to, so
+// routing skips it — a later write lands in the file beneath and the added
+// layer goes on winning, which the plan reports as a shadowed write rather than
+// letting the caller believe their edit took effect.
+//
+// Compiled-in defaults belong in WithReaders at construction instead, where
+// they sit at the bottom of the order rather than the top.
+//
+// The layer survives reloads: it is a source like any other, re-read each time.
+// A layer that cannot be parsed is refused and not adopted, because leaving it
+// in place would make every later reload fail on content the caller has no way
+// to withdraw.
+func (s *Store) AddLayer(ctx context.Context, name string, r io.Reader) error {
+	if s.notifier.insideObserver() {
+		return ErrWriteFromObserver
+	}
+
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("%w: a layer needs a name to appear in provenance", ErrInvalidTarget)
+	}
+
+	content, err := io.ReadAll(r)
+	if err != nil {
+		return fmt.Errorf("config: reading layer %q: %w", name, err)
+	}
+
+	previous, err := s.adoptBackend(NewReaderBackend(name, content))
+	if err != nil {
+		return err
+	}
+
+	next, changed, err := s.reload(ctx)
+	if err != nil {
+		// The layer is withdrawn rather than left in place. Reload is
+		// fail-closed, so the previous configuration still stands, and a
+		// backend that cannot load would otherwise break every reload after
+		// this one.
+		s.restoreBackends(previous)
+
+		return err
+	}
+
+	if !changed {
+		return nil
+	}
+
+	s.notifier.notify(next)
+
+	return nil
+}
+
+// adoptBackend appends a backend at the highest precedence, returning the
+// previous list so it can be put back if the layer proves unusable.
+func (s *Store) adoptBackend(b Backend) ([]Backend, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, existing := range s.backends {
+		if existing.ID() == b.ID() {
+			return nil, fmt.Errorf("%w: a source named %q is already loaded", ErrInvalidTarget, b.ID())
+		}
+	}
+
+	previous := s.backends
+	s.backends = append(append([]Backend(nil), s.backends...), b)
+
+	return previous, nil
+}
+
+func (s *Store) restoreBackends(previous []Backend) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.backends = previous
 }
 
 // Snapshot returns the current configuration.

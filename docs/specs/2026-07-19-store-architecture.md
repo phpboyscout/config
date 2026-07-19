@@ -147,6 +147,62 @@ when the replaced mapping led with a merge key, and panicking outright when the 
 was longer. Fixed upstream in `yamldoc`; AC3's merge-key clause holds again once that release
 lands.
 
+### R4 — 2026-07-19: four criteria reconciled with the implementation
+
+Four acceptance criteria described an implementation that does not exist. Each was resolved
+against measured downstream usage rather than by preference, and the evidence is recorded
+because in three of the four the criterion was wrong rather than the code.
+
+**AC17 — ephemeral overrides are replaced by `Store.AddLayer`.** `SourceOverride` was a
+declared constant with no API behind it: nothing could create one. Rather than build an
+invisible layer that every read path, `Unmarshal`, `Keys` and validation would have to consult,
+the capability is provided as what it always was — *another layer*. `AddLayer(ctx, name,
+io.Reader)` contributes an in-memory source at the highest precedence, taking part in
+precedence, provenance, merging and shadowing like any other, and needing nothing remembered
+about it.
+
+Being in-memory it is not writable, so routing already skips it and a later write lands in the
+file beneath and is reported as shadowed. That property is inherited from the existing source
+model rather than special-cased, which is the argument for this shape over a bespoke override.
+
+Measured before deciding: every downstream `Set` is the first half of stage-then-persist —
+`setTelemetryEnabled` does `Set` then `WriteConfig`, `writeBitbucketCredentials` is named for
+it. **Not one use is an override.** That idiom is now `Apply`, in one step and without the
+`WriteConfigAs` env-secret leak. Compiled-in defaults remain `WithReaders` at construction,
+where they sit at the bottom of the order rather than the top.
+
+**AC18 — withdrawn. A derived view is a read scope, not an observable.** `*View` has no
+registration method, so the criterion was not merely unimplemented but inexpressible.
+Measured: `Sub` is used downstream purely to scope reads (`vcs/config_adapter.go:28`,
+`vcs/release/registry.go:24`), with **zero** observer registrations on a `Sub` in either
+consumer. The old `Containable` did expose `AddObserverFunc`, so this was possible and never
+fired — advertised, broken, unused. Scoped change notification remains available through
+`ObserveSection`, which is what all four downstream adapters actually use.
+
+*Migration note:* `Sub` returns `*View`, which satisfies `Reader` but **not** `Binder`. An
+adapter chain taking a scoped container must be typed `Reader`.
+
+**AC7 — provenance answers the combined question, not the split one.** D7 imagined the Store
+answering "which file" and the container adding "and it is shadowed by". Env and flags are
+ordinary layers, so `Origin` returns whichever won — env included — and the tests assert
+exactly that. The combined answer is strictly more information than the split one, and this
+spec's own non-goals section already describes `Explain` as the intended diagnostic. A
+`FileOrigin` accessor was rejected: its difference from `Origin` is subtle, which is how
+callers end up using the wrong one.
+
+**AC24 — the D10 break is accepted and documented.** `ObserveSection` takes `Binder` and
+`WithSectionDefaultFunc` takes `Observed`, so "no downstream adapter changes" is false. The
+scale is smaller than the raw count suggests. Measured across `go-tool-base`: 160
+`config.Containable` references, of which **89 are bare parameter declarations** that become
+`config.Reader` by rename; only **12 call methods `Reader` lacks** (`GetViper` 6,
+`WriteConfigAs` 4, `BindPFlag` 1, `ToJSON` 1); and `ObserveSection` has **4 call sites**, with
+`*Store` already satisfying `Binder`.
+
+So D10's guarantee is amended to what it can honestly promise: the typed-section *semantics*
+are frozen — `ObservedSection[T]`, change-only delivery, monotonic `Version`, the five
+`WithSection*` options — and the parameter types are not. The port is a rename plus twelve
+genuine sites, which belongs in the migration document D19 requires.
+
 ## Why this exists
 
 The module needs to write configuration back to the files it was loaded from — preserving
@@ -489,6 +545,11 @@ keryx uses. Silent absence of a declared capability is prohibited.
   watcher rather than an owned responsibility.
 
 ### D10 — The typed-section surface is a FROZEN public contract
+
+> **Narrowed by [R4](#r4--2026-07-19-four-criteria-reconciled-with-the-implementation).** The
+> semantics are frozen; the parameter types are not. `ObserveSection` takes `Binder` and
+> `WithSectionDefaultFunc` takes `Observed`, so "no downstream adapter changes" does not hold.
+> Measured port: a rename across 89 declarations plus twelve genuine call sites.
 
 This is the module's extraction mechanism and may not churn, however much else changes.
 
@@ -919,8 +980,10 @@ All four are eliminated by construction, not fixed.
 
 6. Writing to one layer pulls in no value contributed by another layer, defaults, env or
    flags — verified with a lower-layer key, an env-overridden key, and a bound changed flag.
-7. Provenance returns the highest-precedence file literally containing a key, and empty when
-   none does — **unaffected by an environment variable of the matching name**.
+7. Provenance answers, for any key, which source supplied the effective value and which
+   others define it: `Origin` names the winner, `Shadowed` lists every layer defining it, and
+   `Explain` renders the chain. A caller wanting file-only provenance filters `Shadowed` on
+   `Kind == SourceFile`. Amended by [R4](#r4--2026-07-19-four-criteria-reconciled-with-the-implementation).
 8. An edit that remains shadowed after writing is reported as such, naming the shadowing
    source.
 9. Repeated saves from a long-running surface route to the originating file every time; the
@@ -948,8 +1011,10 @@ All four are eliminated by construction, not fixed.
 15. Hot-reload functions on a non-OS `afero.Fs`; a watcher that cannot function fails loudly
     at construction rather than silently.
 16. An observer that writes config on notification does not produce an unbounded cascade.
-17. Flag bindings and ephemeral overrides survive a reload.
-18. Observers registered on a `Sub` view fire.
+17. Flag bindings survive a reload, and a layer added at runtime through `Store.AddLayer`
+    survives one too. Amended by [R4](#r4--2026-07-19-four-criteria-reconciled-with-the-implementation).
+18. *(Withdrawn — see [R4](#r4--2026-07-19-four-criteria-reconciled-with-the-implementation).
+    A derived view is a read scope, not an observable.)*
 19. A rejected snapshot swaps nothing and notifies no observer; the rejection reaches
     `OnReloadError`.
 
@@ -964,8 +1029,10 @@ All four are eliminated by construction, not fixed.
 
 **Contract**
 
-24. Every existing typed-section consumer compiles and behaves unchanged (D10), verified
-    against the real `config_adapter.go` files.
+24. The typed-section *semantics* are unchanged (D10) and every consumer ports mechanically:
+    verified by compiling the real `config_adapter.go` files against this module and by a
+    migration document covering the parameter-type change. Amended by
+    [R4](#r4--2026-07-19-four-criteria-reconciled-with-the-implementation).
 
 **Delivery**
 
