@@ -1,22 +1,25 @@
 # Validate configuration
 
-Catch a bad config at load time — a missing required key, a typo, an out-of-range enum —
-instead of at a call site three layers deep. A typo like `server.prot` otherwise produces
-a silent zero value, discovered only when something fails at runtime.
+Catch a bad configuration at load time — a missing required key, a typo, a value outside
+an allowed set — instead of at a call site three layers deep. A typo like `server.prot`
+otherwise produces a silent zero value, discovered only when something fails at runtime.
+
+Validation always runs against the **resolved** configuration, never a single layer. A
+base file that omits a key its overlay supplies is legitimate, and judging layers
+individually would reject a perfectly correct setup.
 
 ## Describe the shape with tags
+
+A schema is derived from a tagged struct:
 
 ```go
 type AppConfig struct {
 	Server struct {
 		Port int    `config:"server.port" default:"8080"`
-		Host string `config:"server.host"`
+		Host string `config:"server.host" validate:"required"`
 	}
 	Log struct {
 		Level string `config:"log.level" enum:"debug,info,warn,error" default:"info"`
-	}
-	GitHub struct {
-		Token string `config:"github.token" validate:"required"`
 	}
 	Internal string `config:"-"` // never validated
 }
@@ -24,44 +27,47 @@ type AppConfig struct {
 
 | Tag | Effect |
 |---|---|
-| `config:"a.b"` | maps the field to a dot-separated config key |
+| `config:"a.b"` | maps the field to a dot-separated configuration key |
 | `validate:"required"` | fails when the key is absent **or zero-valued** |
-| `enum:"a,b,c"` | fails when the value is not in the allowed set |
-| `default:"x"` | **appears in error hints — does not set the value** |
+| `enum:"a,b,c"` | fails when the value is not one of the listed values |
+| `default:"x"` | **appears in documentation and error hints — does not set the value** |
+| `description:"…"` | human-readable description carried on the field schema |
 | `config:"-"` | skips the field entirely |
 
+A nested struct without a `config` tag is walked, and its lower-cased field name becomes a
+key prefix for any child tag that contains no dot of its own. So `Server.Port` tagged
+`config:"port"` yields the key `server.port`, exactly as the fully-qualified form above
+would. Both spellings work; pick one and stay with it.
+
 !!! warning "Validation reads; it never writes"
-    The `default:` tag is **documentation and hint text only**. Validation does not
-    inject defaults into the container. Defaults belong in exactly one place — your
-    shipped/embedded default config — because a second source would inevitably drift
-    from the first. Don't define a default in both.
+    The `default:` tag is hint text only. Validation does not inject defaults into the
+    configuration. Defaults belong in exactly one place — your shipped or embedded
+    defaults layer, added with `WithReaders` — because a second source of defaults will
+    drift from the first. Do not define a default in both.
 
 !!! note "Two different struct tags"
     Validation reads **`config:`**; [section decoding](typed-sections.md) reads
-    **`mapstructure:`**. They are separate mechanisms and a struct may carry both.
+    **`mapstructure:`**. They are separate mechanisms, and one struct may carry both.
 
 ## Validate in one call
 
-`ValidateStruct[T]` derives the schema from `T` and validates in one step. It takes the
-`Containable` **interface**, so callers never need the concrete type:
+`ValidateStruct[T]` derives the schema from `T` and validates a `*View` in one step:
 
 ```go
-if err := config.ValidateStruct[AppConfig](cfg); err != nil {
+if err := config.ValidateStruct[AppConfig](store.View()); err != nil {
 	return fmt.Errorf("configuration invalid: %w", err)
 }
 ```
 
-Do this in your command's `RunE`/`PersistentPreRunE` — after config is loaded.
+The returned error wraps `ErrInvalidConfig`, so `errors.Is` works on it.
 
-Schemas derived without options are **cached per type** (`reflect.Type` → schema), so
-repeated calls skip the reflection. Calls that pass options build fresh, because options
-change the result. (The cache never evicts; for the handful of config structs a tool
-defines that is a non-issue.)
+Schemas derived without options are **cached per type**, so repeated calls skip the
+reflection. Calls that pass options build fresh, because an option can change the result.
 
-## When you need the result itself
+## Build a schema you can reuse
 
-`SchemaOf[T]` gives you the `*Schema`, and `Validate` returns a `ValidationResult` with
-errors and warnings separated:
+`SchemaOf[T]` gives you the `*Schema` itself, which is what you attach to a store.
+`NewSchema` is the longer form, for when you want to compose options explicitly:
 
 ```go
 schema, err := config.SchemaOf[AppConfig]()
@@ -69,82 +75,196 @@ if err != nil {
 	return err
 }
 
-result := cfg.Validate(schema)
-if !result.Valid() { // true iff there are zero ERRORS; warnings don't affect validity
+// equivalently
+schema, err = config.NewSchema(config.WithStructSchema(AppConfig{}))
+```
+
+A schema with no fields is refused with `ErrEmptySchema`. A schema that constrains
+nothing would validate everything, which is worse than having none at all: you would
+believe your configuration was checked when it was not.
+
+## When you want warnings as well as errors
+
+`View.Validate` returns a `ValidationResult` with the two kept apart:
+
+```go
+result := store.View().Validate(schema)
+
+if !result.Valid() { // true only when there are zero errors; warnings do not affect validity
 	return errors.New(result.Error())
 }
+
 for _, w := range result.Warnings {
 	slog.Default().Warn("config", "key", w.Key, "issue", w.Message)
 }
 ```
 
-## Errors are meant to be actionable
-
-Each `ValidationError` carries `Key`, `Message`, and an actionable `Hint` (the env-var
-name is derived from the key automatically):
+Each `ValidationError` carries `Key`, `Message` and an actionable `Hint`:
 
 ```
 config validation failed:
-  myfeature.api_key: required field is missing (hint: add myfeature.api_key to your config file or set the MYFEATURE_API_KEY environment variable)
-  myfeature.log_level: value "verbose" is not allowed (hint: allowed values: debug, info, warn, error)
+  server.host: required field is missing (hint: add server.host to your config file or set the SERVER_HOST environment variable)
+  log.level: value "verbose" is not allowed (hint: allowed values: debug, info, warn, error)
 ```
 
-That combination — key, cause, fix — is the quality bar for any new check.
+Key, cause, fix. That is the quality bar for any check you add.
 
-## Unknown keys: warnings by default
+The environment variable named in a hint is derived mechanically from the key by
+upper-casing it and replacing dots with underscores. It does **not** include the prefix
+you passed to `WithEnv`, so if you use one, say so in your own surrounding message.
 
-An unrecognised key produces a **warning**, not an error. This is deliberate: in a merged
-config that several packages contribute to, an unknown key is usually *someone else's*
-key, and failing on it would make the file impossible to share.
+## Unknown keys are warnings by default
 
-When you own a user-facing file and want typos caught hard, opt into strict mode:
+An unrecognised key produces a warning, not an error. That is deliberate: in a merged
+configuration several packages contribute to, an unknown key is usually *someone else's*
+key, and failing on it would make the file impossible to share. A key that is a parent of
+a known field is never reported — `server` is fine when `server.port` is in the schema.
+
+When you own the whole file and want typos caught hard, opt into strict mode:
 
 ```go
-err := config.ValidateStruct[AppConfig](cfg, config.WithStrictMode())
-// now `myfeature.endpont` is an error, not a warning
+err := config.ValidateStruct[AppConfig](store.View(), config.WithStrictMode())
+// now `server.prot` is an error rather than a warning
+
+schema, err := config.NewSchema(
+	config.WithStructSchema(AppConfig{}),
+	config.WithStrictMode(),
+)
 ```
 
-## Gate hot-reloads on the schema
+## Attach the schema to the store
 
-Attach a schema and every reload is validated against it — a candidate that fails is
-rejected and the last-known-good config is retained, so observers never see an invalid
-config:
+`WithSchema` validates every candidate configuration before it is published — the first
+load, every reload, and every write:
 
 ```go
-cfg, err := config.LoadFilesContainerWithSchema(afero.NewOsFs(), schema,
-	config.WithConfigFiles("config.yaml"))
-
-// or attach later
-cfg.SetSchema(schema)
+store, err := config.NewStore(ctx,
+	config.WithFiles(afero.NewOsFs(), "/etc/mytool/config.yaml"),
+	config.WithEnv("MYTOOL"),
+	config.WithSchema(schema),
+)
 ```
 
-See [hot-reload safety](../explanation/hot-reload-safety.md).
+A reload that fails validation is rejected and the last known good configuration stays
+live, so observers never see an invalid configuration. See
+[Hot-reload safety](../explanation/hot-reload-safety.md).
+
+## An invalid configuration is still repairable
+
+`NewStore` returns a **usable** store alongside `ErrInvalidConfig` when the configuration
+loads and parses but violates the schema. That asymmetry is deliberate. The ordinary
+check still fails fast:
+
+```go
+store, err := config.NewStore(ctx, opts...)
+if err != nil {
+	return err // a service refuses to start on a bad config, exactly as you want
+}
+```
+
+But a tool whose job is to *repair* configuration needs a store to repair it through.
+Returning nil would make one missing required key unfixable by the very surface designed
+to fix it. Such a caller checks for the specific error and carries on:
+
+```go
+store, err := config.NewStore(ctx, opts...)
+if err != nil && !errors.Is(err, config.ErrInvalidConfig) {
+	return err // genuinely unusable: no sources, unreadable, or unparseable
+}
+
+// store is non-nil here, and can be read from and written through.
+_, err = store.Apply(ctx, config.Set("server.host", "localhost"))
+```
+
+Every other failure — no sources, a source that cannot be read, one that cannot be parsed
+— still returns nil, because there is no configuration to hand back.
+
+## Writes are validated too, but only for what they break
+
+A write against a schema-carrying store is validated by building the candidate snapshot it
+would produce — including the environment and flag layers — and validating that. It is the
+same construction path a reload uses, so pre-write validation and the reload it causes
+cannot disagree.
+
+The rule is narrower than "the result must be valid":
+
+> **`Apply` rejects only the violations your change introduces.** Violations that were
+> already there do not block the write, and are reported as pre-existing.
+
+```go
+_, err := store.Apply(ctx, config.Set("log.level", "verbose"))
+if errors.Is(err, config.ErrInvalidConfig) {
+	fmt.Println(err)
+}
+```
+
+```
+config: configuration is not valid: this change would make the configuration invalid:
+  log.level: value "verbose" is not allowed (hint: allowed values: debug, info, warn, error)
+
+the configuration was already invalid before this change, and these are unaffected by it:
+  server.port: expected type int but got string (hint: ensure server.port has a value of type int)
+```
+
+Both halves earn their place. Validating the candidate outright would lock an
+already-invalid configuration against edits, which is the same repairability problem
+`NewStore` solves at construction. Suppressing the pre-existing violations entirely would
+hide from the user that their configuration is broken in ways their edit did not cause.
+Reporting them without the disclaimer would send someone off debugging a change that was
+perfectly fine.
+
+A rejected write modifies nothing. Violations are matched on key plus message, so a change
+that swaps one failure for a different one on the same key counts as introducing something
+new — which it has.
+
+## The type check sees the layer's own type
+
+A schema field's `Type` is compared against the resolved value's actual Go type. Values
+that come from a file are typed by the YAML parser; values that come from an environment
+variable or a changed flag are **strings**, because that is all those layers hold.
+
+So an `int` field supplied by `MYTOOL_SERVER_PORT` or `--port` fails its type check:
+
+```
+server.port: expected type int but got string
+```
+
+The reading path is unaffected — `GetInt` coerces — but validation is not a reading path.
+If a key is routinely supplied by the environment or a flag, either leave it out of the
+typed schema or declare it as a string.
 
 ## Validate your own slice, not the world
 
-Each package should validate **its own** keys with its own struct. There is deliberately
-no global schema: a central one would have to know which features are active in a given
-build, and would couple otherwise-independent packages together. See
-[Why a wrapper](../explanation/why-a-wrapper.md#decentralised-validation).
+Each package should validate its own keys with its own struct. There is deliberately no
+global schema: a central one would have to know which features are active in a given
+build, and would couple otherwise-independent packages together.
+
+For a typed section that stays current across reloads, `WithSectionValidator` validates
+each decoded snapshot before it is published, and a snapshot that fails keeps the previous
+one in place. See [Use typed sections](typed-sections.md).
 
 ## Testing validation
 
-No disk needed — build a container from an in-memory filesystem and assert on the error:
+No disk needed. Build a store over an in-memory filesystem and assert on the error:
 
 ```go
-fs := afero.NewMemMapFs()
-require.NoError(t, afero.WriteFile(fs, "/config.yaml", []byte("log:\n  level: verbose\n"), 0o644))
+fsys := afero.NewMemMapFs()
+require.NoError(t, afero.WriteFile(fsys, "/config.yaml",
+	[]byte("server:\n  host: localhost\nlog:\n  level: verbose\n"), 0o644))
 
-cfg, err := config.LoadFilesContainer(fs, config.WithConfigFiles("/config.yaml"))
+store, err := config.NewStore(ctx, config.WithFiles(fsys, "/config.yaml"))
 require.NoError(t, err)
 
-err = config.ValidateStruct[AppConfig](cfg)
+err = config.ValidateStruct[AppConfig](store.View())
 require.Error(t, err)
+assert.ErrorIs(t, err, config.ErrInvalidConfig)
 assert.Contains(t, err.Error(), "log.level")
 ```
 
 ## Related
 
-- [Use typed sections](typed-sections.md)
-- [Hot-reload safety](../explanation/hot-reload-safety.md)
-- [Why a wrapper over Viper](../explanation/why-a-wrapper.md)
+- [Load & merge configuration](load-and-merge.md) — building a store and ordering sources
+- [Use typed sections](typed-sections.md) — decode and validate one subtree
+- [React to changes with hot-reload](hot-reload.md)
+- [Hot-reload safety](../explanation/hot-reload-safety.md) — why a rejected reload changes nothing
+- [Write configuration](write-config.md) — planning, routing and applying a change
