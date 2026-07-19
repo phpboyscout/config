@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"reflect"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/pflag"
@@ -204,33 +206,61 @@ func (s *Store) Snapshot() *Snapshot {
 // partly the old values and partly the new is worse than either, and worse
 // than refusing.
 func (s *Store) Reload(ctx context.Context) error {
+	next, changed, err := s.reload(ctx)
+	if err != nil {
+		s.notifier.notifyError(err)
+
+		return err
+	}
+
+	if !changed {
+		return nil
+	}
+
+	// Notification happens outside the lock. An observer commonly reacts by
+	// writing configuration back, and holding the lock across that call would
+	// deadlock the Store against itself.
+	s.notifier.notify(next)
+
+	return nil
+}
+
+// reload swaps in a new configuration under the lock, reporting whether
+// anything actually changed. The caller notifies, outside the lock.
+func (s *Store) reload(ctx context.Context) (next *Snapshot, changed bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	loaded, err := s.loadAll(ctx)
 	if err != nil {
 		// Fail-closed: the previous configuration stands, so observers are not
-		// told of a change that did not happen. The rejection goes to the
+		// told of a change that did not happen. The rejection travels on the
 		// error channel instead.
-		s.notifier.notifyError(err)
-
-		return err
+		return nil, false, err
 	}
 
 	if err := s.validate(loaded); err != nil {
-		s.notifier.notifyError(err)
-
-		return err
+		return nil, false, err
 	}
 
-	next := s.publish(loaded)
+	previous := s.current.Load()
+	next = s.publish(loaded)
 
-	// Notification happens after the swap and outside the lock, so an observer
-	// reads the configuration it was told about and a slow one cannot block
-	// the next reload.
-	s.notifier.notify(next)
+	// A reload that produced identical configuration is not a change, and
+	// telling observers otherwise would have them re-read values they already
+	// hold. This also absorbs the noise filesystem notification produces:
+	// permission changes, atomic renames and editors writing in several
+	// passes all arrive as events and none of them alters configuration.
+	return next, !sameConfiguration(previous, next), nil
+}
 
-	return nil
+// sameConfiguration reports whether two snapshots resolve identically.
+func sameConfiguration(a, b *Snapshot) bool {
+	if a == nil || b == nil {
+		return false
+	}
+
+	return reflect.DeepEqual(a.values, b.values)
 }
 
 // validate checks a candidate against the schema without publishing it.
@@ -374,6 +404,20 @@ func (s *Store) Plan(changes ...Change) (*Plan, error) {
 // Execution is prepare → verify → commit. Everything expensive or likely to
 // fail happens while nothing is visible; commit is a sequence of renames.
 func (s *Store) Apply(ctx context.Context, changes ...Change) (*Snapshot, error) {
+	next, err := s.apply(ctx, changes)
+	if err != nil {
+		return nil, err
+	}
+
+	// Exactly one notification per logical change, however many sources it
+	// touched — and delivered outside the lock, because an observer reacting
+	// by writing configuration back is the ordinary case, not an exotic one.
+	s.notifier.notify(next)
+
+	return next, nil
+}
+
+func (s *Store) apply(ctx context.Context, changes []Change) (*Snapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -399,15 +443,7 @@ func (s *Store) Apply(ctx context.Context, changes ...Change) (*Snapshot, error)
 		return nil, err
 	}
 
-	next := s.publish(s.rebuild(pending))
-
-	// Exactly one notification per logical change, however many sources it
-	// touched. A watcher-driven design cannot promise that: it sees N
-	// filesystem events and has to guess whether they were one edit or
-	// several.
-	s.notifier.notify(next)
-
-	return next, nil
+	return s.publish(s.rebuild(pending)), nil
 }
 
 // prepare groups a plan by backend and stages the edits for each.
@@ -629,4 +665,84 @@ func (s *Store) backendByID(id string) (Backend, bool) {
 	}
 
 	return nil, false
+}
+
+// Watch begins reacting to changes made outside this process.
+//
+// The Store's own writes never travel this path: Apply builds the next
+// snapshot from what it just wrote and notifies directly, so a write cannot
+// come back round through the watcher. That is what makes a
+// write-then-react-then-write cascade unrepresentable rather than something to
+// be detected and broken.
+//
+// Watching only covers file-backed sources. Environment variables and flags do
+// not change under a running process, and an in-memory source is changed by
+// the code that owns it.
+//
+// A watcher that cannot function fails here rather than silently doing
+// nothing: an application that believes it will hear about changes and never
+// does is worse off than one that knows it must restart.
+func (s *Store) Watch(ctx context.Context, opts ...WatchOption) (stop func(), err error) {
+	cfg := watchConfig{interval: DefaultPollInterval}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	paths, filesystem := s.watchablePaths()
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("%w: no file-backed sources", ErrWatchUnavailable)
+	}
+
+	watcher := cfg.watcher
+	if watcher == nil {
+		watcher = NewWatcher(filesystem, cfg.interval)
+	}
+
+	return watcher.Watch(ctx, paths, func() {
+		// A watch event means the paths *may* have changed. Reload decides
+		// whether anything actually did, and only notifies observers if so.
+		_ = s.Reload(ctx)
+	})
+}
+
+// WatchOption configures watching.
+type WatchOption func(*watchConfig)
+
+type watchConfig struct {
+	interval time.Duration
+	watcher  Watcher
+}
+
+// WithPollInterval sets how often a polling watcher checks for changes.
+func WithPollInterval(d time.Duration) WatchOption {
+	return func(c *watchConfig) { c.interval = d }
+}
+
+// WithWatcher supplies a watcher, mainly so tests can drive change detection
+// deterministically instead of waiting on a real filesystem.
+func WithWatcher(w Watcher) WatchOption {
+	return func(c *watchConfig) { c.watcher = w }
+}
+
+// watchablePaths returns the file paths behind the Store's backends.
+func (s *Store) watchablePaths() ([]string, afero.Fs) {
+	var (
+		paths      []string
+		filesystem afero.Fs
+	)
+
+	for _, b := range s.backends {
+		fb, ok := b.(*fileBackend)
+		if !ok {
+			continue
+		}
+
+		paths = append(paths, fb.path)
+
+		if filesystem == nil {
+			filesystem = fb.fs
+		}
+	}
+
+	return paths, filesystem
 }

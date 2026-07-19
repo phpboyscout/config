@@ -4,6 +4,7 @@ go 1.26.5
 
 require (
 	github.com/cockroachdb/errors v1.14.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/spf13/afero v1.15.0
 	github.com/spf13/cast v1.10.0
