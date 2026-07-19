@@ -63,8 +63,8 @@ ephemeral override and is never persisted; persistence happens only through the 
 │                                                          │
 │   Backend(s)      parse + provenance      watch          │
 │   ─────────       ──────────────────      ─────          │
-│   local FS        document layer          fsnotify | poll│
-│   (afero)         (goccy, D4/D5)          FOREIGN changes│
+│   local FS        yamldoc module           fsnotify | poll│
+│   (afero)         (documents only, D5)     FOREIGN changes│
 │                                           only (D8)      │
 │                                                          │
 │   Apply(ChangeSet) ──► validate ──► write ──► NEW        │
@@ -139,63 +139,62 @@ This single change eliminates, structurally rather than by mitigation:
 - **debounce sensitivity** for own saves
 - **redundant re-parsing** of unchanged files
 
-### D5 — The document layer preserves comments; goccy is a document parser only
+### D5 — The document layer is the `yamldoc` module
 
-File backends parse through **`github.com/goccy/go-yaml`**, retaining comments, key order,
-quoting styles and block scalars.
+File backends read and write documents through
+**`gitlab.com/phpboyscout/go/yamldoc`** — a standalone library for comment-preserving YAML
+editing, extracted from this design and published separately.
 
-**Guarantee:** the data structure is preserved and **comments survive attached to the correct
-keys**. **Not guaranteed:** blank lines, key order, indentation, comment alignment, the `---`
-marker, byte-identity.
+> **Amended 2026-07-19.** This decision originally specified an internal package built on
+> `goccy/go-yaml`. The work was extracted to its own module before implementation, on the
+> grounds that comment-preserving YAML editing is independently useful and a config library is
+> a poor home for it: nobody wanting a YAML editor should have to depend on a precedence
+> engine. The mechanism now lives there; the policy stays here.
 
-Not `yaml.v3`/`go.yaml.in/yaml/v3`: their losses divide into forgivable formatting and
-unforgivable content changes — merge keys rewritten to `!!merge`, folded scalars reflowed,
-astral-plane emoji escaped. `go.yaml.in/yaml/v4` (rc.6, no stable tag) fixes merge keys but
-still escapes astral-plane characters unconditionally, and that escaping **cascades**: a
-literal block containing an emoji is rewritten as a double-quoted string. Details in the
-appendix.
+**What `yamldoc` provides** (its spec is the authority; summarised here so this document
+remains readable on its own):
+
+- parse bytes into ordered documents, locate nodes by dotted path, set, remove, re-emit
+- comments preserved and attached to the same keys; key order, quoting, block scalars,
+  anchors, aliases and merge keys preserved
+- **never emits bytes that do not parse** — every emit re-parses its own output
+- detects constructs it cannot round-trip safely and **reports** them
+- no file I/O, no merging, no precedence, and **no meaning assigned to document order**
+
+**What stays here.** Everything `yamldoc` deliberately refuses to decide: which layer a write
+targets (D13), what document order *means* (D6a), how empty containers affect routing and
+enumeration (D6b), validation (D15), and whether an unsafe document is refused (below).
+
+**Guarantee inherited from `yamldoc`:** the data structure is preserved and **comments survive
+attached to the correct keys**. **Not guaranteed:** blank lines, indentation, comment
+alignment, the `---` marker on a single-document file, byte-identity.
 
 **Comment style is the consumer's choice; the guarantee is retention, not style.** Any input
-style is accepted. Normalising on write — including flow → block — is acceptable **provided no
-comment is lost**. What matters is that a comment survives attached to its key.
+style is accepted, and normalising on write — including flow → block — is acceptable provided
+no comment is lost.
 
-**One construct is unsafe and MUST be refused at load: a multi-line flow collection containing
-interior comments.** Measured — goccy does not merely lose the comment, it **corrupts the
-document**, swallowing the closing delimiter into the comment:
+**Unsafe documents are refused at load — and refusal is this module's decision, not
+`yamldoc`'s.** `yamldoc` reports constructs it cannot round-trip (currently: a multi-line flow
+collection with interior comments, which corrupts rather than degrades — the closing delimiter
+is swallowed into the comment). This module turns that report into a **load-time refusal**
+naming the file and location, because discovering it at commit means the user has already made
+their edits and the failure looks arbitrary.
 
-```yaml
-# input                          # goccy output — INVALID YAML
-bounds: {                        bounds: {min: 1, max: 10 # lower bound}
-  min: 1,   # lower bound
-  max: 10   # upper bound        tiers: [core, ingress # only in prod]
+```go
+f, err := yamldoc.Parse(src)
+if u := f.Unsupported(); len(u) > 0 {
+    return fmt.Errorf("%s cannot be safely edited: %s", path, u[0])
 }
-tiers: [
-  core,      # always
-  ingress    # only in prod
-]
 ```
 
-Both goccy and `yaml/v3` reject that output (`',' or '}' must be specified`). This is upstream
-(#821, #820, #870), not a usage error.
+**Hard invariant: `yamldoc` is never a value source.**
 
-Therefore: **detect this construct when a document is loaded for editing and refuse the
-document up front**, with an error naming the location and the reason. Refusing at commit —
-which D11's re-parse would do anyway — is too late: the user has already made their edits and
-the failure looks arbitrary.
-
-**Everything else in real use is safe.** Measured across six fixtures and the corpus: head and
-inline comments *around* flow nodes, single-line flow mappings **with anchors** (the real
-`voice: &voice {…}` at `keryx-init.yaml:152`), single-line flow sequences with quoted members,
-comments on siblings of flow nodes, and edits/deletes adjacent to flow nodes all preserve
-comments and anchors intact. **Multi-line flow collections occur zero times** across the blog,
-keyrx, go-tool-base and all 20 `go/*` modules; single-line flow appears in 30 files.
-
-**Hard invariant: goccy is never a value source.** goccy and the resolution engine decode
-identical input to different Go types (`8080` → `uint64` vs `int`; large integers → `string`
-vs an irrecoverable `float64`). `validate.go`'s `isInt` rejects `uint64`, so goccy-decoded
+`yamldoc` and the resolution engine decode identical input to different Go types (`8080` → `uint64` vs `int`; large integers → `string`
+vs an irrecoverable `float64`). `validate.go`'s `isInt` rejects `uint64`, so `yamldoc`-decoded
 values reaching the read path would fail every schema integer. The boundary is
 **documents vs values**, and it must not be crossed in either direction. Enforce with a lint
 rule and a test.
+
 
 ### D6 — Viper is reduced to a resolution engine behind the snapshot boundary
 
@@ -248,10 +247,10 @@ treats them as separate resources. Later-document-wins is an interpretation this
 adopts because it is the only one consistent with how it already treats files. State it
 plainly; do not imply it is YAML semantics.
 
-**Verified writable.** Editing inside one document and re-emitting the whole file preserves
-every other document, all separators, and every comment — measured on a 3-document fixture
-with per-document comment blocks: sets in document 0 and document 1 each produced the intended
-change with the other documents byte-untouched, 6/6 comments retained, and a clean re-parse.
+**Access is `yamldoc`'s; meaning is ours.** `yamldoc` exposes every document and lets any of
+them be edited, verified against a 3-document fixture: editing one leaves the others
+byte-untouched with all separators and comments intact. It deliberately assigns **no meaning**
+to their order — later-document-wins is this module's interpretation, layered on top.
 
 **Not supported:** creating or removing whole documents. Writes target existing documents.
 
@@ -526,62 +525,40 @@ the reason whole-subtree replacement existed at all, since viper exposes no
 — is strictly more preserving under the same contract. Ship replace; revisit if the loss
 proves to matter.
 
-### D17 — Comment ownership on delete is explicit and tested
+### D17 — Comment ownership on delete is `yamldoc`'s, and is a dependency requirement
+
+> **Amended 2026-07-19.** These rules were specified here and are now implemented and tested in
+> `yamldoc`, since they are questions about YAML documents rather than about configuration.
+> They remain recorded as a **requirement this module places on its dependency** — if a future
+> substrate change broke them, the fidelity guarantee in D5 would break with it.
 
 With formatting and ordering out of scope, **"comments stay grouped with the right keys" is
 the entire fidelity guarantee** — and deletion is where encoders misbehave.
 
-| Rule | Native goccy |
+| Rule | Provided by the parser? |
 |---|---|
-| Head comment directly above a key → removed with it | **free** |
-| Head comment after a blank line = section comment → survives | **must implement** |
-| Inline comment on the key's own line → removed with it | **free** |
-| Trailing comment after the last key → hoisted to the preceding sibling | **must implement** |
-| No bleed onto the following key's head comment | **free** |
+| Head comment directly above a key → removed with it | free |
+| Head comment after a blank line = section comment → survives | **implemented in `yamldoc`** |
+| Inline comment on the key's own line → removed with it | free |
+| Trailing comment after the last key → hoisted to the preceding sibling | **implemented in `yamldoc`** |
+| No bleed onto the following key's head comment | free |
 
-Reproduced — deleting `port`, unrelated to the comment, destroys it:
+Two of the five needed implementing rather than inheriting. Distinguishing "directly above"
+from "after a blank line" is invisible to the parse tree — both attach identically — so
+`yamldoc` retains the source's blank-line positions to decide. The trailing case is worse: the
+parser attaches such a comment to the *last entry* of the block, so a naive removal of an
+unrelated key destroys a comment describing the whole section.
 
-```yaml
-# input                                  # goccy native output
-server:                                  server:
-  host: localhost                          host: localhost
-  port: 8080                             database:
-  # end of the server block — applies      host: db.internal
-  #   to the whole section
-database:
-  host: db.internal
-```
+Where ownership is genuinely ambiguous, `yamldoc` errs towards **survival**: orphaning a
+comment is untidy and visible, destroying one loses the author's work silently.
 
-Distinguishing "directly above" from "after a blank line" requires inspecting source
-positions; both parse to the same attachment.
+**Corollary for creates:** appending a key to a mapping makes it absorb any trailing comment
+block as its head comment. Sometimes ideal, sometimes theft — same positional analysis,
+handled together.
 
-**Deleting the last key of a nested mapping MUST be handled explicitly — the naive
-implementation emits invalid YAML.** Measured: removing the only key of a nested mapping leaves
-an empty mapping that goccy emits at column 0.
-
-```yaml
-# delete feature.beta, where beta is the only key
-feature:
-{}            ← column 0 — REPARSE FAILS: "unexpected map key"
-other: 1
-```
-
-Deleting one of several keys is fine; deleting the only *root* key is fine (`{}` at root is
-valid). Only the nested-becomes-empty case corrupts. The corpus tests missed it because every
-deletion there left a non-empty parent — it was found only by constructing the case
-deliberately.
-
-**Required behaviour:** when a delete empties a nested mapping, emit `feature: {}` on the key's
-own line. Per D6b, an empty container is a **value**, not an absence — code may require the
-parent to exist while holding no entries. Cascade-deleting the now-empty parent is the
-alternative and is **rejected**: it would remove a key the caller did not ask to remove, and
-would cascade further if that parent were itself then left empty.
-
-**Corollary for creates:** appending a key to a mapping makes it **absorb any trailing comment
-block** as its head comment. On the real corpus this was ideal (`keryx auth` writing
-`access_token` landed it under the comment already describing it) but it is incidental — where
-the trailing block is a section note, the new key steals it. Same positional analysis;
-implement together.
+**Also `yamldoc`'s, and equally load-bearing:** removing the last entry of a nested mapping
+must emit `key: {}` rather than the substrate's column-0 `{}`, which does not parse. See D6b
+for why emptiness is a value here.
 
 ### D18 — Snapshot consistency: implicit reads, pinned observers, scoped `With`
 
@@ -929,6 +906,13 @@ repeated-edit surface. Every candidate use case was checked and none survived.
 ## Appendix — measured findings
 
 All measured on this machine unless noted.
+
+> **Note (2026-07-19).** The findings about the YAML substrate — scalar type dispatch, comment
+> ownership, the empty-mapping emission defect, flow-style corruption, multi-document handling
+> — now belong to `yamldoc` and are recorded in its spec and encoded in its tests. They are
+> retained here because they justify decisions in *this* document (D5, D6a, D6b, D17) and
+> because a reader deciding whether the dependency is sound should not have to leave to find
+> the evidence.
 
 | Finding | Bears on |
 |---|---|
