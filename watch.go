@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"maps"
@@ -299,20 +300,28 @@ func (w *pollWatcher) Watch(ctx context.Context, paths []string, onChange func()
 	return func() { once.Do(func() { close(done) }) }, nil
 }
 
-// sample records size and modification time per path. A file that does not
-// exist is recorded as absent, so it appearing later counts as a change.
+// sample records a content hash per path. A file that does not exist is
+// recorded as absent, so it appearing later counts as a change.
+//
+// Hashing rather than comparing size and modification time, for the reason the
+// write path already gives for the same choice: timestamp granularity varies
+// and is coarse on some filesystems, so an edit that preserves a file's length
+// within one tick — changing "info" to "warn", say — is invisible to a
+// stat-based comparison. Configuration files are small, and a missed change is
+// the failure this watcher exists to prevent.
 func (w *pollWatcher) sample(paths []string) map[string]string {
 	state := make(map[string]string, len(paths))
 
 	for _, p := range paths {
-		info, err := w.fs.Stat(p)
+		content, err := afero.ReadFile(w.fs, p)
 		if err != nil {
 			state[p] = "absent"
 
 			continue
 		}
 
-		state[p] = fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())
+		sum := sha256.Sum256(content)
+		state[p] = string(sum[:])
 	}
 
 	return state

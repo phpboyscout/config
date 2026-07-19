@@ -770,3 +770,93 @@ func TestProvenance_InMemorySourcesReportWhatTheyAre(t *testing.T) {
 		t.Errorf("rendered as %q, want it to name the layer", got)
 	}
 }
+
+// A path means nothing without the filesystem it is relative to. Taking the
+// first backend's filesystem and using it for every path meant a store mixing a
+// real file with an in-memory one statted half its sources against the wrong
+// filesystem, found them permanently absent, and reported watching as
+// established while never noticing a change.
+func TestWatch_GroupsPathsByFilesystem(t *testing.T) {
+	t.Parallel()
+
+	inMemory := afero.NewMemMapFs()
+	if err := afero.WriteFile(inMemory, "/mem.yaml", []byte("m: 1\n"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	dir := t.TempDir()
+	onDisk := filepath.Join(dir, "real.yaml")
+
+	if err := os.WriteFile(onDisk, []byte("r: 1\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	s, err := NewStore(context.Background(),
+		WithBackend(NewFileBackend(inMemory, "/mem.yaml")),
+		WithBackend(NewFileBackend(afero.NewOsFs(), onDisk)))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	notified := make(chan struct{}, 4)
+	s.AddObserverFunc(func(Observed) error {
+		select {
+		case notified <- struct{}{}:
+		default:
+		}
+
+		return nil
+	})
+
+	stop, err := s.Watch(context.Background(), WithPollInterval(20*time.Millisecond))
+	if err != nil {
+		t.Fatalf("Watch: %v", err)
+	}
+
+	defer stop()
+
+	if err := os.WriteFile(onDisk, []byte("r: 2\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	select {
+	case <-notified:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a change to a source on a second filesystem was never reported")
+	}
+}
+
+// An edit that preserves a file's length within one timestamp tick is invisible
+// to a stat-based comparison, and timestamp granularity is coarse on several
+// filesystems. The write path already hashes content for exactly this reason.
+func TestPollWatcher_DetectsASameLengthEdit(t *testing.T) {
+	t.Parallel()
+
+	filesystem := memFS(t, map[string]string{"/app.yaml": "level: info\n"})
+	w := &pollWatcher{fs: filesystem, interval: 5 * time.Millisecond}
+
+	changed := make(chan struct{}, 1)
+
+	stop, err := w.Watch(context.Background(), []string{"/app.yaml"}, func() {
+		select {
+		case changed <- struct{}{}:
+		default:
+		}
+	})
+	if err != nil {
+		t.Fatalf("Watch: %v", err)
+	}
+
+	defer stop()
+
+	// Same byte length, different content.
+	if err := afero.WriteFile(filesystem, "/app.yaml", []byte("level: warn\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	select {
+	case <-changed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a same-length edit was never detected")
+	}
+}
