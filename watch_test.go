@@ -594,3 +594,96 @@ func TestApply_ObserverMayDeferAWriteToAnotherGoroutine(t *testing.T) {
 		t.Errorf("derived = %q, want from-second", got)
 	}
 }
+
+// A layered setup routinely configures a file that does not exist yet — the
+// user's overlay, created the first time they change a setting. Watching must
+// cover it. Dropping the unwatchable paths and reporting success is the exact
+// failure D8 exists to prohibit: the application believes it will hear about
+// the file appearing and never will.
+func TestWatch_MixedPathSetsStillReportEveryPath(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	present := filepath.Join(dir, "base.yaml")
+	absent := filepath.Join(dir, "overlay.yaml")
+
+	if err := os.WriteFile(present, []byte("a: 1\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// A short poll interval, because the absent path can only be covered by
+	// polling until it exists.
+	w := NewWatcher(afero.NewOsFs(), 20*time.Millisecond)
+
+	fired := make(chan struct{}, 8)
+
+	stop, err := w.Watch(context.Background(), []string{present, absent}, func() {
+		select {
+		case fired <- struct{}{}:
+		default:
+		}
+	})
+	if err != nil {
+		t.Fatalf("Watch: %v", err)
+	}
+
+	defer stop()
+
+	time.Sleep(50 * time.Millisecond)
+
+	// The overlay is created after watching began.
+	if err := os.WriteFile(absent, []byte("b: 2\n"), 0o600); err != nil {
+		t.Fatalf("create overlay: %v", err)
+	}
+
+	select {
+	case <-fired:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a configured file appearing was never reported")
+	}
+}
+
+// The path that does exist must still be watched natively rather than the whole
+// set being downgraded because one member was missing.
+func TestWatch_MixedPathSetsKeepNativeNotificationForPresentFiles(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	present := filepath.Join(dir, "base.yaml")
+
+	if err := os.WriteFile(present, []byte("a: 1\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// An hour-long poll interval, so anything that arrives came from the
+	// operating system rather than a poll.
+	w := NewWatcher(afero.NewOsFs(), time.Hour)
+
+	fired := make(chan struct{}, 8)
+
+	stop, err := w.Watch(context.Background(),
+		[]string{present, filepath.Join(dir, "never-created.yaml")},
+		func() {
+			select {
+			case fired <- struct{}{}:
+			default:
+			}
+		})
+	if err != nil {
+		t.Fatalf("Watch: %v", err)
+	}
+
+	defer stop()
+
+	time.Sleep(50 * time.Millisecond)
+
+	if err := os.WriteFile(present, []byte("a: 2\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	select {
+	case <-fired:
+	case <-time.After(5 * time.Second):
+		t.Fatal("an existing file lost native notification because a sibling was missing")
+	}
+}

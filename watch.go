@@ -128,16 +128,29 @@ func (w *fsnotifyWatcher) Watch(ctx context.Context, paths []string, onChange fu
 
 	watched := 0
 
+	// Paths the operating system cannot watch are collected rather than
+	// dropped. A configured file that does not exist yet is the ordinary case —
+	// the overlay a user gets the first time they change a setting — and
+	// reporting success while silently never watching it is the failure this
+	// design exists to prevent.
+	var unwatchable []string
+
 	for _, p := range paths {
 		real := w.resolve(p)
 
 		if !w.isReallyOnDisk(p, real) {
+			unwatchable = append(unwatchable, p)
+
 			continue
 		}
 
-		if err := watcher.Add(real); err == nil {
-			watched++
+		if err := watcher.Add(real); err != nil {
+			unwatchable = append(unwatchable, p)
+
+			continue
 		}
+
+		watched++
 	}
 
 	if watched == 0 {
@@ -146,6 +159,17 @@ func (w *fsnotifyWatcher) Watch(ctx context.Context, paths []string, onChange fu
 		_ = watcher.Close()
 
 		return w.fallback.Watch(ctx, paths, onChange)
+	}
+
+	// Some watchable, some not: watch what can be watched and poll the rest, so
+	// the set is covered without downgrading the whole of it.
+	stopPolling := func() {}
+
+	if len(unwatchable) > 0 {
+		stop, err := w.fallback.Watch(ctx, unwatchable, onChange)
+		if err == nil {
+			stopPolling = stop
+		}
 	}
 
 	done := make(chan struct{})
@@ -157,6 +181,8 @@ func (w *fsnotifyWatcher) Watch(ctx context.Context, paths []string, onChange fu
 	return func() {
 		once.Do(func() {
 			close(done)
+
+			stopPolling()
 
 			_ = watcher.Close()
 		})
