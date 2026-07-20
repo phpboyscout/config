@@ -29,9 +29,18 @@ silently doing nothing: an application that believes it will hear about changes 
 never does is worse off than one that knows it must restart.
 
 Native filesystem notification is used where it works, and polling everywhere else —
-`fsnotify` operates on real paths, so it cannot see an in-memory filesystem. Set the
-polling interval when the default (`DefaultPollInterval`, two seconds) is not what you
-want:
+`fsnotify` operates on real paths, so it cannot see an in-memory filesystem, and a network
+mount or a container with its inotify watches exhausted will not support it either.
+
+The choice is made **per path**, not once for the whole set, so one unwatchable file does
+not downgrade the others to polling. If native notification stops being trustworthy while
+running, the affected paths degrade to polling silently — that is a successful recovery,
+not something you need to handle. If polling cannot be established *either*, the watch has
+genuinely stopped working, and that is reported through `OnReloadError` rather than
+allowed to pass quietly.
+
+Set the polling interval when the default (`DefaultPollInterval`, two seconds) is not what
+you want:
 
 ```go
 stop, err := store.Watch(ctx, config.WithPollInterval(500*time.Millisecond))
@@ -147,6 +156,34 @@ Two guarantees are worth relying on:
 The Store's own writes never travel through the watcher. `Apply` builds the next
 snapshot from the content it just wrote and notifies directly, so a write cannot come
 back round through the filesystem and be seen a second time.
+
+!!! warning "A foreign change spanning several files notifies once per file"
+    "Exactly once per logical change" means a change the Store performed. An `Apply` is
+    one logical change however many files it touches, because the Store knows the batch.
+
+    When **something else** changes two files — a deploy, a config-management run, an
+    operator editing two overlays — those are two filesystem events, and nothing tells the
+    Store they were meant as one change. Your observers run **twice**, and the first run
+    sees the first file updated and the second not yet.
+
+    Each snapshot is internally coherent — a real read of the files at a moment in time,
+    never a mixture of two reads — so you will not see a torn value. But you can see a
+    real combination that nobody intended.
+
+    If that matters to your component:
+
+    - **Keep settings that change together in one file.** A single file is always read
+      atomically, so this removes the problem rather than mitigating it. This is the right
+      answer nearly always.
+    - **Swap atomically at the directory level** if the deploy system can — a Kubernetes
+      ConfigMap update replaces a symlinked directory in one operation, so both files
+      appear to change at once.
+    - **Make the reaction idempotent and cheap**, so running it twice costs little. If it
+      is expensive — rebuilding a pool, reopening a listener — debounce inside your own
+      observer, where you know how long to wait.
+    - **Use a typed section.** `ObserveSection[T]` only delivers when *your struct*
+      changed, so an intermediate state that does not affect your fields is never
+      delivered to you at all.
 
 ## Observers do not fire at startup
 

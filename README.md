@@ -82,6 +82,22 @@ Ordering and exactly-once are structural — delivery is serialised and version-
 one place — rather than something each observer must defend itself against. It cannot: by
 the time an older snapshot arrives, an observer has no way to know a newer one already did.
 
+**The limit worth knowing:** exactly-once is per logical change *as the Store understands
+it*. An `Apply` is one change however many files it touches, because the Store performs it
+and knows the batch. Two files changed by something else are two events — nothing in the
+filesystem says they were one intended change — so observers are told twice, and the first
+telling can carry a combination nobody meant: first file updated, second not yet. Each
+snapshot is still internally coherent, never a mixture of two reads. Keep settings that
+change together in one file, which is always read atomically, or swap the directory at once
+as a Kubernetes ConfigMap update does. Measured and pinned in the test above.
+
+Change detection is hybrid and per-path: native OS notification where it genuinely works,
+polling where it does not — in-memory filesystems, network mounts, containers with inotify
+watches exhausted. One unwatchable path does not downgrade the rest, and if native
+notification stops being trustworthy mid-run the affected paths fall back to polling and
+carry on. Only if polling cannot be established either has the watch genuinely stopped —
+and then you are told. A watcher silently gone quiet is the one failure this design refuses.
+
 For comparison, [viper](https://github.com/spf13/viper) v1.21.0 calls `OnConfigChange`
 with the `fsnotify.Event`, and its watch loop invokes the callback **after a failed re-read
 as well as a successful one** — the parse error goes to viper's internal logger and the
@@ -159,9 +175,14 @@ and records provenance *during* the merge instead of reconstructing it afterward
   whenever anything in the file did. `Schema` / `ValidateStruct[T]` check values against
   field rules on both reload and write. A package consuming settings declares a one-method
   interface over its own struct and never imports this one.
-- **Everything is a layer.** Files, one document within a multi-document file, defaults,
-  environment, flags and runtime `AddLayer` sources all take part in precedence,
-  provenance and shadowing the same way, with no special case to remember.
+- **Everything is a layer — including sources this module has never heard of.**
+  `WithBackend` takes any three-method `Backend`, so Consul, a secrets manager, an HTTP
+  endpoint or a database table becomes an ordinary layer: it takes part in precedence,
+  provenance and shadowing exactly as a file does, and `Explain` names it. Capability
+  beyond reading is opt-in through interfaces you may simply not implement —
+  `WritableBackend` to receive writes, `WatchableBackend` to take part in hot-reload with
+  its own subscription rather than polling. Nothing forces a source to pretend it can do
+  something it cannot.
 - **`Plan` is a dry run that cannot drift** from `Apply`, because it *is* the same routing
   pass rather than a second implementation of it.
 - **Published testify mocks** for downstream tests, and `afero` for the filesystem.

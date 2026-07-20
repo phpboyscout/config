@@ -103,6 +103,32 @@ version-checked in one place — rather than something each observer has to defe
 against. That matters, because an observer *cannot* defend itself: by the time an older
 snapshot arrives, it has no way of knowing a newer one already did.
 
+!!! warning "The limit of exactly-once: a change spanning several files"
+    Exactly-once is per logical change **as the Store understands it**. An `Apply` is one
+    logical change however many files it touches, because the Store performs it and knows
+    the batch.
+
+    Two files changed by *something else* are two events, and nothing in the filesystem
+    says they were meant as one change — so observers are told **twice**, and the first
+    telling can carry a combination nobody intended: the first file updated, the second
+    not yet.
+
+    Each snapshot is still internally coherent — a real read of the files at a moment in
+    time, never a mixture of two reads. But a logical change spanning several files is
+    only atomic if whoever makes it makes it atomically. Keep settings that change
+    together in **one file**, which is always read atomically, or swap the whole directory
+    at once as a Kubernetes ConfigMap update does. This is measured and pinned in
+    [`observer_contract_test.go`](https://gitlab.com/phpboyscout/go/config/-/blob/main/observer_contract_test.go)
+    so the behaviour is known rather than discovered.
+
+Change detection itself is hybrid and per-path: native OS notification where it genuinely
+works, and polling where it does not — an in-memory filesystem, a network mount, a
+container where inotify watches are exhausted. Each path is settled independently, so one
+unwatchable file does not downgrade the rest. If native notification stops being
+trustworthy mid-run, the affected paths fall back to polling and carry on. Only if polling
+cannot be established either has the watch genuinely stopped working — and then you are
+told. A watcher that has silently gone quiet is the one failure mode this design refuses.
+
 !!! info "For comparison"
     [viper](https://github.com/spf13/viper) v1.21.0 calls `OnConfigChange` with the
     `fsnotify.Event`. Reading its watch loop, the callback is invoked **after a failed
@@ -218,6 +244,39 @@ what — and can therefore change one key in one file and leave everything else 
 - **Everything is a layer** — a file, one document within a multi-document file, embedded
   defaults, the environment, the flag set, something computed at runtime. All ordered by
   precedence, with no special case to remember, whether you are reading it or writing it.
+
+## Any source can be a layer
+
+Layers are not limited to files and readers. `WithBackend` takes anything satisfying a
+three-method `Backend` interface, so a source this module has never heard of — Consul, a
+secrets manager, an HTTP endpoint, a database table, a device's NVRAM — becomes an
+ordinary layer:
+
+```go
+store, err := config.NewStore(ctx,
+	config.WithFiles(fsys, "/etc/app.yaml"),
+	config.WithBackend(consulBackend{client: c, prefix: "app/"}),  // ← outranks the file
+	config.WithEnv("APP"),
+)
+```
+
+It takes part in precedence, provenance and shadowing exactly as a file does. `Explain`
+will name it. A file-based write that your backend shadows is reported as shadowed. There
+is no second-class tier for sources the library did not ship.
+
+Capability beyond reading is **opt-in through interfaces you may simply not implement**:
+
+| Implement | To get |
+|---|---|
+| `Backend` | reading, merging, precedence, provenance — the whole read surface |
+| `WritableBackend` | `Apply` can route writes to it |
+| `WatchableBackend` | it takes part in hot-reload, calling `onChange` on its own schedule |
+
+A read-only Consul layer implements one interface. A backend with a real subscription
+implements `WatchableBackend` and gets push-based reload without polling anything. Nothing
+forces a source to pretend it can do something it cannot — which is the failure mode that
+makes a single `Backend` interface with stub methods so unpleasant to live with.
+→ [Backends & capabilities](explanation/backends.md)
 
 ## At a glance
 
