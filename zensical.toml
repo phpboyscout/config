@@ -28,6 +28,7 @@ nav = [
     { Testing = "development/testing.md" },
     { "Feature specifications" = [
       { Overview = "development/specs/index.md" },
+      { "Filesystem abstraction" = "development/specs/2026-07-20-filesystem-abstraction.md" },
       { "Non-YAML format adapters" = "development/specs/2026-07-20-non-yaml-format-adapters.md" },
       { "Store architecture" = "development/specs/2026-07-19-store-architecture.md" },
       { "Structure-preserving writes" = "development/specs/2026-07-18-structure-preserving-config-writes.md" },

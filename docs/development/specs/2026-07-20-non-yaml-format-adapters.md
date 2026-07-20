@@ -239,7 +239,7 @@ reason.
 | Java properties | `config-properties` | yes | no | advertised by the incumbent, decoder absent |
 | dotenv | `config-dotenv` | yes | no | flat; the incumbent does decode this one |
 | HCL / tfvars | `config-hcl` | declarative subset | fast follow | `hclwrite` makes writing cheap — see D11, D19 |
-| HOCON | `config-hocon` | yes | **no** | a language with includes and env fallback — see D11, D12, D14 |
+| HOCON | *deferred* | — | — | no usable parser exists; ours eventually — see D20 |
 
 Read-only is the default position for anything that is not YAML or JSON. Reading is most of
 the value, and a half-working structure-preserving writer that mangles a user's file is
@@ -562,6 +562,36 @@ not repeating:
 inverts the assumption in the first draft of D11, which treated writing HCL as the hard part.
 It is not; the hard part was always the semantics.
 
+### D20 — HOCON is deferred until we have a parser of our own
+
+No usable Go HOCON parser exists. `go-akka/configuration` has been unreleased since 2020.
+`gurkankaymak/hocon` is maintained, and disqualified by D14: environment fallback is
+hardcoded in its substitution resolver, with no option to turn it off.
+
+```go
+// gurkankaymak/hocon@v1.2.23 parser.go:227
+} else if env, ok := os.LookupEnv(substitution.path); ok {
+    return String(env), nil
+```
+
+Confirmed by probe — `${LEAKED_SECRET}` resolved from the process environment. That is the
+prefix bypass D14 exists to prevent, and it is not configurable. The same probe found
+`${base.host}":"${base.port}` producing `h""":"""1` instead of `h:1`, so correctness is a
+second concern independent of the first.
+
+Three alternatives were weighed and rejected. **Forking** means maintaining a parser for a
+specification we do not control, indefinitely. **Refusing all substitutions** so the fallback
+is unreachable would work, but loses the self-contained resolution D11 specifically allows,
+and needs a lexer-aware pre-scan because `${x}` inside a quoted string is literal. **Using it
+as-is** is not an option while it reads unprefixed environment.
+
+So HOCON waits for a parser of our own. It is the one format here that is purely additive —
+the incumbent never advertised it — so deferring costs nothing against D13, and it is
+sequenced behind everything that does.
+
+An upstream option to disable environment fallback would be a small and well-motivated
+contribution, and would reopen this decision if it landed.
+
 ## Rejected alternatives
 
 **Add decoders to the core, switching on file extension.** The obvious approach, and what
@@ -698,15 +728,27 @@ default arm that degrades usefully.
 8. ~~**Should the flat formats share a module after all?**~~ **Resolved 2026-07-20:**
    separate modules, per D9. Their nesting rules genuinely differ, so they share less than
    the grouping suggested.
-9. **Which HOCON implementation.** D14 disqualifies any that performs environment fallback
-   and cannot be configured not to. Needs a survey of the available Go libraries before
-   Phase 7 is scoped.
+9. ~~**Which HOCON implementation.**~~ **Resolved 2026-07-20 by survey: none of them.**
+   `go-akka/configuration` has not been released since 2020 and carries no tags.
+   `gurkankaymak/hocon` is maintained but hardcodes environment fallback at `parser.go:227`
+   with no option to disable it, which D14 disqualifies outright — a probe confirmed
+   `${LEAKED_SECRET}` resolving straight out of the process environment. It also mangles
+   string concatenation: `${base.host}":"${base.port}` yields `h""":"""1` rather than `h:1`.
+
+   HOCON is therefore **deferred**, to be served eventually by a parser of our own. It is the
+   one format in this plan that is purely additive — the incumbent never advertised it — so
+   deferring costs nothing against the parity claim in D13.
 10. ~~**How does `config-toml` gaining write support reach consumers?**~~
     **Resolved 2026-07-20:** as a documented minor version, per D18, which specifies
     capability promotion as a general pattern rather than a TOML-specific concern. Measuring
     it first showed the two cases behave differently and only one is silent.
 
 ## Implementation phases
+
+**Phase 0 — the filesystem interface**, specified separately in
+[the filesystem abstraction spec](2026-07-20-filesystem-abstraction.md). It is a prerequisite
+rather than part of this work: every adapter takes a filesystem in its constructor, so
+settling it after publishing eight modules would mean changing eight APIs.
 
 **Phase 1 — the codec seam, no behaviour change.** Extract `Codec`/`EditingCodec`, add
 `NewCodecBackend`, reimplement `fileBackend` on top of it as a YAML codec. Done when the
@@ -731,12 +773,10 @@ remaining formats individually.
 
 **Phase 6 — `config-xml`**, read-only.
 
-**Phase 7 — `config-hcl` and `config-hocon`**, read-only with writer-shaped holes. Both
-refuse external parameterisation, function calls and includes at load (D11, D12), and HOCON
-resolves substitutions within the document with no environment fallback (D14). `config-hcl`
-ports the path-traversal logic from the surveyed package (D19) and delegates any future
-writing to `hclwrite`. Its documentation states plainly that it reads HCL-as-configuration
-and not Terraform.
+**Phase 7 — `config-hcl`**, read-only with a writer-shaped hole. Refuses external
+parameterisation, function calls and includes at load (D11, D12). Ports the path-traversal
+logic from the surveyed package (D19) and delegates any future writing to `hclwrite`. Its
+documentation states plainly that it reads HCL-as-configuration and not Terraform.
 
 Sequenced after the simpler adapters so the seam is settled before it meets a hard format,
 but note the cost is now known to be lower than TOML's: there is no `hcldoc` to build.
@@ -745,8 +785,8 @@ but note the cost is now known to be lower than TOML's: there is no `hcldoc` to 
 structure-preserving TOML editor, then `config-toml` gains an `EditingCodec` through the hole
 left for it in Phase 4. Settle open question 10 before releasing it.
 
-**Phase 9 — revisit.** Evaluated HCL, XML or flat-format writing, and anything the earlier
-phases showed to be wrong.
+**Phase 9 — revisit.** A HOCON parser of our own, evaluated HCL, XML or flat-format writing,
+and anything the earlier phases showed to be wrong.
 
 Phases 1 and 2 are the only ones touching this repository. Everything after is additive and
 independently releasable, which is the point.
