@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spf13/afero"
-
 	"gitlab.com/phpboyscout/go/config"
 )
 
@@ -49,7 +47,7 @@ func TestSettle_ForeignMultiFileChangeCoalesces(t *testing.T) {
 	atomicWriteFile(t, over, "b: 1\n")
 
 	store, err := config.NewStore(context.Background(),
-		config.WithFiles(afero.NewOsFs(), base, over))
+		config.WithFiles(config.OS(), base, over))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,8 +100,8 @@ func TestSettle_ForeignMultiFileChangeCoalesces(t *testing.T) {
 func TestSettle_DisabledReloadsPerChange(t *testing.T) {
 	t.Parallel()
 
-	fsys := afero.NewMemMapFs()
-	if err := afero.WriteFile(fsys, "/app.yaml", []byte("n: 1\n"), 0o600); err != nil {
+	fsys := config.NewMemFS()
+	if err := fsys.WriteFile("/app.yaml", []byte("n: 1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -132,7 +130,7 @@ func TestSettle_DisabledReloadsPerChange(t *testing.T) {
 
 	// Each trigger reloads synchronously, so the count is exact rather than
 	// something to wait for.
-	if err := afero.WriteFile(fsys, "/app.yaml", []byte("n: 2\n"), 0o600); err != nil {
+	if err := fsys.WriteFile("/app.yaml", []byte("n: 2\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -142,7 +140,7 @@ func TestSettle_DisabledReloadsPerChange(t *testing.T) {
 		t.Fatalf("notifications = %d, want 1", got)
 	}
 
-	if err := afero.WriteFile(fsys, "/app.yaml", []byte("n: 3\n"), 0o600); err != nil {
+	if err := fsys.WriteFile("/app.yaml", []byte("n: 3\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

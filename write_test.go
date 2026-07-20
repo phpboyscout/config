@@ -5,14 +5,12 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
-	"github.com/spf13/afero"
 )
 
-func readFile(t *testing.T, filesystem afero.Fs, path string) string {
+func readFile(t *testing.T, filesystem FS, path string) string {
 	t.Helper()
 
-	b, err := afero.ReadFile(filesystem, path)
+	b, err := filesystem.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
@@ -20,7 +18,7 @@ func readFile(t *testing.T, filesystem afero.Fs, path string) string {
 	return string(b)
 }
 
-func storeOn(t *testing.T, filesystem afero.Fs, paths ...string) *Store {
+func storeOn(t *testing.T, filesystem FS, paths ...string) *Store {
 	t.Helper()
 
 	s, err := NewStore(context.Background(), WithFiles(filesystem, paths...))
@@ -217,7 +215,7 @@ func TestApply_DetectsAForeignChange(t *testing.T) {
 	s := storeOn(t, filesystem, "/app.yaml")
 
 	// Someone else edits the file after the Store read it.
-	if err := afero.WriteFile(filesystem, "/app.yaml", []byte("a: 99\nadded: elsewhere\n"), 0o644); err != nil {
+	if err := filesystem.WriteFile("/app.yaml", []byte("a: 99\nadded: elsewhere\n"), 0o644); err != nil {
 		t.Fatalf("foreign write: %v", err)
 	}
 
@@ -459,7 +457,7 @@ func TestApply_SequentialWritesToTheSameFile(t *testing.T) {
 		t.Errorf("count = %d, want 5", got)
 	}
 
-	content, err := afero.ReadFile(filesystem, "/app.yaml")
+	content, err := filesystem.ReadFile("/app.yaml")
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -487,7 +485,7 @@ func TestApply_ForeignEditBetweenWritesStillConflicts(t *testing.T) {
 	}
 
 	// Someone else edits the file behind the Store's back.
-	if err := afero.WriteFile(filesystem, "/app.yaml", []byte("count: 99\nintruder: yes\n"), 0o644); err != nil {
+	if err := filesystem.WriteFile("/app.yaml", []byte("count: 99\nintruder: yes\n"), 0o644); err != nil {
 		t.Fatalf("foreign write: %v", err)
 	}
 
@@ -497,7 +495,7 @@ func TestApply_ForeignEditBetweenWritesStillConflicts(t *testing.T) {
 	}
 
 	// And their work is still there.
-	content, readErr := afero.ReadFile(filesystem, "/app.yaml")
+	content, readErr := filesystem.ReadFile("/app.yaml")
 	if readErr != nil {
 		t.Fatalf("read: %v", readErr)
 	}

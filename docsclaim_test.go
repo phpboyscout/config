@@ -5,8 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/afero"
-
 	"gitlab.com/phpboyscout/go/config"
 )
 
@@ -43,8 +41,8 @@ features:
   beta_ui: false
 `
 
-	fsys := afero.NewMemMapFs()
-	if err := afero.WriteFile(fsys, "/config.yaml", []byte(original), 0o644); err != nil {
+	fsys := config.NewMemFS()
+	if err := fsys.WriteFile("/config.yaml", []byte(original), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -65,7 +63,7 @@ features:
 		t.Fatal(err)
 	}
 
-	got, err := afero.ReadFile(fsys, "/config.yaml")
+	got, err := fsys.ReadFile("/config.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

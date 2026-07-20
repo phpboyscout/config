@@ -63,7 +63,8 @@ Beyond that, the ordinary things done deliberately:
   → [Typed sections](../how-to/typed-sections.md)
 - **No global singleton, and tests that do not fight each other.** There is no package-level
   instance to configure; stores are values. Read the environment from a function instead of
-  the process, the filesystem from `afero`, and use the published mocks — so config-dependent
+  the process, the filesystem from `config.Dir(t.TempDir())` or your own `config.FS`, and
+  use the published mocks — so config-dependent
   tests run in parallel without touching global state. → [Test with the mocks](../how-to/test-with-mocks.md)
 - **The environment prefix is required**, and it is a security control rather than
   tidiness. Without one, any variable matching a configuration key could reconfigure your

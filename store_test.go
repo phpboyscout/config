@@ -11,13 +11,13 @@ import (
 	"github.com/spf13/afero"
 )
 
-func memFS(t *testing.T, files map[string]string) afero.Fs {
+func memFS(t *testing.T, files map[string]string) FS {
 	t.Helper()
 
-	filesystem := afero.NewMemMapFs()
+	filesystem := wrapAfero(afero.NewMemMapFs())
 
 	for path, content := range files {
-		if err := afero.WriteFile(filesystem, path, []byte(content), 0o644); err != nil {
+		if err := filesystem.WriteFile(path, []byte(content), 0o644); err != nil {
 			t.Fatalf("seed %s: %v", path, err)
 		}
 	}
@@ -200,7 +200,7 @@ func TestStore_ReloadPublishesANewSnapshot(t *testing.T) {
 
 	first := s.Snapshot()
 
-	if err := afero.WriteFile(filesystem, "/app.yaml", []byte("a: 2\n"), 0o644); err != nil {
+	if err := filesystem.WriteFile("/app.yaml", []byte("a: 2\n"), 0o644); err != nil {
 		t.Fatalf("rewrite: %v", err)
 	}
 
@@ -239,7 +239,7 @@ func TestStore_FailedReloadRetainsLastKnownGood(t *testing.T) {
 
 	before := s.Snapshot()
 
-	if err := afero.WriteFile(filesystem, "/app.yaml", []byte("a: b: c\n"), 0o644); err != nil {
+	if err := filesystem.WriteFile("/app.yaml", []byte("a: b: c\n"), 0o644); err != nil {
 		t.Fatalf("rewrite: %v", err)
 	}
 
@@ -338,7 +338,7 @@ func TestStore_ConcurrentReadsAndReloads(t *testing.T) {
 func TestFileBackend_Capabilities(t *testing.T) {
 	t.Parallel()
 
-	backend := NewFileBackend(afero.NewMemMapFs(), "/a.yaml")
+	backend := NewFileBackend(wrapAfero(afero.NewMemMapFs()), "/a.yaml")
 	c := backend.Capabilities()
 
 	if !c.PreservesComments {

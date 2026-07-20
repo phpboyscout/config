@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"time"
 
-	"github.com/spf13/afero"
 	"gitlab.com/phpboyscout/go/yamldoc"
 	yaml "go.yaml.in/yaml/v3"
 )
@@ -136,7 +135,7 @@ type fileBackend struct {
 	// fallback cannot be established either.
 	onWatchError func(error)
 
-	fs   afero.Fs
+	fs   FS
 	path string
 
 	// loaded is a hash of the content this backend last read, and whether it
@@ -155,7 +154,7 @@ type fileBackend struct {
 
 // NewFileBackend returns a backend reading YAML from a path on the given
 // filesystem.
-func NewFileBackend(filesystem afero.Fs, path string) Backend {
+func NewFileBackend(filesystem FS, path string) Backend {
 	return &fileBackend{fs: filesystem, path: path}
 }
 
@@ -175,7 +174,7 @@ func (b *fileBackend) Load(ctx context.Context, _ []Layer) ([]Layer, error) {
 		return nil, err
 	}
 
-	src, err := afero.ReadFile(b.fs, b.path)
+	src, err := b.fs.ReadFile(b.path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			// The record of what this file held has to go with the file. A

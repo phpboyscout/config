@@ -5,8 +5,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
-	"github.com/spf13/afero"
 )
 
 // A programmatic layer is how a tool contributes configuration it computed
@@ -102,7 +100,7 @@ func TestAddLayer_SurvivesAReload(t *testing.T) {
 		t.Fatalf("AddLayer: %v", err)
 	}
 
-	if err := afero.WriteFile(filesystem, "/app.yaml", []byte("a: 99\n"), 0o644); err != nil {
+	if err := filesystem.WriteFile("/app.yaml", []byte("a: 99\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 

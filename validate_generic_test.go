@@ -17,8 +17,8 @@ type greetTestConfig struct {
 func loadTestConfig(t *testing.T, yaml string) *View {
 	t.Helper()
 
-	fs := afero.NewMemMapFs()
-	require.NoError(t, afero.WriteFile(fs, "/config.yaml", []byte(yaml), 0o644))
+	fs := wrapAfero(afero.NewMemMapFs())
+	require.NoError(t, fs.WriteFile("/config.yaml", []byte(yaml), 0o644))
 
 	s, err := NewStore(context.Background(), WithFiles(fs, "/config.yaml"))
 	require.NoError(t, err)

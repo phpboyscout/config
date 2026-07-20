@@ -57,8 +57,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/spf13/afero"
-
 	"gitlab.com/phpboyscout/go/config"
 	"gitlab.com/phpboyscout/go/config/mocks"
 )
@@ -155,8 +153,9 @@ type Server struct {
 func storeOver(t *testing.T, body string) *config.Store {
 	t.Helper()
 
-	fsys := afero.NewMemMapFs()
-	require.NoError(t, afero.WriteFile(fsys, "/config.yaml", []byte(body), 0o600))
+	fsys, err := config.Dir(t.TempDir())
+	require.NoError(t, err)
+	require.NoError(t, fsys.WriteFile("/config.yaml", []byte(body), 0o600))
 
 	store, err := config.NewStore(context.Background(), config.WithFiles(fsys, "/config.yaml"))
 	require.NoError(t, err)
@@ -183,12 +182,13 @@ require.NoError(t, err)
 assert.Equal(t, 9090, store.View().GetInt("server.port"))
 ```
 
-For file behaviour — watching, writing, missing overlays — use `afero.NewMemMapFs()`,
+For file behaviour — watching, writing, missing overlays — use `config.Dir(t.TempDir())`,
 which gives you real merge and write behaviour with nothing on disk:
 
 ```go
-fsys := afero.NewMemMapFs()
-require.NoError(t, afero.WriteFile(fsys, "/app.yaml", []byte("server:\n  port: 8080\n"), 0o644))
+fsys, err := config.Dir(t.TempDir())
+require.NoError(t, err)
+require.NoError(t, fsys.WriteFile("/app.yaml", []byte("server:\n  port: 8080\n"), 0o644))
 
 store, err := config.NewStore(ctx, config.WithFiles(fsys, "/app.yaml"))
 require.NoError(t, err)

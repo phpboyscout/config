@@ -8,7 +8,7 @@
 // a writer — there is only one of each, and it is the Store.
 //
 //	s, err := config.NewStore(ctx,
-//		config.WithFiles(filesystem, "/etc/app.yaml", "/home/me/.app.yaml"),
+//		config.WithFiles(config.OS(), "/etc/app.yaml", "/home/me/.app.yaml"),
 //		config.WithEnv("APP"),
 //		config.WithFlags(flags))
 //

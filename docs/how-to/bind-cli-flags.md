@@ -11,7 +11,6 @@ user changed**.
         "context"
         "testing"
 
-        "github.com/spf13/afero"
         "github.com/spf13/pflag"
         "github.com/stretchr/testify/assert"
         "github.com/stretchr/testify/require"
@@ -29,7 +28,7 @@ deliberate input a user can give:
 // cmd is a *cobra.Command here, but nothing requires cobra: WithFlags takes a
 // *pflag.FlagSet, so any source of one will do — see the testing recipe below.
 store, err := config.NewStore(ctx,
-	config.WithFiles(afero.NewOsFs(), "/etc/mytool/config.yaml"),
+	config.WithFiles(config.OS(), "/etc/mytool/config.yaml"),
 	config.WithEnv("MYTOOL"),
 	config.WithFlags(cmd.Flags()),
 )
@@ -67,7 +66,7 @@ two genuinely differ, name the mapping with `BindFlag`:
 
 ```go
 store, err := config.NewStore(ctx,
-	config.WithFiles(afero.NewOsFs(), "config.yaml"),
+	config.WithFiles(config.OS(), "config.yaml"),
 	config.WithFlags(cmd.Flags(),
 		config.BindFlag("port", "server.port"),
 		config.BindFlag("verbose", "log.level"),
@@ -163,8 +162,9 @@ You do not need cobra, or a real command line, to test flag precedence. Build a
 
 ```go
 func TestFlagBeatsFile(t *testing.T) {
-	fsys := afero.NewMemMapFs()
-	require.NoError(t, afero.WriteFile(fsys, "/config.yaml",
+	fsys, err := config.Dir(t.TempDir())
+	require.NoError(t, err)
+	require.NoError(t, fsys.WriteFile("/config.yaml",
 		[]byte("server:\n  port: 8080\n"), 0o600))
 
 	flags := pflag.NewFlagSet("mytool", pflag.ContinueOnError)

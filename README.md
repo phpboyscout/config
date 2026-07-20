@@ -251,7 +251,8 @@ feels like.
   snapshot across a block of reads.
 - **`Plan` is a dry run that cannot drift** from `Apply`, because it *is* the same routing
   pass rather than a second implementation.
-- **Published testify mocks** for downstream tests, and `afero` for the filesystem.
+- **Published testify mocks** for downstream tests, and a six-method `config.FS`
+  interface for the filesystem — `config.OS()`, `config.Dir(path)`, or your own.
 
 ## Should you use this?
 
@@ -284,8 +285,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/spf13/afero"
-
 	"gitlab.com/phpboyscout/go/config"
 )
 
@@ -293,7 +292,7 @@ func main() {
 	ctx := context.Background()
 
 	s, err := config.NewStore(ctx,
-		config.WithFiles(afero.NewOsFs(), "config.yaml"),
+		config.WithFiles(config.OS(), "config.yaml"),
 		config.WithEnv("APP"))
 	if err != nil {
 		panic(err)

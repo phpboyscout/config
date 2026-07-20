@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spf13/afero"
-
 	"gitlab.com/phpboyscout/go/config"
 )
 
@@ -48,7 +46,7 @@ func TestReadsNeverStraddleAReload(t *testing.T) {
 	write(0)
 
 	store, err := config.NewStore(context.Background(),
-		config.WithFiles(afero.NewOsFs(), path))
+		config.WithFiles(config.OS(), path))
 	if err != nil {
 		t.Fatal(err)
 	}

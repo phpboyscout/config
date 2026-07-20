@@ -17,12 +17,11 @@ each step builds on the last, and you run the program after every one.
 mkdir cfgdemo && cd cfgdemo
 go mod init cfgdemo
 go get gitlab.com/phpboyscout/go/config
-go get github.com/spf13/afero
 ```
 
-[afero](https://github.com/spf13/afero) is the filesystem abstraction the module reads
-through. You will pass `afero.NewOsFs()` for the real disk; the same code takes an
-in-memory filesystem in tests, which is why the dependency is there.
+That is the only dependency you need. The module reads through a small `config.FS`
+interface it defines itself: `config.OS()` is the real filesystem, `config.Dir(path)` is
+one confined to a directory, and a test can supply either — or its own.
 
 ## 2. Write a configuration file
 
@@ -55,8 +54,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/spf13/afero"
-
 	"gitlab.com/phpboyscout/go/config"
 )
 
@@ -64,7 +61,7 @@ func main() {
 	ctx := context.Background()
 
 	store, err := config.NewStore(ctx,
-		config.WithFiles(afero.NewOsFs(), "config.yaml"),
+		config.WithFiles(config.OS(), "config.yaml"),
 		config.WithEnv("CFGDEMO"),
 	)
 	if err != nil {
@@ -255,8 +252,6 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/spf13/afero"
-
 	"gitlab.com/phpboyscout/go/config"
 )
 
@@ -265,7 +260,7 @@ func main() {
 	defer cancel()
 
 	store, err := config.NewStore(ctx,
-		config.WithFiles(afero.NewOsFs(), "config.yaml"),
+		config.WithFiles(config.OS(), "config.yaml"),
 		config.WithEnv("CFGDEMO"),
 	)
 	if err != nil {

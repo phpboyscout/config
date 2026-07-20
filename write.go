@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/spf13/afero"
 	"gitlab.com/phpboyscout/go/yamldoc"
 )
 
@@ -176,7 +175,7 @@ func (b *fileBackend) Prepare(ctx context.Context, edits []Edit) (Pending, error
 }
 
 func (b *fileBackend) read() (content []byte, existed bool, err error) {
-	src, err := afero.ReadFile(b.fs, b.path)
+	src, err := b.fs.ReadFile(b.path)
 	if err == nil {
 		return src, true, nil
 	}
@@ -341,7 +340,7 @@ func (p *filePending) writeTemp() error {
 		}
 	}
 
-	if err := afero.WriteFile(p.backend.fs, p.tempPath, p.staged, p.mode()); err != nil {
+	if err := p.backend.fs.WriteFile(p.tempPath, p.staged, p.mode()); err != nil {
 		return fmt.Errorf("config: staging %s: %w", p.backend.path, err)
 	}
 
@@ -387,7 +386,7 @@ func (p *filePending) Rollback(_ context.Context) error {
 		return nil
 	}
 
-	if err := afero.WriteFile(p.backend.fs, p.target, p.original, p.mode()); err != nil {
+	if err := p.backend.fs.WriteFile(p.target, p.original, p.mode()); err != nil {
 		return fmt.Errorf("config: rolling back %s: %w", p.backend.path, err)
 	}
 
@@ -570,8 +569,8 @@ func stagingPath(target string) string {
 // one used to silently replace the link with a regular file and leave the real
 // file untouched — the user's change absent from the repository they keep it
 // in, and the link they rely on gone.
-func resolveTarget(filesystem afero.Fs, path string) string {
-	reader, ok := filesystem.(afero.LinkReader)
+func resolveTarget(filesystem FS, path string) string {
+	reader, ok := filesystem.(LinkReader)
 	if !ok {
 		return path
 	}
@@ -586,7 +585,7 @@ func resolveTarget(filesystem afero.Fs, path string) string {
 
 		seen[current] = true
 
-		dest, err := reader.ReadlinkIfPossible(current)
+		dest, err := reader.Readlink(current)
 		if err != nil {
 			return current
 		}

@@ -7,7 +7,7 @@
     ctx := context.Background()
 
     store, err := config.NewStore(ctx,
-        config.WithFiles(afero.NewOsFs(), "/etc/app/config.yaml"),
+        config.WithFiles(config.OS(), "/etc/app/config.yaml"),
         config.WithEnv("APP"),
     )
     if err != nil {

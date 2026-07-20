@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/cucumber/godog"
-	"github.com/spf13/afero"
 
 	. "gitlab.com/phpboyscout/go/config"
 )
@@ -169,7 +168,7 @@ func (w *world) concurrentWritersSetTheirOwnKey(n int) error {
 }
 
 func (w *world) isChangedBehindTheStoresBack(path string, body *godog.DocString) error {
-	return afero.WriteFile(w.fs, path, []byte(body.Content+"\n"), 0o644)
+	return w.fs.WriteFile(path, []byte(body.Content+"\n"), 0o644)
 }
 
 // --- Then ------------------------------------------------------------------

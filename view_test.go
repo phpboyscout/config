@@ -5,8 +5,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/spf13/afero"
 )
 
 func viewOn(t *testing.T, src string) *View {
@@ -175,7 +173,7 @@ func TestView_UnmarshalIsInternallyConsistent(t *testing.T) {
 	v := s.View()
 
 	// A reload lands after the view was taken.
-	if err := afero.WriteFile(filesystem, "/app.yaml", []byte("server:\n  host: new\n  port: 2\n"), 0o644); err != nil {
+	if err := filesystem.WriteFile("/app.yaml", []byte("server:\n  host: new\n  port: 2\n"), 0o644); err != nil {
 		t.Fatalf("rewrite: %v", err)
 	}
 
@@ -217,7 +215,7 @@ func TestStore_With_PinsASnapshot(t *testing.T) {
 		host = v.GetString("host")
 
 		// A reload lands mid-block.
-		if err := afero.WriteFile(filesystem, "/app.yaml", []byte("host: new\nport: 2\n"), 0o644); err != nil {
+		if err := filesystem.WriteFile("/app.yaml", []byte("host: new\nport: 2\n"), 0o644); err != nil {
 			return err
 		}
 

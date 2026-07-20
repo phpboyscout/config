@@ -70,7 +70,7 @@ so it changes the key you asked for, and nothing else.
 ```go
 store, err := config.NewStore(ctx,
 	config.WithReaders(config.NamedSource{Name: "embedded:defaults.yaml", Content: defaults}),
-	config.WithFiles(afero.NewOsFs(), "/etc/mytool/config.yaml", userPath),
+	config.WithFiles(config.OS(), "/etc/mytool/config.yaml", userPath),
 	config.WithEnv("MYTOOL"),
 	config.WithFlags(cmd.Flags()),
 )

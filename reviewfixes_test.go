@@ -188,8 +188,8 @@ func TestUnmarshal_TranslatesTagsInsideCollections(t *testing.T) {
 func TestApply_AnExistingFileKeepsItsMode(t *testing.T) {
 	t.Parallel()
 
-	filesystem := afero.NewMemMapFs()
-	if err := afero.WriteFile(filesystem, "/app.yaml", []byte("port: 1\n"), 0o644); err != nil {
+	filesystem := wrapAfero(afero.NewMemMapFs())
+	if err := filesystem.WriteFile("/app.yaml", []byte("port: 1\n"), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
@@ -527,7 +527,7 @@ func TestApply_WritesThroughASymlink(t *testing.T) {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 
-	s, err := NewStore(context.Background(), WithFiles(afero.NewOsFs(), link))
+	s, err := NewStore(context.Background(), WithFiles(OS(), link))
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
@@ -644,7 +644,7 @@ func TestWatch_CancellingTheContextReleasesTheWatcher(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	w := NewWatcher(afero.NewOsFs(), time.Hour)
+	w := NewWatcher(OS(), time.Hour)
 
 	fired := make(chan struct{}, 4)
 
@@ -820,8 +820,8 @@ func TestProvenance_InMemorySourcesReportWhatTheyAre(t *testing.T) {
 func TestWatch_GroupsPathsByFilesystem(t *testing.T) {
 	t.Parallel()
 
-	inMemory := afero.NewMemMapFs()
-	if err := afero.WriteFile(inMemory, "/mem.yaml", []byte("m: 1\n"), 0o644); err != nil {
+	inMemory := wrapAfero(afero.NewMemMapFs())
+	if err := inMemory.WriteFile("/mem.yaml", []byte("m: 1\n"), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
@@ -834,7 +834,7 @@ func TestWatch_GroupsPathsByFilesystem(t *testing.T) {
 
 	s, err := NewStore(context.Background(),
 		WithBackend(NewFileBackend(inMemory, "/mem.yaml")),
-		WithBackend(NewFileBackend(afero.NewOsFs(), onDisk)))
+		WithBackend(NewFileBackend(OS(), onDisk)))
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
@@ -891,7 +891,7 @@ func TestPollWatcher_DetectsASameLengthEdit(t *testing.T) {
 	defer stop()
 
 	// Same byte length, different content.
-	if err := afero.WriteFile(filesystem, "/app.yaml", []byte("level: warn\n"), 0o644); err != nil {
+	if err := filesystem.WriteFile("/app.yaml", []byte("level: warn\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -1530,7 +1530,7 @@ func TestCoverage_DoesNotPollTheSamePathTwice(t *testing.T) {
 
 	defer cover.stop()
 
-	if err := afero.WriteFile(filesystem, "/app.yaml", []byte("a: 2\n"), 0o644); err != nil {
+	if err := filesystem.WriteFile("/app.yaml", []byte("a: 2\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 

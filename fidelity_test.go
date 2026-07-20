@@ -7,8 +7,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-
-	"github.com/spf13/afero"
 )
 
 // Fidelity is the guarantee this module makes about the files it writes:
@@ -21,7 +19,7 @@ import (
 // Acceptance criteria 1 through 5h.
 
 // fileWith writes one source file and returns a Store over it.
-func fileWith(t *testing.T, content string) (*Store, afero.Fs) {
+func fileWith(t *testing.T, content string) (*Store, FS) {
 	t.Helper()
 
 	filesystem := memFS(t, map[string]string{"/app.yaml": content})
@@ -34,10 +32,10 @@ func fileWith(t *testing.T, content string) (*Store, afero.Fs) {
 	return s, filesystem
 }
 
-func contentOf(t *testing.T, filesystem afero.Fs, path string) string {
+func contentOf(t *testing.T, filesystem FS, path string) string {
 	t.Helper()
 
-	raw, err := afero.ReadFile(filesystem, path)
+	raw, err := filesystem.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}

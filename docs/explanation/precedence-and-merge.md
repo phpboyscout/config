@@ -20,7 +20,7 @@ define a key is the one in effect.
 ```go
 store, err := config.NewStore(ctx,
 	config.WithReaders(config.NamedSource{Name: "embedded:defaults.yaml", Content: defaults}),
-	config.WithFiles(afero.NewOsFs(), "/etc/mytool/config.yaml", "/home/me/.mytool/config.yaml"),
+	config.WithFiles(config.OS(), "/etc/mytool/config.yaml", "/home/me/.mytool/config.yaml"),
 	config.WithEnv("MYTOOL"),
 	config.WithFlags(cmd.Flags()),
 )

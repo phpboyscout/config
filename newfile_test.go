@@ -4,8 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-
-	"github.com/spf13/afero"
 )
 
 // D13 routes a key that no file yet defines at the highest-precedence writable
@@ -58,7 +56,7 @@ func TestApply_CreatesAMissingFileWithNestedKeys(t *testing.T) {
 				t.Fatalf("Apply: %v", err)
 			}
 
-			got, err := afero.ReadFile(filesystem, "/overlay.yaml")
+			got, err := filesystem.ReadFile("/overlay.yaml")
 			if err != nil {
 				t.Fatalf("the overlay was not created: %v", err)
 			}

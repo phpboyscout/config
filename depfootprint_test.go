@@ -26,8 +26,6 @@ import (
 const selfModule = "gitlab.com/phpboyscout/go/config"
 
 var allowedModules = []string{
-	// Filesystem abstraction, so consumers can supply an in-memory filesystem.
-	"github.com/spf13/afero",
 	// Command-line flags, for the flag backend.
 	"github.com/spf13/pflag",
 	// Type coercion, for the typed accessors.
@@ -44,7 +42,6 @@ var allowedModules = []string{
 	"go.yaml.in/yaml",
 	// Pulled by the above, not by this module directly.
 	"golang.org/x/sys",
-	"golang.org/x/text",
 }
 
 // TestDependencyFootprint is this module's statement of "framework-free".

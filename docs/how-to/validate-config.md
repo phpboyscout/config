@@ -18,8 +18,6 @@ individually would reject a perfectly correct setup.
         "fmt"
         "log/slog"
 
-        "github.com/spf13/afero"
-
         "gitlab.com/phpboyscout/go/config"
     )
     ```
@@ -28,7 +26,7 @@ individually would reject a perfectly correct setup.
     ctx := context.Background()
 
     store, err := config.NewStore(ctx,
-        config.WithFiles(afero.NewOsFs(), "/etc/mytool/config.yaml"),
+        config.WithFiles(config.OS(), "/etc/mytool/config.yaml"),
     )
     if err != nil {
         return err
@@ -194,7 +192,7 @@ load, every reload, and every write:
 
 ```go
 store, err := config.NewStore(ctx,
-	config.WithFiles(afero.NewOsFs(), "/etc/mytool/config.yaml"),
+	config.WithFiles(config.OS(), "/etc/mytool/config.yaml"),
 	config.WithEnv("MYTOOL"),
 	config.WithSchema(schema),
 )
@@ -337,8 +335,9 @@ one in place. See [Use typed sections](typed-sections.md).
 No disk needed. Build a store over an in-memory filesystem and assert on the error:
 
 ```go
-fsys := afero.NewMemMapFs()
-require.NoError(t, afero.WriteFile(fsys, "/config.yaml",
+fsys, err := config.Dir(t.TempDir())
+require.NoError(t, err)
+require.NoError(t, fsys.WriteFile("/config.yaml",
 	[]byte("server:\n  host: localhost\nlog:\n  level: verbose\n"), 0o644))
 
 store, err := config.NewStore(ctx, config.WithFiles(fsys, "/config.yaml"))

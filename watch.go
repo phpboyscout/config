@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/spf13/afero"
 )
 
 // ErrWatchUnavailable is returned when watching cannot work for the given
@@ -42,7 +41,7 @@ type Watcher interface {
 // distinction is not cosmetic: fsnotify operates on real paths, so it silently
 // fails on an in-memory filesystem — which is exactly what a test, or a tool
 // working over a virtual worktree, will be using.
-func NewWatcher(filesystem afero.Fs, interval time.Duration) Watcher {
+func NewWatcher(filesystem FS, interval time.Duration) Watcher {
 	if interval <= 0 {
 		interval = DefaultPollInterval
 	}
@@ -61,29 +60,30 @@ func NewWatcher(filesystem afero.Fs, interval time.Duration) Watcher {
 // the ones the operating system would know them by, and whether such a
 // translation exists at all.
 //
-// A base-path wrapper qualifies even though afero will not say what it wraps.
-// Rooting a tool at a project directory that way is common, and treating it as
-// unwatchable would downgrade those consumers to polling for no reason. What it
-// wraps is settled per path at watch time by isReallyOnDisk, which is the only
-// point where the question can be answered honestly.
-func realPathResolver(filesystem afero.Fs) (func(string) string, bool) {
-	switch f := filesystem.(type) {
-	case *afero.OsFs:
-		return func(p string) string { return p }, true
-	case *afero.BasePathFs:
-		return func(p string) string {
-			if real, err := f.RealPath(p); err == nil {
-				return real
-			}
-
-			return p
-		}, true
-	default:
-		// Anything else — an in-memory filesystem, a read-only or caching
-		// wrapper that hides what it holds — cannot be assumed to have contents
-		// the operating system can see. Polling always works; guessing does not.
+// The filesystem answers this about itself through [RealPather]. It used to be
+// a switch on concrete afero types, which could not see through a wrapper it
+// did not recognise — so a consumer decorating the real filesystem with their
+// own type silently lost native notification and was polled instead, with
+// nothing to say why. See D2 of the filesystem abstraction spec.
+//
+// What it reports is a claim rather than proof. isReallyOnDisk settles it per
+// path at watch time, which is the only point where the question can be
+// answered honestly.
+func realPathResolver(filesystem FS) (func(string) string, bool) {
+	pather, ok := filesystem.(RealPather)
+	if !ok {
+		// No operating-system path to offer, so there is nothing for native
+		// notification to watch. Polling always works; guessing does not.
 		return nil, false
 	}
+
+	return func(p string) string {
+		if real, ok := pather.RealPath(p); ok {
+			return real
+		}
+
+		return p
+	}, true
 }
 
 // fsnotifyWatcher uses operating-system notification, falling back to polling
@@ -96,7 +96,7 @@ type fsnotifyWatcher struct {
 
 	// fs is the filesystem the caller's paths are expressed in, used to confirm
 	// that a resolved path really is the same file.
-	fs afero.Fs
+	fs FS
 	// resolve translates a path into the one the operating system knows.
 	resolve  func(string) string
 	fallback Watcher
@@ -368,7 +368,7 @@ func rewatch(watcher *fsnotify.Watcher, event fsnotify.Event) bool {
 // It works over any filesystem, including in-memory ones, and over network
 // mounts where native notification is unreliable or absent.
 type pollWatcher struct {
-	fs       afero.Fs
+	fs       FS
 	interval time.Duration
 }
 
@@ -424,7 +424,7 @@ func (w *pollWatcher) sample(paths []string) map[string]string {
 	state := make(map[string]string, len(paths))
 
 	for _, p := range paths {
-		content, err := afero.ReadFile(w.fs, p)
+		content, err := w.fs.ReadFile(p)
 		if err != nil {
 			state[p] = "absent"
 

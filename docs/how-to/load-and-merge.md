@@ -12,8 +12,6 @@ actually came from.
         "errors"
         "strings"
 
-        "github.com/spf13/afero"
-
         "gitlab.com/phpboyscout/go/config"
     )
     ```
@@ -32,7 +30,7 @@ handle:
 ```go
 store, err := config.NewStore(ctx,
 	config.WithReaders(config.NamedSource{Name: "embedded:defaults.yaml", Content: defaults}),
-	config.WithFiles(afero.NewOsFs(), "/etc/mytool/config.yaml", "/home/me/.mytool/config.yaml"),
+	config.WithFiles(config.OS(), "/etc/mytool/config.yaml", "/home/me/.mytool/config.yaml"),
 	config.WithEnv("MYTOOL"),
 	config.WithFlags(cmd.Flags()),
 )
@@ -87,8 +85,6 @@ imported:
 import (
 	_ "embed" // required for //go:embed, even though nothing references it
 
-	"github.com/spf13/afero"
-
 	"gitlab.com/phpboyscout/go/config"
 )
 
@@ -101,7 +97,7 @@ Then use it like any other source:
 ```go
 store, err := config.NewStore(ctx,
 	config.WithReaders(config.NamedSource{Name: "embedded:defaults.yaml", Content: defaults}),
-	config.WithFiles(afero.NewOsFs(), "config.yaml"),
+	config.WithFiles(config.OS(), "config.yaml"),
 )
 if err != nil {
 	return err
@@ -120,7 +116,7 @@ file is usually a broken installation, and `RequireFirstSource` says so:
 
 ```go
 store, err := config.NewStore(ctx,
-	config.WithFiles(afero.NewOsFs(), "/etc/mytool/config.yaml", "/home/me/.mytool/config.yaml"),
+	config.WithFiles(config.OS(), "/etc/mytool/config.yaml", "/home/me/.mytool/config.yaml"),
 	config.RequireFirstSource(),
 )
 ```
@@ -140,7 +136,7 @@ if err != nil {
 }
 
 store, err := config.NewStore(ctx,
-	config.WithFiles(afero.NewOsFs(), "config.yaml"),
+	config.WithFiles(config.OS(), "config.yaml"),
 	config.WithSchema(schema),
 )
 if err != nil && !errors.Is(err, config.ErrInvalidConfig) {
@@ -266,7 +262,7 @@ kept indefinitely and would quietly serve values that grew arbitrarily old.
 | Option | Purpose |
 |---|---|
 | `WithReaders(...NamedSource)` | in-memory sources, in precedence order — where compiled-in defaults belong |
-| `WithFiles(afero.Fs, ...string)` | one file backend per path; the first is the base and the last wins |
+| `WithFiles(config.FS, ...string)` | one file backend per path; the first is the base and the last wins |
 | `WithEnv(string, ...EnvOption)` | environment variables under a required prefix |
 | `WithFlags(*pflag.FlagSet, ...FlagOption)` | the flags the user actually changed |
 | `WithBackend(Backend)` | append a backend you implemented yourself |

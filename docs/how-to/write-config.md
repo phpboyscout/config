@@ -17,8 +17,6 @@ the whole of it:
 import (
 	"context"
 
-	"github.com/spf13/afero"
-
 	"gitlab.com/phpboyscout/go/config"
 )
 ```
@@ -27,7 +25,7 @@ import (
 ctx := context.Background()
 
 store, err := config.NewStore(ctx,
-	config.WithFiles(afero.NewOsFs(), "/etc/app/base.yaml", "/etc/app/prod.yaml"),
+	config.WithFiles(config.OS(), "/etc/app/base.yaml", "/etc/app/prod.yaml"),
 	config.WithEnv("APP"),
 )
 if err != nil {
@@ -195,7 +193,7 @@ exist.
 
 ```go
 store, err := config.NewStore(ctx,
-    config.WithFiles(afero.NewOsFs(), "/etc/app/base.yaml", "/home/u/.app.yaml"))
+    config.WithFiles(config.OS(), "/etc/app/base.yaml", "/home/u/.app.yaml"))
 if err != nil {
     return err
 }

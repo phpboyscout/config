@@ -3,7 +3,7 @@ package config
 import (
 	"context"
 	"errors"
-	"os"
+	"io/fs"
 	"strings"
 	"sync"
 	"testing"
@@ -16,7 +16,7 @@ import (
 // normally, so prepare and verify succeed and the failure lands where a real
 // one would: at the point of making staged content visible.
 type failingRenameFs struct {
-	afero.Fs
+	FS
 
 	mu       sync.Mutex
 	failFor  string
@@ -35,7 +35,7 @@ func (f *failingRenameFs) Rename(oldname, newname string) error {
 		return errRenameRefused
 	}
 
-	return f.Fs.Rename(oldname, newname)
+	return f.FS.Rename(oldname, newname)
 }
 
 // AC13 — a commit that fails partway restores the targets already committed.
@@ -48,16 +48,16 @@ func (f *failingRenameFs) Rename(oldname, newname string) error {
 func TestApply_RollbackRestoresTheStoreNotOnlyTheFile(t *testing.T) {
 	t.Parallel()
 
-	base := afero.NewMemMapFs()
-	if err := afero.WriteFile(base, "/base.yaml", []byte("onlybase: 1\n"), 0o644); err != nil {
+	base := wrapAfero(afero.NewMemMapFs())
+	if err := base.WriteFile("/base.yaml", []byte("onlybase: 1\n"), 0o644); err != nil {
 		t.Fatalf("seed base: %v", err)
 	}
 
-	if err := afero.WriteFile(base, "/over.yaml", []byte("onlyover: 1\n"), 0o644); err != nil {
+	if err := base.WriteFile("/over.yaml", []byte("onlyover: 1\n"), 0o644); err != nil {
 		t.Fatalf("seed over: %v", err)
 	}
 
-	filesystem := &failingRenameFs{Fs: base, failFor: "over.yaml"}
+	filesystem := &failingRenameFs{FS: base, failFor: "over.yaml"}
 
 	s, err := NewStore(context.Background(), WithFiles(filesystem, "/base.yaml", "/over.yaml"))
 	if err != nil {
@@ -99,18 +99,18 @@ func TestApply_RollbackRestoresTheStoreNotOnlyTheFile(t *testing.T) {
 func TestApply_UnrecoverablePartialCommitNamesWhatIsWhere(t *testing.T) {
 	t.Parallel()
 
-	base := afero.NewMemMapFs()
-	if err := afero.WriteFile(base, "/base.yaml", []byte("onlybase: 1\n"), 0o644); err != nil {
+	base := wrapAfero(afero.NewMemMapFs())
+	if err := base.WriteFile("/base.yaml", []byte("onlybase: 1\n"), 0o644); err != nil {
 		t.Fatalf("seed base: %v", err)
 	}
 
-	if err := afero.WriteFile(base, "/over.yaml", []byte("onlyover: 1\n"), 0o644); err != nil {
+	if err := base.WriteFile("/over.yaml", []byte("onlyover: 1\n"), 0o644); err != nil {
 		t.Fatalf("seed over: %v", err)
 	}
 
 	// Commits base, refuses over, then refuses the write that would restore
 	// base — so the set is left genuinely half-applied.
-	filesystem := &hostileFs{Fs: base}
+	filesystem := &hostileFs{FS: base}
 
 	s, err := NewStore(context.Background(), WithFiles(filesystem, "/base.yaml", "/over.yaml"))
 	if err != nil {
@@ -143,7 +143,7 @@ func TestApply_UnrecoverablePartialCommitNamesWhatIsWhere(t *testing.T) {
 // restore the first — the sequence that produces an unrecoverable partial
 // commit. It stays inert until armed so that loading and staging succeed.
 type hostileFs struct {
-	afero.Fs
+	FS
 
 	mu      sync.Mutex
 	armed   bool
@@ -163,7 +163,7 @@ func (f *hostileFs) Rename(oldname, newname string) error {
 	if !f.armed {
 		f.mu.Unlock()
 
-		return f.Fs.Rename(oldname, newname)
+		return f.FS.Rename(oldname, newname)
 	}
 
 	f.renames++
@@ -171,21 +171,21 @@ func (f *hostileFs) Rename(oldname, newname string) error {
 	f.mu.Unlock()
 
 	if first {
-		return f.Fs.Rename(oldname, newname)
+		return f.FS.Rename(oldname, newname)
 	}
 
 	return errRenameRefused
 }
 
-func (f *hostileFs) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
+func (f *hostileFs) WriteFile(name string, data []byte, perm fs.FileMode) error {
 	f.mu.Lock()
 	armed, renames := f.armed, f.renames
 	f.mu.Unlock()
 
 	// Once a commit has landed, refuse the restoring write to that same file.
-	if armed && renames > 0 && strings.HasSuffix(name, "base.yaml") && flag&os.O_CREATE != 0 {
-		return nil, errRenameRefused
+	if armed && renames > 0 && strings.HasSuffix(name, "base.yaml") {
+		return errRenameRefused
 	}
 
-	return f.Fs.OpenFile(name, flag, perm)
+	return f.FS.WriteFile(name, data, perm)
 }

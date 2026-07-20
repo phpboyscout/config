@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spf13/afero"
-
 	"gitlab.com/phpboyscout/go/config"
 )
 
@@ -21,9 +19,9 @@ import (
 func TestObserver_ABatchNotifiesExactlyOnce(t *testing.T) {
 	t.Parallel()
 
-	fsys := afero.NewMemMapFs()
-	_ = afero.WriteFile(fsys, "/base.yaml", []byte("a: 1\nb: 1\n"), 0o600)
-	_ = afero.WriteFile(fsys, "/over.yaml", []byte("b: 2\n"), 0o600)
+	fsys := config.NewMemFS()
+	_ = fsys.WriteFile("/base.yaml", []byte("a: 1\nb: 1\n"), 0o600)
+	_ = fsys.WriteFile("/over.yaml", []byte("b: 2\n"), 0o600)
 
 	store, err := config.NewStore(context.Background(),
 		config.WithFiles(fsys, "/base.yaml", "/over.yaml"))
@@ -53,8 +51,8 @@ func TestObserver_ABatchNotifiesExactlyOnce(t *testing.T) {
 func TestObserver_ARejectedReloadNotifiesNobody(t *testing.T) {
 	t.Parallel()
 
-	fsys := afero.NewMemMapFs()
-	_ = afero.WriteFile(fsys, "/app.yaml", []byte("port: 8080\n"), 0o600)
+	fsys := config.NewMemFS()
+	_ = fsys.WriteFile("/app.yaml", []byte("port: 8080\n"), 0o600)
 
 	store, err := config.NewStore(context.Background(), config.WithFiles(fsys, "/app.yaml"))
 	if err != nil {
@@ -74,7 +72,7 @@ func TestObserver_ARejectedReloadNotifiesNobody(t *testing.T) {
 	store.OnReloadError(func(error) { errors.Add(1) })
 
 	// Break the file behind the store's back, then reload.
-	_ = afero.WriteFile(fsys, "/app.yaml", []byte("port: [oops\n"), 0o600)
+	_ = fsys.WriteFile("/app.yaml", []byte("port: [oops\n"), 0o600)
 
 	if err := store.Reload(context.Background()); err == nil {
 		t.Fatal("a broken file was accepted")
@@ -97,8 +95,8 @@ func TestObserver_ARejectedReloadNotifiesNobody(t *testing.T) {
 func TestObserver_AWriteThatChangesNothingNotifiesNobody(t *testing.T) {
 	t.Parallel()
 
-	fsys := afero.NewMemMapFs()
-	_ = afero.WriteFile(fsys, "/app.yaml", []byte("port: 8080\n"), 0o600)
+	fsys := config.NewMemFS()
+	_ = fsys.WriteFile("/app.yaml", []byte("port: 8080\n"), 0o600)
 
 	store, err := config.NewStore(context.Background(), config.WithFiles(fsys, "/app.yaml"))
 	if err != nil {
@@ -126,8 +124,8 @@ func TestObserver_AWriteThatChangesNothingNotifiesNobody(t *testing.T) {
 func TestObserver_DeliveryIsNeverOutOfOrder(t *testing.T) {
 	t.Parallel()
 
-	fsys := afero.NewMemMapFs()
-	_ = afero.WriteFile(fsys, "/app.yaml", []byte("n: 0\n"), 0o600)
+	fsys := config.NewMemFS()
+	_ = fsys.WriteFile("/app.yaml", []byte("n: 0\n"), 0o600)
 
 	store, err := config.NewStore(context.Background(), config.WithFiles(fsys, "/app.yaml"))
 	if err != nil {
@@ -198,7 +196,7 @@ func TestObserver_WritesSpacedWiderThanTheWindowStillNotifyTwice(t *testing.T) {
 	atomicWriteFile(t, over, "b: 1\n")
 
 	store, err := config.NewStore(context.Background(),
-		config.WithFiles(afero.NewOsFs(), base, over))
+		config.WithFiles(config.OS(), base, over))
 	if err != nil {
 		t.Fatal(err)
 	}

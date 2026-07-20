@@ -13,8 +13,8 @@ import (
 func newTestContainer(t *testing.T, yaml string) *View {
 	t.Helper()
 
-	fs := afero.NewMemMapFs()
-	require.NoError(t, afero.WriteFile(fs, "/config.yaml", []byte(yaml), 0o644))
+	fs := wrapAfero(afero.NewMemMapFs())
+	require.NoError(t, fs.WriteFile("/config.yaml", []byte(yaml), 0o644))
 
 	s, err := NewStore(context.Background(), WithFiles(fs, "/config.yaml"))
 	require.NoError(t, err)
@@ -232,8 +232,8 @@ func TestValidationResult_Error(t *testing.T) {
 func TestStore_WithSchema_Valid(t *testing.T) {
 	t.Parallel()
 
-	fs := afero.NewMemMapFs()
-	require.NoError(t, afero.WriteFile(fs, "/config.yaml", []byte(`
+	fs := wrapAfero(afero.NewMemMapFs())
+	require.NoError(t, fs.WriteFile("/config.yaml", []byte(`
 github:
   token: "secret"
 log:
@@ -252,8 +252,8 @@ log:
 func TestStore_WithSchema_Invalid(t *testing.T) {
 	t.Parallel()
 
-	fs := afero.NewMemMapFs()
-	require.NoError(t, afero.WriteFile(fs, "/config.yaml", []byte("log:\n  level: info\n"), 0o644))
+	fs := wrapAfero(afero.NewMemMapFs())
+	require.NoError(t, fs.WriteFile("/config.yaml", []byte("log:\n  level: info\n"), 0o644))
 
 	schema, err := NewSchema(WithStructSchema(testAppConfig{}))
 	require.NoError(t, err)
@@ -276,9 +276,9 @@ func TestStore_WithSchema_Invalid(t *testing.T) {
 func TestStore_WithSchema_ValidatesTheResolvedConfiguration(t *testing.T) {
 	t.Parallel()
 
-	fs := afero.NewMemMapFs()
-	require.NoError(t, afero.WriteFile(fs, "/base.yaml", []byte("log:\n  level: info\n"), 0o644))
-	require.NoError(t, afero.WriteFile(fs, "/over.yaml", []byte("github:\n  token: from-overlay\n"), 0o644))
+	fs := wrapAfero(afero.NewMemMapFs())
+	require.NoError(t, fs.WriteFile("/base.yaml", []byte("log:\n  level: info\n"), 0o644))
+	require.NoError(t, fs.WriteFile("/over.yaml", []byte("github:\n  token: from-overlay\n"), 0o644))
 
 	schema, err := NewSchema(WithStructSchema(testAppConfig{}))
 	require.NoError(t, err)
@@ -294,8 +294,8 @@ func TestStore_WithSchema_ValidatesTheResolvedConfiguration(t *testing.T) {
 func TestStore_WithSchema_FailedReloadRetainsLastKnownGood(t *testing.T) {
 	t.Parallel()
 
-	fs := afero.NewMemMapFs()
-	require.NoError(t, afero.WriteFile(fs, "/config.yaml",
+	fs := wrapAfero(afero.NewMemMapFs())
+	require.NoError(t, fs.WriteFile("/config.yaml",
 		[]byte("github:\n  token: good\nlog:\n  level: info\n"), 0o644))
 
 	schema, err := NewSchema(WithStructSchema(testAppConfig{}))
@@ -308,7 +308,7 @@ func TestStore_WithSchema_FailedReloadRetainsLastKnownGood(t *testing.T) {
 
 	s.OnReloadError(func(e error) { reported = e })
 
-	require.NoError(t, afero.WriteFile(fs, "/config.yaml", []byte("log:\n  level: info\n"), 0o644))
+	require.NoError(t, fs.WriteFile("/config.yaml", []byte("log:\n  level: info\n"), 0o644))
 
 	require.ErrorIs(t, s.Reload(context.Background()), ErrInvalidConfig)
 	require.ErrorIs(t, reported, ErrInvalidConfig, "a rejection must reach the error channel")

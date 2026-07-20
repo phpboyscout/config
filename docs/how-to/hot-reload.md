@@ -12,7 +12,7 @@ observers. This guide shows how to wire that up and the traps to avoid.
     ctx := context.Background()
 
     store, err := config.NewStore(ctx,
-        config.WithFiles(afero.NewOsFs(), "/etc/app/config.yaml"),
+        config.WithFiles(config.OS(), "/etc/app/config.yaml"),
         config.WithEnv("APP"),
     )
     if err != nil {
@@ -313,7 +313,7 @@ require.NoError(t, err)
 
 defer stop()
 
-require.NoError(t, afero.WriteFile(fsys, "/app.yaml", []byte("value: second\n"), 0o644))
+require.NoError(t, fsys.WriteFile("/app.yaml", []byte("value: second\n"), 0o644))
 w.fire() // the store re-reads and notifies, synchronously
 
 assert.Equal(t, "second", store.View().GetString("value"))

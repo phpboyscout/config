@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/cucumber/godog"
-	"github.com/spf13/afero"
 
 	. "gitlab.com/phpboyscout/go/config"
 )
@@ -20,7 +19,7 @@ import (
 // configuration leak into a later one, which is the failure mode that makes a
 // suite pass in order and fail in isolation.
 type world struct {
-	fs    afero.Fs
+	fs    FS
 	store *Store
 
 	// err holds the outcome of the last operation a step performed, so a Then
@@ -98,7 +97,7 @@ func (w *scriptedWatcher) wasStopped() bool {
 }
 
 func (w *world) reset() {
-	w.fs = afero.NewMemMapFs()
+	w.fs = NewMemFS()
 	w.store = nil
 	w.err = nil
 	w.notifications = nil
@@ -183,7 +182,7 @@ func initStoreSteps(ctx *godog.ScenarioContext) {
 // --- Given implementations -------------------------------------------------
 
 func (w *world) aConfigFileContaining(path string, body *godog.DocString) error {
-	return afero.WriteFile(w.fs, path, []byte(body.Content+"\n"), 0o644)
+	return w.fs.WriteFile(path, []byte(body.Content+"\n"), 0o644)
 }
 
 func (w *world) aStoreReading(path string) error {
@@ -274,7 +273,7 @@ func (w *world) iRemove(path string) error {
 }
 
 func (w *world) isChangedOnDiskTo(path string, body *godog.DocString) error {
-	return afero.WriteFile(w.fs, path, []byte(body.Content+"\n"), 0o644)
+	return w.fs.WriteFile(path, []byte(body.Content+"\n"), 0o644)
 }
 
 func (w *world) theStoreReloads() error {
@@ -323,7 +322,7 @@ func (w *world) comesFrom(path, want string) error {
 }
 
 func (w *world) onDiskContains(path string, body *godog.DocString) error {
-	raw, err := afero.ReadFile(w.fs, path)
+	raw, err := w.fs.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", path, err)
 	}
@@ -338,7 +337,7 @@ func (w *world) onDiskContains(path string, body *godog.DocString) error {
 }
 
 func (w *world) onDiskDoesNotContain(path, unwanted string) error {
-	raw, err := afero.ReadFile(w.fs, path)
+	raw, err := w.fs.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", path, err)
 	}

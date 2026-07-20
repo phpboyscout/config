@@ -91,7 +91,7 @@ func TestWatch_NotifiesOnAForeignChange(t *testing.T) {
 
 	defer stop()
 
-	if err := afero.WriteFile(filesystem, "/app.yaml", []byte("value: second\n"), 0o644); err != nil {
+	if err := filesystem.WriteFile("/app.yaml", []byte("value: second\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -137,7 +137,7 @@ func TestWatch_IgnoresEventsThatChangeNothing(t *testing.T) {
 	}
 
 	// Rewriting identical content is still not a change.
-	if err := afero.WriteFile(filesystem, "/app.yaml", []byte("value: same\n"), 0o644); err != nil {
+	if err := filesystem.WriteFile("/app.yaml", []byte("value: same\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -377,11 +377,11 @@ func TestWatch_StopReleasesTheWatcher(t *testing.T) {
 func TestNewWatcher_PicksPollingForNonOSFilesystems(t *testing.T) {
 	t.Parallel()
 
-	if _, ok := NewWatcher(afero.NewMemMapFs(), time.Second).(*pollWatcher); !ok {
+	if _, ok := NewWatcher(wrapAfero(afero.NewMemMapFs()), time.Second).(*pollWatcher); !ok {
 		t.Error("an in-memory filesystem must be polled, not watched natively")
 	}
 
-	if _, ok := NewWatcher(afero.NewOsFs(), time.Second).(*fsnotifyWatcher); !ok {
+	if _, ok := NewWatcher(OS(), time.Second).(*fsnotifyWatcher); !ok {
 		t.Error("a real filesystem should use native notification")
 	}
 }
@@ -408,7 +408,7 @@ func TestPollWatcher_DetectsAChange(t *testing.T) {
 
 	defer stop()
 
-	if err := afero.WriteFile(filesystem, "/app.yaml", []byte("a: 2\nb: 3\n"), 0o644); err != nil {
+	if err := filesystem.WriteFile("/app.yaml", []byte("a: 2\nb: 3\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -422,7 +422,7 @@ func TestPollWatcher_DetectsAChange(t *testing.T) {
 func TestPollWatcher_NothingToWatch(t *testing.T) {
 	t.Parallel()
 
-	w := &pollWatcher{fs: afero.NewMemMapFs(), interval: time.Millisecond}
+	w := &pollWatcher{fs: wrapAfero(afero.NewMemMapFs()), interval: time.Millisecond}
 
 	if _, err := w.Watch(context.Background(), nil, func() {}); !errors.Is(err, ErrWatchUnavailable) {
 		t.Errorf("err = %v, want ErrWatchUnavailable", err)
@@ -442,7 +442,7 @@ func TestWatch_NativeNotificationFires(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	w := NewWatcher(afero.NewOsFs(), time.Hour)
+	w := NewWatcher(OS(), time.Hour)
 
 	if _, ok := w.(*fsnotifyWatcher); !ok {
 		t.Fatalf("watcher for a real filesystem is %T, want native notification", w)
@@ -486,7 +486,7 @@ func TestWatch_BasePathFilesystemUsesNativeNotification(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	rooted := afero.NewBasePathFs(afero.NewOsFs(), dir)
+	rooted := wrapAfero(afero.NewBasePathFs(afero.NewOsFs(), dir))
 
 	w := NewWatcher(rooted, time.Hour)
 	if _, ok := w.(*fsnotifyWatcher); !ok {
@@ -531,8 +531,8 @@ func TestWatch_VirtualFilesBehindRealLookingPathsFallBackToPolling(t *testing.T)
 
 	// The path resolves under a directory that genuinely exists, but the file
 	// itself lives only in memory.
-	mem := afero.NewMemMapFs()
-	if err := afero.WriteFile(mem, "/app.yaml", []byte("a: 1\n"), 0o600); err != nil {
+	memRaw := afero.NewMemMapFs()
+	if err := wrapAfero(memRaw).WriteFile("/app.yaml", []byte("a: 1\n"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
@@ -540,7 +540,7 @@ func TestWatch_VirtualFilesBehindRealLookingPathsFallBackToPolling(t *testing.T)
 		t.Fatalf("decoy: %v", err)
 	}
 
-	w, ok := NewWatcher(afero.NewBasePathFs(mem, dir), 10*time.Millisecond).(*fsnotifyWatcher)
+	w, ok := NewWatcher(wrapAfero(afero.NewBasePathFs(memRaw, dir)), 10*time.Millisecond).(*fsnotifyWatcher)
 	if !ok {
 		t.Fatal("expected the native watcher to be selected before the per-path check")
 	}
@@ -613,7 +613,7 @@ func TestWatch_MixedPathSetsStillReportEveryPath(t *testing.T) {
 
 	// A short poll interval, because the absent path can only be covered by
 	// polling until it exists.
-	w := NewWatcher(afero.NewOsFs(), 20*time.Millisecond)
+	w := NewWatcher(OS(), 20*time.Millisecond)
 
 	fired := make(chan struct{}, 8)
 
@@ -657,7 +657,7 @@ func TestWatch_MixedPathSetsKeepNativeNotificationForPresentFiles(t *testing.T) 
 
 	// An hour-long poll interval, so anything that arrives came from the
 	// operating system rather than a poll.
-	w := NewWatcher(afero.NewOsFs(), time.Hour)
+	w := NewWatcher(OS(), time.Hour)
 
 	fired := make(chan struct{}, 8)
 

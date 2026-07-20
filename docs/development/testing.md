@@ -31,16 +31,21 @@ in any of them is a real defect a user will eventually hit.
 
 - **Parallel by default.** `t.Parallel()` unless there is a reason not to. There is no
   global state to fight over — that is deliberate.
-- **In-memory filesystems.** `afero.NewMemMapFs()` for anything that would otherwise touch
-  disk. Reserve real files for the handful of cases exercising a genuine OS watcher.
+- **In-memory filesystems.** `memFilesystem(t, files)` — afero's `MemMapFs` behind a
+  `config.FS` adapter — for anything that would otherwise touch disk. afero is a *test*
+  dependency now, deliberately: it is the best in-memory filesystem in Go and it stays out
+  of what consumers inherit. Reserve real files for the handful of cases exercising a
+  genuine OS watcher, and `config.Dir(t.TempDir())` where a real rooted directory is
+  wanted.
 - **Table-driven for variations**, individual functions for distinct guarantees. When a
   test asserts several independent promises, split it — a failure should name which promise
   broke, not just that something did.
 - **Name the guarantee, not the mechanism.** `TestReadsNeverStraddleAReload` says what
   breaks if it fails; `TestView2` does not.
 
-Test helpers live alongside the tests that use them; `storeOn` and `memFS` are the common
-ones.
+Test helpers live alongside the tests that use them; `storeOn`, `memFS` and
+`memFilesystem` are the common ones. The afero adapter lives in `fs_afero_test.go`, which
+also exports `WrapAfero` and `NewMemFS` for the external `config_test` package.
 
 ## Failure modes to watch for
 

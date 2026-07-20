@@ -5,8 +5,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
-	"github.com/spf13/afero"
 )
 
 // D15's central claim is that validation and the reload a write causes cannot
@@ -46,7 +44,7 @@ func TestApply_RefusesAWriteThatWouldBreakTheNextReload(t *testing.T) {
 	}
 
 	// Nothing reached the file.
-	content, readErr := afero.ReadFile(filesystem, "/app.yaml")
+	content, readErr := filesystem.ReadFile("/app.yaml")
 	if readErr != nil {
 		t.Fatalf("read: %v", readErr)
 	}

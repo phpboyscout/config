@@ -4,10 +4,73 @@ date: 2026-07-20
 author: matt.cockayne
 status: approved
 approved: 2026-07-20
+revised: 2026-07-20
 issue: phpboyscout/go/config#3
 ---
 
 # Filesystem abstraction
+
+## Revisions
+
+### R1 — 2026-07-20: the consumer testing story is `Dir`, not an afero adapter
+
+**D4 said `MemMapFs` remains what the testing guide recommends. For this module's own suite
+that stands. For consumers it was wrong, and it was wrong in a way only implementing it
+exposed.**
+
+Dropping afero from the public API left consumers with no in-memory filesystem and no
+adapter, because `config-afero` (D5) does not exist yet. Every test example in the guides
+became uncompilable, which is how it surfaced.
+
+`Dir` — introduced by D3 in the same spec — turns out to be the better answer, and it needed
+writing the docs to notice:
+
+```go
+fsys, err := config.Dir(t.TempDir())
+require.NoError(t, err)
+require.NoError(t, fsys.WriteFile("config.yaml", []byte(body), 0o600))
+```
+
+Zero dependencies, real file semantics including watching, and cleanup handled by
+`t.TempDir`. For a consumer testing their own configuration handling it is better than an
+in-memory filesystem, not merely adequate: it exercises the same code path production does.
+
+D4 is amended to: **`Dir(t.TempDir())` is the recommended consumer testing story.** afero
+remains this module's own test dependency, because the suite is large, parallel and benefits
+from staying off disk, and because it already has it.
+
+D5 is unaffected but less urgent. `config-afero` now serves consumers who already hold an
+`afero.Fs` and want to pass it through, rather than being the only route to a testable
+filesystem.
+
+### R2 — 2026-07-20: `Readlink` joins `RealPath` as an optional interface
+
+Not specified, and found while migrating: `resolveTarget` resolves symlinks so a write goes
+through a link rather than replacing it, using afero's `LinkReader`. The six-method
+interface has no equivalent and should not grow one — most filesystems have no notion of a
+link.
+
+Added as `LinkReader`, a second optional interface alongside `RealPather`, on the same
+principle: capability beyond the minimum is something an implementation may simply not have.
+
+This is evidence for open question 3. Two optional interfaces appeared where the spec
+anticipated one, so the pattern is load-bearing rather than incidental, and the six required
+methods held.
+
+### R3 — 2026-07-20: an implementation must not satisfy an optional interface it cannot honour
+
+Found by a failing test, and worth recording because the mistake is easy and the failure is
+quiet.
+
+The first afero adapter implemented `RealPath` unconditionally, returning `("", false)` for
+in-memory filesystems. But `realPathResolver` asks whether the *type* satisfies `RealPather`,
+so every filesystem looked watchable: the watcher selected fsnotify and discovered there was
+nothing to watch one path at a time, rather than choosing polling up front.
+
+The fix is two concrete types — an afero filesystem that has real paths satisfies the
+interface, and one that does not, does not. `RealPather`'s documentation now states this as a
+requirement on implementations rather than leaving it implied.
+
 
 ## Problem
 
@@ -85,6 +148,11 @@ breaking change for every implementation, so it starts as small as the module ca
 
 ### D2 — The concrete type-switch becomes an optional interface
 
+> **Extended by [R2](#r2--2026-07-20-readlink-joins-realpath-as-an-optional-interface) and
+> [R3](#r3--2026-07-20-an-implementation-must-not-satisfy-an-optional-interface-it-cannot-honour).**
+> A second optional interface was needed for symlinks, and satisfying one conditionally
+> turns out to be a requirement rather than a detail.
+
 ```go
 // RealPather optionally reports the operating-system path backing a name, so
 // native filesystem notification can be used instead of polling. A filesystem
@@ -123,6 +191,10 @@ from a user-supplied directory gets that for free.
 Both are stdlib-backed and cost nothing in the dependency graph.
 
 ### D4 — afero moves to test scope, and stays the recommended testing story
+
+> **Amended by [R1](#r1--2026-07-20-the-consumer-testing-story-is-dir-not-an-afero-adapter).**
+> It stays this module's own testing story. For consumers the answer is `Dir(t.TempDir())`,
+> which needed writing the docs to notice.
 
 The module's own tests keep using afero's `MemMapFs` through a small adapter in
 `export_test.go` or a testing helper. A test-only import does not appear in

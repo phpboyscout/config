@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/spf13/afero"
 	"github.com/spf13/pflag"
 )
 
@@ -87,7 +86,7 @@ func WithBackend(b Backend) StoreOption {
 
 // WithFiles appends a file backend per path, in precedence order — the first
 // is the base and the last wins.
-func WithFiles(filesystem afero.Fs, paths ...string) StoreOption {
+func WithFiles(filesystem FS, paths ...string) StoreOption {
 	return func(s *Store) {
 		for _, p := range paths {
 			s.backends = append(s.backends, NewFileBackend(filesystem, p))

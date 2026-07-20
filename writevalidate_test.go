@@ -5,8 +5,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
-	"github.com/spf13/afero"
 )
 
 // serverConfig is the smallest shape that can express each of the failure
@@ -35,7 +33,7 @@ func portSchema(t *testing.T) *Schema {
 // schemaStore builds a Store that may legitimately start invalid — several of
 // these tests depend on exactly that — so it tolerates ErrInvalidConfig while
 // still failing on anything that genuinely leaves no configuration behind.
-func schemaStore(t *testing.T, files map[string]string, paths ...string) (*Store, afero.Fs) {
+func schemaStore(t *testing.T, files map[string]string, paths ...string) (*Store, FS) {
 	t.Helper()
 
 	filesystem := memFS(t, files)
@@ -70,7 +68,7 @@ func TestApply_RefusesAWriteThatWouldInvalidateTheConfig(t *testing.T) {
 	}
 
 	// Nothing reached the file.
-	content, readErr := afero.ReadFile(filesystem, "/app.yaml")
+	content, readErr := filesystem.ReadFile("/app.yaml")
 	if readErr != nil {
 		t.Fatalf("read: %v", readErr)
 	}
