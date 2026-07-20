@@ -20,6 +20,10 @@ import (
 // Adding an entry here should feel like a decision, because it is one. This
 // module's pitch includes having a smaller graph than what it replaced, and a
 // claim like that decays silently unless something checks it.
+// sentinelPackage is a dependency that must always be present — cast backs the typed accessors, so it is always present.
+// Its absence from the scan means the scan itself failed.
+const sentinelPackage = "github.com/spf13/cast"
+
 // selfModule is this module, which `go list -deps .` naturally includes. It is
 // not a dependency and is skipped rather than allowlisted, so the list above
 // stays a list of things consumers inherit from elsewhere.
@@ -66,7 +70,16 @@ func TestDependencyFootprint(t *testing.T) {
 		t.Fatalf("go list -deps: %v", err)
 	}
 
+	// Prove the scan actually ran. An empty or malformed result yields one empty
+	// string, every check below is skipped, and the test passes green — which is
+	// exactly how a broken harness has read as a clean pass here before.
+	seen := false
+
 	for pkg := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		if strings.HasPrefix(pkg, sentinelPackage) {
+			seen = true
+		}
+
 		if pkg == selfModule || strings.HasPrefix(pkg, selfModule+"/") {
 			continue
 		}
@@ -79,6 +92,12 @@ func TestDependencyFootprint(t *testing.T) {
 			"If this is deliberate, add its module to allowedModules and say why. "+
 			"If it arrived transitively from a version bump, that is exactly what "+
 			"this test is for.", pkg)
+	}
+
+	if !seen {
+		t.Fatalf("the dependency scan produced no recognisable output: %q is always "+
+			"in this module's graph, so its absence means `go list` failed rather "+
+			"than that the graph is clean", sentinelPackage)
 	}
 }
 

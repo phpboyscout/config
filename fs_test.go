@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -104,7 +105,7 @@ func TestDir_ReportsRealPaths(t *testing.T) {
 func TestRealPather_AbsenceSelectsPolling(t *testing.T) {
 	t.Parallel()
 
-	memory := memFilesystem(t, map[string]string{"/app.yaml": "a: 1\n"})
+	memory := memFS(t, map[string]string{"/app.yaml": "a: 1\n"})
 
 	if _, ok := memory.(RealPather); ok {
 		t.Error("an in-memory filesystem must not claim operating-system paths")
@@ -141,7 +142,7 @@ func TestFS_AbsentFileIsDistinguishable(t *testing.T) {
 	}{
 		"os":     {OS(), filepath.Join(root, "nothing-here.yaml")},
 		"rooted": {rooted, "nothing-here.yaml"},
-		"memory": {memFilesystem(t, nil), "/nothing-here.yaml"},
+		"memory": {memFS(t, nil), "/nothing-here.yaml"},
 	}
 
 	for name, tc := range cases {
@@ -178,5 +179,57 @@ func TestDir_AbsolutePathIsNotAMissingFile(t *testing.T) {
 	if errors.Is(err, fs.ErrNotExist) {
 		t.Error("an absolute path reported as merely absent — the Store would " +
 			"skip it as an optional source rather than reporting the mistake")
+	}
+}
+
+// TestDir_DoesNotAccumulateDescriptors pins the fix for a leak that only
+// surfaces at scale.
+//
+// An earlier Dir held its *os.Root open for the FS's lifetime, which read as a
+// feature — the root survived a rename — and leaked one descriptor per call,
+// since FS has no Close and nothing in the module closes a filesystem. At a
+// default 1024-descriptor limit it failed after 1021 calls; at the 256 typical
+// of macOS, after 253. The documented testing pattern is config.Dir(t.TempDir())
+// per test, so a large suite would have reached it.
+//
+// Linux-only: it reads /proc to count descriptors, and there is no portable
+// equivalent worth the complexity.
+func TestDir_DoesNotAccumulateDescriptors(t *testing.T) {
+	t.Parallel()
+
+	count := func() int {
+		entries, err := os.ReadDir("/proc/" + strconv.Itoa(os.Getpid()) + "/fd")
+		if err != nil {
+			return -1
+		}
+
+		return len(entries)
+	}
+
+	if count() < 0 {
+		t.Skip("/proc unavailable; descriptor counting is Linux-only")
+	}
+
+	dir := t.TempDir()
+	before := count()
+
+	for range 200 {
+		filesystem, err := Dir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := filesystem.WriteFile("a.yaml", []byte("a: 1\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := filesystem.ReadFile("a.yaml"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A small margin for descriptors the runtime opens for its own reasons.
+	if leaked := count() - before; leaked > 5 {
+		t.Errorf("200 Dir calls leaked %d descriptors; the root must not be held open", leaked)
 	}
 }

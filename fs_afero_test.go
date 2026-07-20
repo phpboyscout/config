@@ -2,7 +2,6 @@ package config
 
 import (
 	"io/fs"
-	"testing"
 
 	"github.com/spf13/afero"
 )
@@ -73,21 +72,6 @@ func (a aferoFS) Readlink(name string) (string, error) {
 	return reader.ReadlinkIfPossible(name)
 }
 
-// memFilesystem returns an in-memory FS seeded with the given files.
-func memFilesystem(t *testing.T, files map[string]string) FS {
-	t.Helper()
-
-	filesystem := wrapAfero(afero.NewMemMapFs())
-
-	for path, body := range files {
-		if err := filesystem.WriteFile(path, []byte(body), 0o600); err != nil {
-			t.Fatalf("seeding %s: %v", path, err)
-		}
-	}
-
-	return filesystem
-}
-
 var (
 	_ FS         = aferoFS{}
 	_ LinkReader = aferoFS{}
@@ -101,21 +85,23 @@ var (
 	_ LinkReader = rootFS{}
 )
 
-// --- exported for the external test package -----------------------------
-//
-// Test files in package config can export identifiers that package
-// config_test consumes, which is how both halves of the suite share one
-// afero adapter instead of maintaining two.
-
-// WrapAfero adapts an afero filesystem to FS, for tests.
-func WrapAfero(filesystem afero.Fs) FS { return wrapAfero(filesystem) }
-
-// MemFilesystem returns an in-memory FS seeded with the given files.
-func MemFilesystem(t *testing.T, files map[string]string) FS {
-	t.Helper()
-
-	return memFilesystem(t, files)
-}
-
 // NewMemFS returns an empty in-memory FS.
+//
+// Exported because package config_test cannot reach the unexported adapter, and
+// test files in package config can export identifiers it consumes. That is the
+// whole of the sharing — earlier versions also exported WrapAfero and a seeded
+// MemFilesystem, neither of which anything called.
 func NewMemFS() FS { return wrapAfero(afero.NewMemMapFs()) }
+
+var (
+	_ FS         = aferoFS{}
+	_ LinkReader = aferoFS{}
+	_ FS         = aferoRealFS{}
+	_ RealPather = aferoRealFS{}
+	_ FS         = osFS{}
+	_ RealPather = osFS{}
+	_ LinkReader = osFS{}
+	_ FS         = rootFS{}
+	_ RealPather = rootFS{}
+	_ LinkReader = rootFS{}
+)

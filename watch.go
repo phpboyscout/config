@@ -69,7 +69,7 @@ func NewWatcher(filesystem FS, interval time.Duration) Watcher {
 // What it reports is a claim rather than proof. isReallyOnDisk settles it per
 // path at watch time, which is the only point where the question can be
 // answered honestly.
-func realPathResolver(filesystem FS) (func(string) string, bool) {
+func realPathResolver(filesystem FS) (func(string) (string, bool), bool) {
 	pather, ok := filesystem.(RealPather)
 	if !ok {
 		// No operating-system path to offer, so there is nothing for native
@@ -77,13 +77,12 @@ func realPathResolver(filesystem FS) (func(string) string, bool) {
 		return nil, false
 	}
 
-	return func(p string) string {
-		if real, ok := pather.RealPath(p); ok {
-			return real
-		}
-
-		return p
-	}, true
+	// Passed through rather than wrapped. An earlier version collapsed this to
+	// func(string) string, mapping "no real path" onto "use the path as given"
+	// — which then cost two Stat calls in isReallyOnDisk to rediscover what the
+	// filesystem had already said. A filesystem can have real paths for some
+	// names and not others, and it needs to be able to say so.
+	return pather.RealPath, true
 }
 
 // fsnotifyWatcher uses operating-system notification, falling back to polling
@@ -97,9 +96,46 @@ type fsnotifyWatcher struct {
 	// fs is the filesystem the caller's paths are expressed in, used to confirm
 	// that a resolved path really is the same file.
 	fs FS
-	// resolve translates a path into the one the operating system knows.
-	resolve  func(string) string
+	// resolve translates a path into the one the operating system knows,
+	// reporting false when this filesystem has none for that name.
+	resolve  func(string) (string, bool)
 	fallback Watcher
+}
+
+// register points the watcher at every path it can, returning how many it took
+// and which it could not.
+//
+// Paths the operating system cannot watch are collected rather than dropped. A
+// configured file that does not exist yet is the ordinary case — the overlay a
+// user gets the first time they change a setting — and reporting success while
+// silently never watching it is the failure this design exists to prevent.
+func (w *fsnotifyWatcher) register(watcher *fsnotify.Watcher, paths []string) (int, []string) {
+	watched := 0
+
+	var unwatchable []string
+
+	for _, p := range paths {
+		real, hasReal := w.resolve(p)
+
+		// A filesystem saying it has no real path for this name is answered
+		// without touching the disk; isReallyOnDisk would spend two Stat calls
+		// reaching the same conclusion.
+		if !hasReal || !w.isReallyOnDisk(p, real) {
+			unwatchable = append(unwatchable, p)
+
+			continue
+		}
+
+		if err := watcher.Add(real); err != nil {
+			unwatchable = append(unwatchable, p)
+
+			continue
+		}
+
+		watched++
+	}
+
+	return watched, unwatchable
 }
 
 // isReallyOnDisk reports whether a path seen through the filesystem is the same
@@ -133,32 +169,7 @@ func (w *fsnotifyWatcher) Watch(ctx context.Context, paths []string, onChange fu
 		return w.fallback.Watch(ctx, paths, onChange)
 	}
 
-	watched := 0
-
-	// Paths the operating system cannot watch are collected rather than
-	// dropped. A configured file that does not exist yet is the ordinary case —
-	// the overlay a user gets the first time they change a setting — and
-	// reporting success while silently never watching it is the failure this
-	// design exists to prevent.
-	var unwatchable []string
-
-	for _, p := range paths {
-		real := w.resolve(p)
-
-		if !w.isReallyOnDisk(p, real) {
-			unwatchable = append(unwatchable, p)
-
-			continue
-		}
-
-		if err := watcher.Add(real); err != nil {
-			unwatchable = append(unwatchable, p)
-
-			continue
-		}
-
-		watched++
-	}
+	watched, unwatchable := w.register(watcher, paths)
 
 	if watched == 0 {
 		// Nothing could be watched — the paths may not exist yet. Polling

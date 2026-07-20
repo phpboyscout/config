@@ -121,8 +121,18 @@ func (osFS) Readlink(name string) (string, error) { return os.Readlink(name) }
 // reading configuration from a directory the user named gets that containment
 // without asking for it.
 //
-// The returned FS holds an open handle to the directory, so the root survives
-// being renamed underneath it.
+// The root is opened per operation rather than held open. An earlier version
+// kept the handle for the FS's lifetime, which read as a feature — the root
+// survived being renamed underneath it — and was a file-descriptor leak: FS has
+// no Close, nothing in the module closes a filesystem, and a caller that builds
+// one per unit of work accumulates descriptors until the process ends. Measured
+// at a default 1024-descriptor limit it failed after 1021 calls, and at the 256
+// typical of macOS after 253 — which the documented testing pattern of
+// config.Dir(t.TempDir()) per test would reach in a large suite.
+//
+// The cost is one extra openat per operation. Configuration is read at startup,
+// on reload and on write, so that is not a hot path; a leak that surfaces only
+// at scale is the worse trade.
 //
 // **Paths are relative to the root.** Pass "config.yaml", not
 // "/etc/app/config.yaml" — an absolute path is treated as an attempt to escape
@@ -131,38 +141,101 @@ func (osFS) Readlink(name string) (string, error) { return os.Readlink(name) }
 // normal and anything else as fatal, so an absolute path turns a file that is
 // merely absent into a hard failure.
 func Dir(path string) (FS, error) {
+	// Opened and closed immediately, so a path that is not a usable directory
+	// fails here rather than at the first read.
 	root, err := os.OpenRoot(path)
 	if err != nil {
 		return nil, err
 	}
 
-	return rootFS{root: root}, nil
+	if err := root.Close(); err != nil {
+		return nil, err
+	}
+
+	return rootFS{path: path}, nil
 }
 
 // rootFS confines every operation to one directory tree.
-type rootFS struct{ root *os.Root }
+//
+// It holds the path rather than an open handle; see [Dir] for why.
+type rootFS struct{ path string }
 
-func (r rootFS) ReadFile(name string) ([]byte, error) { return r.root.ReadFile(name) }
+// with opens the root, runs fn against it, and closes it again.
+//
+// Every method goes through here, so there is exactly one place a descriptor is
+// acquired and exactly one place it is released.
+func (r rootFS) with(fn func(*os.Root) error) error {
+	root, err := os.OpenRoot(r.path)
+	if err != nil {
+		return err
+	}
 
-func (r rootFS) WriteFile(name string, data []byte, perm fs.FileMode) error {
-	return r.root.WriteFile(name, data, perm)
+	defer func() { _ = root.Close() }()
+
+	return fn(root)
 }
 
-func (r rootFS) Stat(name string) (fs.FileInfo, error) { return r.root.Stat(name) }
+func (r rootFS) ReadFile(name string) ([]byte, error) {
+	var out []byte
 
-func (r rootFS) Rename(oldpath, newpath string) error { return r.root.Rename(oldpath, newpath) }
+	err := r.with(func(root *os.Root) error {
+		var readErr error
 
-func (r rootFS) Remove(name string) error { return r.root.Remove(name) }
+		out, readErr = root.ReadFile(name)
+
+		return readErr
+	})
+
+	return out, err
+}
+
+func (r rootFS) WriteFile(name string, data []byte, perm fs.FileMode) error {
+	return r.with(func(root *os.Root) error { return root.WriteFile(name, data, perm) })
+}
+
+func (r rootFS) Stat(name string) (fs.FileInfo, error) {
+	var out fs.FileInfo
+
+	err := r.with(func(root *os.Root) error {
+		var statErr error
+
+		out, statErr = root.Stat(name)
+
+		return statErr
+	})
+
+	return out, err
+}
+
+func (r rootFS) Rename(oldpath, newpath string) error {
+	return r.with(func(root *os.Root) error { return root.Rename(oldpath, newpath) })
+}
+
+func (r rootFS) Remove(name string) error {
+	return r.with(func(root *os.Root) error { return root.Remove(name) })
+}
 
 func (r rootFS) MkdirAll(path string, perm fs.FileMode) error {
-	return r.root.MkdirAll(path, perm)
+	return r.with(func(root *os.Root) error { return root.MkdirAll(path, perm) })
 }
 
 // RealPath joins the name onto the root's own path. Safe to do without
 // re-checking containment, because every operation that uses the result has
 // already been refused by os.Root if it escaped.
 func (r rootFS) RealPath(name string) (string, bool) {
-	return filepath.Join(r.root.Name(), name), true
+	return filepath.Join(r.path, name), true
 }
 
-func (r rootFS) Readlink(name string) (string, error) { return r.root.Readlink(name) }
+func (r rootFS) Readlink(name string) (string, error) {
+	var out string
+
+	err := r.with(func(root *os.Root) error {
+		var linkErr error
+
+		out, linkErr = root.Readlink(name)
+
+		return linkErr
+	})
+
+	return out, err
+}
