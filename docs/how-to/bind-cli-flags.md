@@ -61,6 +61,13 @@ store, err := config.NewStore(ctx,
 `BindFlag` takes the flag name **without** its leading dashes. Flags you do not mention
 still contribute under the derived key; `BindFlag` is an override, not an allow-list.
 
+To keep a flag out of configuration altogether — an operational switch like `--verbose`
+or `--output` that is nobody's setting — bind it to the empty key:
+
+```go
+config.BindFlag("output", "")   // parsed as a flag, never a configuration value
+```
+
 Avoid dots inside flag names. A flag literally named `--a.b` maps verbatim to the key
 `a.b`, which is rarely what anyone intends and is impossible to tell apart from the
 derived form afterwards. Configuration keys are lower-cased, so a flag name that differs
@@ -90,9 +97,14 @@ The flag layer contributes each changed flag's string form, whatever the flag's 
 For reading that is invisible: `GetInt`, `GetBool`, `GetDuration` and friends coerce, so
 `--port 9090` reads back as the integer `9090`.
 
+Repeatable flags are the exception, and deliberately so. A `StringSlice` flag renders as
+`[a,b]` in string form, and storing that would give one garbage value rather than the two
+the user passed — so slice flags contribute a list, and `--tag a --tag b` reads back
+through `GetStringSlice` as `["a", "b"]`.
+
 It is visible to **schema validation**, which checks the resolved value's actual type. A
 field declared `int` in a schema struct will fail its type check when the winning value
-came from a flag or an environment variable, because both layers hold strings:
+came from a scalar flag or an environment variable, because both hold strings:
 
 ```
 server.port: expected type int but got string (hint: ensure server.port has a value of type int)

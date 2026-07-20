@@ -23,8 +23,12 @@ if err != nil {
 
 fmt.Print(plan)
 // set server.port → /etc/app/prod.yaml
+// set server.name → /etc/app/prod.yaml (new key)
 // remove server.tls.cert → /etc/app/prod.yaml
 ```
+
+A line carries `(new key)` when the change creates a key rather than replacing one, and
+`— shadowed by <source>` when the write will land but not take effect.
 
 `Plan.String()` renders the plan for a `--dry-run` flag or a preview pane. The routing it
 shows is not an approximation of what `Apply` would do — it is the same routing pass,
@@ -74,7 +78,9 @@ settings screen saving fifty fields should make one `Apply` call, not fifty.
 The snapshot you get back is built **from the content just written**, not by re-reading
 the files afterwards. There is no window in which the configuration in memory disagrees
 with the configuration on disk, and no waiting on a watcher to notice. Observers are
-notified exactly once for the whole batch.
+notified exactly once for the whole batch — and not at all if the write left the
+resolved configuration exactly as it was. The file may still have been rewritten, but
+observers react to values, and none of them moved.
 
 `Set` and `Remove` are one type — `Change` — rather than two methods, because they route
 identically and often need to land together. Replacing a subtree by removing some keys and
@@ -101,7 +107,9 @@ read-only, `Apply` returns `ErrNoWritableLayer` rather than picking something ar
 You can override routing when you genuinely know better, by pinning a change to a layer:
 
 ```go
-target := config.Source{Kind: config.SourceFile, Name: "/etc/app/base.yaml", Writable: true}
+// Only Name and Document are matched, and only against layers that are already
+// writable — the other fields are ignored, so setting them proves nothing.
+target := config.Source{Name: "/etc/app/base.yaml"}
 
 change := config.Set("server.port", 9090)
 change.Target = &target
@@ -109,10 +117,12 @@ change.Target = &target
 plan, err := store.Plan(change)
 ```
 
-The target must match a real layer identity, including its `Document` index for a
-multi-document file. Reach for this sparingly: routing's default is right far more often
-than a hand-picked target, and pinning is how an edit ends up written somewhere nobody
-reads.
+The target must name a real, writable layer — and for a multi-document file, its
+`Document` index too, which is how you address the second document of one file. A name
+that matches nothing returns `ErrInvalidTarget` rather than falling back to routing.
+
+Reach for this sparingly: routing's default is right far more often than a hand-picked
+target, and pinning is how an edit ends up written somewhere nobody reads.
 
 ## "Written, but it still does not take effect"
 
@@ -176,28 +186,19 @@ is edited in place, so **comments stay attached to the keys they describe**, and
 order, quoting, block scalars, anchors, aliases and merge keys are preserved. Repeated
 writes converge rather than drifting.
 
-Be clear about the boundary of that promise. Guaranteed: the data structure, and comments
-staying with the correct keys. **Not** guaranteed: blank lines, indentation, comment
-alignment, the `---` marker on a single-document file, or byte-for-byte identity. Comment
-*style* is yours to choose; retention is what is promised, and normalising style on write —
-including flow to block — is within the contract.
+Blank lines, indentation, comment alignment and byte-for-byte identity are **not**
+guaranteed — comment *retention* is promised, comment *style* is yours. Two things follow
+that are worth knowing before they surprise you:
 
-Two consequences worth knowing before they surprise you:
+- **Some documents are refused at load**, with `ErrBackendUnsafe`, because they cannot be
+  round-tripped safely — a multi-line flow collection with interior comments is the one
+  you will meet. Reformat it onto one line, or move the comments out.
+- **Invisible characters are escaped on write.** Everything a reader can see survives
+  verbatim; bidirectional controls and zero-width characters become escapes, because they
+  make a document render one way and parse another.
 
-**Some documents are refused at load.** A multi-line flow collection with interior
-comments cannot be round-tripped safely — the closing delimiter is swallowed into the
-comment, producing YAML that no parser will accept. Rather than discover that at commit
-time, after you have made your edits, `NewStore` refuses such a source with
-`ErrBackendUnsafe`, naming the file and the offending construct. Reformat the collection
-onto one line, or move the comments out of it.
-
-**Invisible characters are escaped on write.** Every character a reader can see survives
-verbatim — emoji, CJK, accented Latin, Greek, Cyrillic. Bidirectional controls and the
-invisible-space family (zero-width space, word joiner, soft hyphen and friends) are
-emitted as escapes instead. This is deliberate: those characters make a document render
-one way and parse another, which is the Trojan Source construct (CVE-2021-42574), and a
-config file is exactly where that matters. The escaping is lossless — decoding returns the
-original string byte for byte — but the file will look different from what you fed it.
+The full contract, and the reasoning behind both, is in
+[what survives a write](../explanation/write-fidelity.md).
 
 ## Setting a map replaces the whole subtree
 
@@ -216,11 +217,8 @@ deliberate — deep-merging would make "this subtree is now exactly this" inexpr
 that is precisely what a consumer replacing a catalogue needs.
 
 **It is a sharp edge.** By supplying a map you assert ownership of that subtree and accept
-that comments, anchors and block styles *within* it may not survive. The library does not
-guess your intent. A real example from the toolkit: a `themes:` subtree carrying two
-anchors, eight aliases, eighteen comment lines and nine block scalars becomes, after a
-naive whole-subtree replace, six literal expanded copies of what was a deliberately DRY
-structure.
+that comments, anchors and block styles *within* it may not survive — see
+[why replacing a map is different](../explanation/write-fidelity.md#why-replacing-a-map-is-different).
 
 If you know what changed, say so precisely. Diff your before and after, and issue targeted
 `Set` and `Remove` calls for the differences. `Remove` is what makes that possible, and it
@@ -287,8 +285,8 @@ A rejected write modifies nothing. The failure wraps `ErrInvalidConfig`.
 
 ## Never write from inside an observer
 
-`Apply` and `Reload` return `ErrWriteFromObserver` when called from within an observer
-callback. This is refused outright rather than made to work: each such write is itself a
+`Apply`, `Reload` and `AddLayer` return `ErrWriteFromObserver` when called from within
+an observer callback. This is refused outright rather than made to work: each such write is itself a
 change, which notifies, which runs the observer again — a cascade with no natural end.
 
 If an observer needs to change configuration, take the write *out* of the observation:
@@ -325,6 +323,7 @@ Match with `errors.Is`.
 | `ErrNotWritable` | a change was routed at a backend that cannot persist |
 | `ErrNoChanges` | `Apply` or `Plan` was called with nothing to do |
 | `ErrInvalidPath` | the dotted path is malformed |
+| `ErrInvalidTarget` | a pinned target names no writable layer, or a new file was pinned to a document other than the first |
 | `ErrInvalidConfig` | the change would make the resolved configuration invalid |
 | `ErrBackendUnsafe` | a source contains a construct that cannot be safely round-tripped |
 | `ErrWriteFromObserver` | a write was attempted from inside an observer callback |
@@ -337,6 +336,7 @@ left guessing, and neither should the user be.
 
 ## Related
 
+- [What survives a write](../explanation/write-fidelity.md) — the fidelity contract in full
 - [Provenance](../explanation/provenance.md) — who supplied a value and what shadows it
 - [The Store](../explanation/the-store.md) — why one component owns config I/O
 - [Hot-reload](hot-reload.md) — reacting to changes made outside this process

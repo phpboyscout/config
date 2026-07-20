@@ -24,6 +24,12 @@
 // if a reload lands midway; [Store.With] pins a single snapshot across a block
 // of reads when several values must agree with each other.
 //
+// There is a named accessor for the common types — [View.GetString],
+// [View.GetInt] and the rest — and [Value] for everything else: it reads any
+// type at all, including a consumer's own, so [Reader] does not have to grow a
+// method per type. Durations, IP addresses, URLs, timezones and anything
+// implementing encoding.TextUnmarshaler decode from their ordinary written form.
+//
 // # Writing
 //
 // [Store.Apply] persists changes, and [Store.Plan] shows what it would do

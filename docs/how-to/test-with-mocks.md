@@ -15,6 +15,12 @@ return values without building a real configuration file. The module ships gener
 | `MockBinder` | `config.Binder` | testing a typed section without a real `Store` |
 | `MockBackend` | `config.Backend` | testing a component that consumes a custom source |
 | `MockWritableBackend` | `config.WritableBackend` | as above, for one that can persist |
+| `MockWatchableBackend` | `config.WatchableBackend` | as above, for one that reports its own changes |
+
+`config.Watcher` is deliberately **not** mocked. It is a one-method interface, and a
+test usually wants to hold the trigger rather than script a return value — write the
+four-line stub shown in
+[testing reload behaviour](hot-reload.md#testing-reload-behaviour).
 
 Each has a `NewMockX(t)` constructor that registers cleanup asserting every
 expectation was met, so a read your code was supposed to perform and did not fails the
@@ -28,6 +34,15 @@ func NewServer(cfg config.Reader) *Server {
 	return &Server{addr: cfg.GetString("server.host"), port: cfg.GetInt("server.port")}
 }
 ```
+
+!!! tip "Do not hand-write a `Reader`"
+    `Reader` is broad — thirty methods, covering every accessor, provenance and both
+    unmarshal entry points — and it grows as typed accessors are added. A hand-written
+    fake has to be updated every time, for no benefit. Use `mocks.MockReader`, or a real
+    store over an in-memory filesystem.
+
+    If your component only needs two values, the better fix is to take those two values
+    rather than a `Reader` at all.
 
 `*config.View` satisfies `config.Reader`, so the wiring passes `store.View()` and the
 test passes a mock.
@@ -58,6 +73,22 @@ func TestNewServer(t *testing.T) {
 Reach for this when the *keys read* are the thing under test. It is the only way to
 assert that a component reads `server.host` and nothing else, which is a genuine
 regression risk when someone adds a stray lookup.
+
+### Mocking a `config.Value[T]` read
+
+`Value[T]` is a function over `Reader`, and it reads through `UnmarshalKey` — so that is
+what to expect, writing the result through the pointer it is handed:
+
+```go
+cfg.EXPECT().UnmarshalKey("log.level", mock.Anything).
+	Run(func(_ string, target any) {
+		*(target.(*Severity)) = Debug
+	}).
+	Return(nil)
+```
+
+If the keys read are not what your test is about, a real store over an in-memory file is
+less work than this — see [when you want real behaviour](#when-you-want-real-behaviour).
 
 ## Test an observer's logic
 

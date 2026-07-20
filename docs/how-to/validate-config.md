@@ -28,11 +28,21 @@ type AppConfig struct {
 | Tag | Effect |
 |---|---|
 | `config:"a.b"` | maps the field to a dot-separated configuration key |
-| `validate:"required"` | fails when the key is absent **or zero-valued** |
+| `validate:"required"` | fails when the key is **absent** — see below |
 | `enum:"a,b,c"` | fails when the value is not one of the listed values |
 | `default:"x"` | **appears in documentation and error hints — does not set the value** |
 | `description:"…"` | human-readable description carried on the field schema |
 | `config:"-"` | skips the field entirely |
+
+!!! info "`required` means present, not non-zero"
+    A `bool` set to `false` and an `int` set to `0` are configured values, and
+    `required` accepts both. Judging by zero-ness would reject an operator who
+    deliberately turned a feature off, telling them the setting was missing.
+
+    Strings are the one exception: a required string that is present but empty fails,
+    because YAML writes an absent value as the empty string and the two cannot be told
+    apart here. If you need a non-zero number, express that as a check of your own
+    rather than as `required` — see [validate your own slice](#validate-your-own-slice-not-the-world).
 
 A nested struct without a `config` tag is walked, and its lower-cased field name becomes a
 key prefix for any child tag that contains no dot of its own. So `Server.Port` tagged

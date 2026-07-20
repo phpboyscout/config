@@ -39,8 +39,12 @@ if !section.Exists {
 `Section[T]` is a small value type: `Value T` and `Exists bool`.
 
 !!! note "Which struct tag?"
-    Section decoding reads **`mapstructure:`**, falling back to **`json:`** then
-    **`yaml:`** if absent. The [validation](validate-config.md) path is a *separate*
+    Section decoding treats **`mapstructure:`** as canonical, and accepts **`yaml:`**
+    and **`json:`** as aliases — a value spelled under any of the three resolves, with
+    `yaml` consulted before `json`. An untagged field matches its own name. Embedded
+    structs are flattened, and `,squash` / `,inline` do what they do elsewhere.
+
+    The [validation](validate-config.md) path is a *separate*
     mechanism that reads **`config:`** (plus `validate:` / `enum:` / `default:`). A
     struct can carry both sets of tags.
 
@@ -64,6 +68,18 @@ snapshot, **preserves the last valid snapshot if a reload cannot be decoded or
 validated**, and optionally invokes an apply callback when the section actually
 changed.
 
+!!! warning "Register `OnObserverError` or those failures are silent"
+    When a reload cannot be decoded or validated, the binding keeps the last good
+    section and returns the error from its observer — which goes to
+    `store.OnObserverError`. Without a handler registered there, a section that has
+    quietly stopped tracking the file looks exactly like one that has not changed.
+
+    ```go
+    store.OnObserverError(func(err error) {
+        log.Printf("config: section did not update: %v", err)
+    })
+    ```
+
 Its first argument is a `config.Binder` — anything with a `View() *View` and an
 `AddObserverFunc`. A `*Store` is one, and so is a stub you write for a test:
 
@@ -84,12 +100,48 @@ if err != nil {
 }
 ```
 
+### Configure your component at startup too
+
+The apply callback fires on **change**, not on binding. Nothing calls it for the section
+the store already had, so the recipe above configures `server` on every later reload and
+never on the first one.
+
+That is deliberate: `ObserveSection` usually runs while the thing being configured is
+still being built, and firing then would run your callback against a half-constructed
+world. You say when your dependencies exist:
+
+```go
+settings, err := config.ObserveSection[Server](store, "server",
+	config.WithSectionApply(func(change config.SectionChange[Server]) error {
+		return server.Reconfigure(&change.Current.Value)
+	}),
+)
+if err != nil {
+	return err
+}
+
+server := newServer(deps...)
+
+// Everything the callback needs now exists, so deliver the initial section.
+if err := settings.ApplyInitial(); err != nil {
+	return err
+}
+```
+
+`ApplyInitial` hands the callback the current section with `Initial: true` and
+`Previous: nil`. Calling it twice is a no-op, so it is safe in a startup path that may
+run more than once, and it does nothing if a reload already beat it — you never get an
+older section delivered after a newer one.
+
+If your callback does not care which delivery it is handling, ignore `Initial` and
+reconfigure the same way each time. That is usually the right shape.
+
 `ObservedSection[T]` reads (safe from any goroutine):
 
 | Method | Returns |
 |---|---|
 | `Value() T` | the current value (a copy) — **a method here**, unlike `Section[T].Value` |
-| `Current() *T` | pointer to the current snapshot; when the section is absent it points at the zero value (or your defaults), not nil |
+| `Current() *T` | pointer to the current snapshot; for anything `ObserveSection` returns this is non-nil even when the section is absent, pointing at the zero value or your defaults |
 | `Exists() bool` | whether the latest snapshot came from an explicit section |
 | `Version() uint64` | starts at 1 after the initial decode, and bumps **only** when the typed section actually changed |
 

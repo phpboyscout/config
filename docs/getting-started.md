@@ -328,6 +328,8 @@ You now have the whole shape of the module. The how-to guides go deeper on each 
 
 - **[Load & merge configuration](how-to/load-and-merge.md)** — multiple files, embedded
   defaults, CLI flags, and the full precedence chain.
+- **[Read configuration values](how-to/read-values.md)** — the full read surface: typed
+  accessors, the generic `config.Value[T]`, scoped views and struct decoding.
 - **[Write configuration](how-to/write-config.md)** — routing, conflicts, batching, and
   the sharp edge of setting a whole map.
 - **[Use typed sections](how-to/typed-sections.md)** — decode a subtree onto your own

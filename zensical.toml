@@ -6,6 +6,7 @@ nav = [
   { Tutorial = [ { "Getting started" = "getting-started.md" } ] },
   { "How-to guides" = [
     { "Load & merge configuration" = "how-to/load-and-merge.md" },
+    { "Read configuration values" = "how-to/read-values.md" },
     { "Write configuration" = "how-to/write-config.md" },
     { "Use typed sections" = "how-to/typed-sections.md" },
     { "React to changes with hot-reload" = "how-to/hot-reload.md" },
@@ -17,6 +18,7 @@ nav = [
     { "The Store" = "explanation/the-store.md" },
     { "Precedence & merge model" = "explanation/precedence-and-merge.md" },
     { "Provenance" = "explanation/provenance.md" },
+    { "What survives a write" = "explanation/write-fidelity.md" },
     { "Backends & capabilities" = "explanation/backends.md" },
     { "Hot-reload safety" = "explanation/hot-reload-safety.md" },
   ] },

@@ -19,11 +19,14 @@ if err != nil {
 defer stop()
 ```
 
-Watching covers **file-backed sources only**. Environment variables and flags do not
-change under a running process, and an in-memory layer is changed by the code that
-owns it. A store with no file backends fails here with `ErrWatchUnavailable` rather
-than silently doing nothing: an application that believes it will hear about changes
-and never does is worse off than one that knows it must restart.
+Watching covers every source that can change on its own — which means files, and any
+backend of your own implementing `WatchableBackend`. Environment variables and flags
+do not change under a running process, and an in-memory layer is changed by the code
+that owns it, so none of those are watched.
+
+A store with nothing watchable fails here with `ErrWatchUnavailable` rather than
+silently doing nothing: an application that believes it will hear about changes and
+never does is worse off than one that knows it must restart.
 
 Native filesystem notification is used where it works, and polling everywhere else —
 `fsnotify` operates on real paths, so it cannot see an in-memory filesystem. Set the
@@ -48,6 +51,12 @@ if err := store.Reload(ctx); err != nil {
 Reloading is fail-closed. If any source fails to load or parse, the error is returned
 and the previous snapshot stands: a configuration that is partly the old values and
 partly the new is worse than either, and worse than refusing.
+
+That guarantee needs a previous snapshot to fall back to, so it applies to reloads and
+not to the first load. `NewStore` returns a usable store alongside `ErrInvalidConfig`
+when the initial configuration fails its schema — otherwise a bad file would leave you
+with no store, and no way to write the fix. See
+[an invalid configuration is still repairable](validate-config.md#an-invalid-configuration-is-still-repairable).
 
 ## Observe a change
 
@@ -249,6 +258,31 @@ assert.Equal(t, "second", store.View().GetString("value"))
 
 That gives a test with no sleeps and no polling. Keep `require.Eventually` for the
 handful of cases that genuinely exercise a real filesystem watcher.
+
+`WithWatcher` **replaces** the whole watch set rather than adding to it, and the paths
+it is handed are the file backends' — a custom backend's sources are not among them.
+Both are what you want in a test, where the point is to control exactly when a change
+is reported. Neither is what you want in production.
+
+## Watch a source of your own
+
+A backend is watched if it implements `WatchableBackend`, which is the whole of the
+contract:
+
+```go
+Watch(ctx context.Context, interval time.Duration, onChange func()) (stop func(), err error)
+```
+
+Call `onChange` when your sources *may* have changed — you are not expected to know
+whether anything that resolves actually moved, and deciding that is the store's job.
+It handles the rest: re-reading, merging, validating, and rejecting the result if it
+does not hold up, so a spurious `onChange` costs a read and nothing else.
+
+`interval` is the polling interval from `WithPollInterval`; ignore it if you have a
+real subscription. Return an error only if you cannot watch at all, and make the
+returned stop function safe to call twice.
+Register the backend with `WithBackend` as usual. See
+[Backends & capabilities](../explanation/backends.md).
 
 ## Related
 

@@ -128,6 +128,20 @@ without a trailing underscore:
 config.WithEnv("MYTOOL") // MYTOOL_SERVER_PORT → server.port
 ```
 
+A trailing underscore is trimmed for you, and the prefix is upper-cased. An **empty**
+prefix contributes nothing at all rather than swallowing the whole environment — so a
+prefix accidentally read from an unset variable disables the layer instead of opening
+it up.
+
+In tests, read the environment from a function instead of the process, so parallel
+tests cannot interfere with each other through global state:
+
+```go
+config.WithEnv("MYTOOL", config.WithEnviron(func() []string {
+	return []string{"MYTOOL_SERVER_PORT=9090"}
+}))
+```
+
 Mapping a variable name back to a dotted key is genuinely ambiguous —
 `MYTOOL_SERVER_PORT` could mean `server.port` or `server_port` — so the name is
 resolved against the keys the layers beneath already define, which is nearly always
@@ -232,6 +246,7 @@ kept indefinitely and would quietly serve values that grew arbitrarily old.
 
 ## Related
 
+- [Read configuration values](read-values.md) — the accessors, `Value[T]` and `Sub`
 - [Use typed sections](typed-sections.md) — project a subtree onto your own struct
 - [React to changes with hot-reload](hot-reload.md)
 - [Validate configuration](validate-config.md)
