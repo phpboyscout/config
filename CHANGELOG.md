@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.4.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.4.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.3.1...v0.4.0)
+
+### Features
+
+- **validate**: accept a Reader in ValidateStruct rather than a *View ([efb698f](https://gitlab.com/phpboyscout/go/config/-/commit/efb698f26fa8fac1e387a7215ead2af3b71dad7e))
+
 ## [v0.3.1](https://gitlab.com/phpboyscout/go/config/-/releases/v0.3.1)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.3.0...v0.3.1)
