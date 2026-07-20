@@ -23,6 +23,15 @@ nav = [
     { "Backends & capabilities" = "explanation/backends.md" },
     { "Hot-reload safety" = "explanation/hot-reload-safety.md" },
   ] },
+  { Development = [
+    { "Development guide" = "development/index.md" },
+    { Testing = "development/testing.md" },
+    { "Feature specifications" = [
+      { Overview = "development/specs/index.md" },
+      { "Store architecture" = "development/specs/2026-07-19-store-architecture.md" },
+      { "Structure-preserving writes" = "development/specs/2026-07-18-structure-preserving-config-writes.md" },
+    ] },
+  ] },
   { About = [
     { "What it does, and why" = "about/features.md" },
     { History = "about/history.md" },
@@ -81,6 +90,13 @@ media = "(prefers-color-scheme: dark)"
 scheme = "slate"
 toggle.icon = "lucide/moon"
 toggle.name = "Switch to light mode"
+
+[project.extra.status]
+draft = "Draft"
+approved = "Approved"
+implemented = "Implemented"
+superseded = "Superseded"
+rejected = "Rejected"
 
 [[project.extra.social]]
 icon = "fontawesome/brands/gitlab"

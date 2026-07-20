@@ -229,7 +229,7 @@ Recommendation:
 
 ### Low: Historical specs contain stale API examples that need stronger signposting
 
-Location: `config` [docs/specs/2026-07-19-store-architecture.md](docs/specs/2026-07-19-store-architecture.md:392), [docs/specs/2026-07-19-store-architecture.md](docs/specs/2026-07-19-store-architecture.md:569), [docs/specs/2026-07-19-store-architecture.md](docs/specs/2026-07-19-store-architecture.md:798)
+Location: `config` [docs/development/specs/2026-07-19-store-architecture.md](docs/development/specs/2026-07-19-store-architecture.md:392), [docs/development/specs/2026-07-19-store-architecture.md](docs/development/specs/2026-07-19-store-architecture.md:569), [docs/development/specs/2026-07-19-store-architecture.md](docs/development/specs/2026-07-19-store-architecture.md:798)
 
 The current public guides are mostly aligned with the code, but the approved architecture spec intentionally preserves older decision text. Some sections still show `Containable`, `Container`, or "Viper resolves typed values" examples, with revision notes elsewhere explaining the newer state. That is valuable historically, but it is easy for a reader arriving from search to copy an obsolete API shape.
 
@@ -294,7 +294,7 @@ Suggested improvements:
 - Align `ValidateStruct` godoc with the current signature.
 - Add documentation for mixed-filesystem watch behavior once the implementation decision is made.
 - Add documentation for file mode behavior after the implementation is corrected: new file mode, existing file mode preservation, and rollback behavior.
-- Add a generated-doc or grep check that fails if removed public names appear outside `docs/specs/` and `docs/about/`.
+- Add a generated-doc or grep check that fails if removed public names appear outside `docs/development/specs/` and `docs/about/`.
 
 ### `yamldoc`
 
