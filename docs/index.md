@@ -279,7 +279,38 @@ A read-only Consul layer implements one interface. A backend with a real subscri
 implements `WatchableBackend` and gets push-based reload without polling anything. Nothing
 forces a source to pretend it can do something it cannot — which is the failure mode that
 makes a single `Backend` interface with stub methods so unpleasant to live with.
-→ [Backends & capabilities](explanation/backends.md)
+→ **[Write a custom backend](how-to/custom-backend.md)** · [Backends & capabilities](explanation/backends.md)
+
+## Validation on both sides, and repairable when it fails
+
+A `Schema` built from `config:` struct tags is checked against the **resolved**
+configuration rather than any single layer — a base file may legitimately omit a key its
+overlay supplies, and judging layers separately would reject a perfectly good setup.
+
+It runs at load, on every reload, and on every write. The write case is the interesting
+one, because the obvious rule is the wrong one:
+
+> `Apply` rejects only the violations **your change introduces**. Violations that were
+> already there do not block the write, and are reported separately as pre-existing.
+
+```
+config: configuration is not valid: this change would make the configuration invalid:
+  log.level: value "verbose" is not allowed (hint: allowed values: debug, info, warn, error)
+
+the configuration was already invalid before this change, and these are unaffected by it:
+  server.port: expected type int but got string (hint: ensure server.port has a value of type int)
+```
+
+Validating the result outright would lock an already-broken configuration against edits —
+including the edit that would fix it. Suppressing the pre-existing violations would hide
+from the user that their file is broken in ways their change did not cause. Reporting them
+without the disclaimer would send someone off debugging a change that was fine.
+
+The same reasoning runs through `NewStore`, which hands back a usable store alongside
+`ErrInvalidConfig` so a configuration that fails validation can still be repaired through
+the surface designed to repair it. A configuration tool that cannot open a broken
+configuration is of no use precisely when it is needed.
+→ [Validate configuration](how-to/validate-config.md)
 
 ## At a glance
 
@@ -357,6 +388,8 @@ then understand.
   reacting to foreign changes.
 - :material-shield-check: **[Validate](how-to/validate-config.md)** — `Schema` and
   `ValidateStruct[T]` from `config:` struct tags.
+- :material-puzzle: **[Write a custom backend](how-to/custom-backend.md)** — make Consul,
+  a secrets manager or an HTTP endpoint an ordinary layer.
 - :material-test-tube: **[Test with the mocks](how-to/test-with-mocks.md)** —
   `MockReader`, `MockBinder` and `MockObserved` in your tests.
 - :material-lightbulb-on: **[The Store](explanation/the-store.md)** — why one component

@@ -54,17 +54,21 @@ func (s Source) String() string {
 		}
 
 		return s.Name
-	case SourceEnv, SourceFlag, SourceDefault, SourceOverride:
+	default:
 		// Named, because a caller asking where a value came from needs to know
-		// which variable, flag, set of defaults or runtime layer supplied it,
-		// not merely that it was one of them.
+		// which variable, flag, set of defaults, runtime layer or remote key
+		// supplied it, not merely that it was one of them.
+		//
+		// Deliberately the default arm rather than a list of known kinds. A
+		// backend defined outside this package brings its own kind, and listing
+		// kinds meant those sources rendered as the bare kind with their name
+		// dropped — so provenance, the one thing this module exists to answer,
+		// was least useful for exactly the sources it knows least about.
 		if s.Name == "" {
 			return string(s.Kind)
 		}
 
 		return string(s.Kind) + ":" + s.Name
-	default:
-		return string(s.Kind)
 	}
 }
 

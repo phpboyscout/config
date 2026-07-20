@@ -171,6 +171,51 @@ contribution out, because it can no longer tell which contribution was the envir
 and records provenance *during* the merge instead of reconstructing it afterwards. Changing
 `server.port` above changes `server.port`, and nothing else.
 
+## Any source can be a layer
+
+Layers are not limited to files and readers. `WithBackend` takes anything satisfying a
+three-method `Backend`, so a source this module has never heard of — Consul, a secrets
+manager, an HTTP endpoint, a database table, a device's NVRAM — becomes an ordinary layer:
+
+```go
+store, err := config.NewStore(ctx,
+	config.WithFiles(fsys, "/etc/app.yaml"),
+	config.WithBackend(consulBackend{client: c, prefix: "app/"}),  // ← outranks the file
+	config.WithEnv("APP"),
+)
+```
+
+It takes part in precedence, provenance and shadowing exactly as a file does, and `Explain`
+names it. Capability beyond reading is **opt-in through interfaces you may simply not
+implement**:
+
+| Implement | To get |
+|---|---|
+| `Backend` | reading, merging, precedence, provenance — the whole read surface |
+| `WritableBackend` | `Apply` can route writes to it |
+| `WatchableBackend` | it takes part in hot-reload, on its own schedule |
+
+A read-only Consul layer implements one interface. A backend with a real subscription
+implements `WatchableBackend` and gets push-based reload without polling anything. Nothing
+forces a source to pretend it can do something it cannot — which is what makes a single
+fat interface with stubbed methods so unpleasant to live with.
+See **[Write a custom backend](https://config.go.phpboyscout.uk/how-to/custom-backend/)**.
+
+## Validation on both sides, and repairable when it fails
+
+A `Schema` from `config:` struct tags is checked against the **resolved** configuration
+rather than any single layer — a base file may legitimately omit a key its overlay
+supplies. It runs at load, on every reload, and on every write, where the obvious rule is
+the wrong one:
+
+> `Apply` rejects only the violations **your change introduces**. Pre-existing violations
+> do not block the write, and are reported separately.
+
+Validating the result outright would lock an already-broken configuration against edits,
+including the edit that would fix it. `NewStore` follows the same reasoning, handing back a
+usable store alongside `ErrInvalidConfig` — a configuration tool that cannot open a broken
+configuration is of no use precisely when it is needed.
+
 ## Also in the box
 
 - **Typed sections + validation.** `ObservedSection[T]` keeps a struct current across
@@ -179,14 +224,9 @@ and records provenance *during* the merge instead of reconstructing it afterward
   whenever anything in the file did. `Schema` / `ValidateStruct[T]` check values against
   field rules on both reload and write. A package consuming settings declares a one-method
   interface over its own struct and never imports this one.
-- **Everything is a layer — including sources this module has never heard of.**
-  `WithBackend` takes any three-method `Backend`, so Consul, a secrets manager, an HTTP
-  endpoint or a database table becomes an ordinary layer: it takes part in precedence,
-  provenance and shadowing exactly as a file does, and `Explain` names it. Capability
-  beyond reading is opt-in through interfaces you may simply not implement —
-  `WritableBackend` to receive writes, `WatchableBackend` to take part in hot-reload with
-  its own subscription rather than polling. Nothing forces a source to pretend it can do
-  something it cannot.
+- **Everything is a layer.** Files, one document within a multi-document file, defaults,
+  environment, flags and runtime `AddLayer` sources all take part in precedence,
+  provenance and shadowing the same way, with no special case to remember.
 - **`Plan` is a dry run that cannot drift** from `Apply`, because it *is* the same routing
   pass rather than a second implementation of it.
 - **Published testify mocks** for downstream tests, and `afero` for the filesystem.

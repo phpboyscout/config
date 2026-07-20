@@ -12,6 +12,7 @@ nav = [
     { "React to changes with hot-reload" = "how-to/hot-reload.md" },
     { "Validate configuration" = "how-to/validate-config.md" },
     { "Bind CLI flags" = "how-to/bind-cli-flags.md" },
+    { "Write a custom backend" = "how-to/custom-backend.md" },
     { "Test with the config mocks" = "how-to/test-with-mocks.md" },
   ] },
   { Explanation = [
