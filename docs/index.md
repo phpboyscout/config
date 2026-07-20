@@ -312,6 +312,61 @@ the surface designed to repair it. A configuration tool that cannot open a broke
 configuration is of no use precisely when it is needed.
 → [Validate configuration](how-to/validate-config.md)
 
+## Quieter things that matter
+
+None of these will sell the module on their own. Together they are most of what living
+with it feels like.
+
+**Generics all the way through, not bolted on.** `Value[T]`, `UnmarshalSection[T]`,
+`ObserveSection[T]`, `ValidateStruct[T]`, `SchemaOf[T]`, `Section[T]`, `SectionChange[T]`
+— one consistent shape rather than a generic escape hatch beside a hand-written method per
+type. The practical consequence is future-proofing: a type this module has never seen needs
+no new API, no new accessor, and no release. It reads through the same `Value[T]` as
+everything else, and if it implements `encoding.TextUnmarshaler` it decodes without being
+special-cased anywhere.
+
+**A multi-document YAML file is several layers, one per document.** They take part in
+precedence and provenance independently, and `Explain` distinguishes them:
+
+```
+shared = from-second (from /app.yaml#1); also defined in /app.yaml
+```
+
+Worth calling out because the common alternative is worse than unsupported: viper reads the
+first document, silently discards the rest, and returns no error — so a key in your second
+document simply is not there.
+
+**Every failure is a named error you can branch on.** Seventeen sentinels — `ErrConflict`,
+`ErrNoWritableLayer`, `ErrBackendUnsafe`, `ErrAmbiguousEnvKey`, `ErrPartialCommit` and the
+rest — all matched with `errors.Is`, so handling a specific failure never means comparing
+strings. Validation failures go further and carry a **hint**:
+
+```
+server.port: expected type int but got string (hint: ensure server.port has a value of type int)
+```
+
+**Context on every operation that does I/O.** `NewStore`, `Reload`, `Apply`, `AddLayer`
+and `Watch` all take a `context.Context` and honour cancellation, so configuration work
+participates in your shutdown path instead of ignoring it.
+
+**A smaller dependency graph than the thing it replaces**, while doing more. Library
+dependencies only, no test-only packages:
+
+| | non-stdlib packages | distinct modules |
+|---|---|---|
+| viper 1.21.0 | 36 | 13 |
+| `config` | **26** | **10** |
+
+**Section defaults with your own merge function.** `WithSectionDefaults` takes both the
+defaults and the function that combines them with what was configured, so "merge" means
+what your type needs rather than what a library guessed. `WithSectionEqual` does the same
+for change detection.
+
+**`Snapshot.Version()`** is a monotonic counter, so a component can tell whether the
+configuration it is holding has moved on without comparing values. **`Sub`** scopes a view
+to a subtree for a component that should not see the rest, and **`With`** pins one snapshot
+across a block of reads.
+
 ## At a glance
 
 ```go

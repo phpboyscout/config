@@ -6,14 +6,24 @@ import (
 	"testing"
 )
 
-// TestDependencyFootprint is this module's statement of "framework-free — with one
-// deliberate exception". Every OTHER module in the phpboyscout Go toolkit forbids the
-// Viper stack in its dependency graph; go/config is the module that exception was
-// written for. It *is* the Viper wrapper, so its guard makes NO assertion about
-// viper/afero/pflag/cast/fsnotify/mapstructure/gotenv — those are intrinsic. What it
-// does forbid is the rest: go-tool-base itself, Cobra, the TUI stack, OpenTelemetry,
-// and cloud SDKs. testify/objx (pulled by the published configmock package) are
-// permitted test-assertion dependencies and are likewise not listed.
+// TestDependencyFootprint is this module's statement of "framework-free".
+//
+// The comment this replaces described go/config as "the Viper wrapper", and
+// exempted the Viper stack from the guard on the grounds that it was
+// intrinsic. That stopped being true when the Store replaced the container:
+// viper is gone, and what remains — afero, pflag, cast, fsnotify, mapstructure
+// — is depended on directly and deliberately rather than inherited.
+//
+// What is forbidden is the rest: go-tool-base itself, Cobra, the TUI stack,
+// OpenTelemetry, and cloud SDKs. A configuration module that drags a CLI
+// framework or a cloud SDK into every consumer's graph has stopped being a
+// library. testify and godog are test-only and are likewise not listed.
+//
+// For the record, and checked when this was written: the library graph is 26
+// non-stdlib packages across 10 modules, against viper 1.21.0's 36 across 13.
+// The numbers are not asserted here — they move with upstream and a test that
+// fails when someone else adds a package is noise — but they are the reason
+// this guard is worth keeping.
 func TestDependencyFootprint(t *testing.T) {
 	t.Parallel()
 
@@ -23,6 +33,7 @@ func TestDependencyFootprint(t *testing.T) {
 	}
 
 	forbidden := []string{
+		"github.com/spf13/viper",
 		"gitlab.com/phpboyscout/go-tool-base",
 		"github.com/spf13/cobra",
 		"github.com/charmbracelet",

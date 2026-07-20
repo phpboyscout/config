@@ -216,19 +216,41 @@ including the edit that would fix it. `NewStore` follows the same reasoning, han
 usable store alongside `ErrInvalidConfig` — a configuration tool that cannot open a broken
 configuration is of no use precisely when it is needed.
 
-## Also in the box
+## Quieter things that matter
 
+None of these sells the module on its own. Together they are most of what living with it
+feels like.
+
+- **Generics all the way through, not bolted on.** `Value[T]`, `UnmarshalSection[T]`,
+  `ObserveSection[T]`, `ValidateStruct[T]`, `SchemaOf[T]` — one consistent shape rather
+  than a generic escape hatch beside a hand-written method per type. A type this module has
+  never seen needs no new API and no release: it reads through the same `Value[T]`, and if
+  it implements `encoding.TextUnmarshaler` it decodes without being special-cased.
+- **A multi-document YAML file is several layers**, one per document, each taking part in
+  precedence and provenance independently — `Explain` reports `/app.yaml#1`. The common
+  alternative is worse than unsupported: viper reads the first document, silently discards
+  the rest, and returns no error.
+- **Every failure is a named error you can branch on** — seventeen sentinels matched with
+  `errors.Is`, so handling a specific failure never means comparing strings. Validation
+  errors carry a fix hint alongside the message.
+- **Context on every operation that does I/O**, so configuration work participates in your
+  shutdown path instead of ignoring it.
+- **A smaller dependency graph than the thing it replaces**, while doing more — 26
+  non-stdlib packages across 10 modules, against viper's 36 across 13 (library only, no
+  test dependencies).
 - **Typed sections + validation.** `ObservedSection[T]` keeps a struct current across
   reloads — decoded in one operation, so it never holds some fields from before a reload
-  and some from after, and republished only when the struct actually changed rather than
-  whenever anything in the file did. `Schema` / `ValidateStruct[T]` check values against
-  field rules on both reload and write. A package consuming settings declares a one-method
-  interface over its own struct and never imports this one.
+  and some from after, and republished only when the struct actually changed. Defaults take
+  *your* merge function, so "merge" means what your type needs. `Schema` /
+  `ValidateStruct[T]` check field rules on both reload and write.
 - **Everything is a layer.** Files, one document within a multi-document file, defaults,
-  environment, flags and runtime `AddLayer` sources all take part in precedence,
-  provenance and shadowing the same way, with no special case to remember.
+  environment, flags and runtime `AddLayer` sources all take part in precedence, provenance
+  and shadowing the same way.
+- **`Snapshot.Version()`** tells a component whether the configuration it holds has moved
+  on without comparing values; **`Sub`** scopes a view to a subtree; **`With`** pins one
+  snapshot across a block of reads.
 - **`Plan` is a dry run that cannot drift** from `Apply`, because it *is* the same routing
-  pass rather than a second implementation of it.
+  pass rather than a second implementation.
 - **Published testify mocks** for downstream tests, and `afero` for the filesystem.
 
 ## Should you use this?
