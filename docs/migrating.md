@@ -409,7 +409,19 @@ persisted, that is `AddLayer`.
 The semantics are unchanged. What changed is the first parameter: `ObserveSection` now
 takes a `Binder`, which is anything with `View() *View` and
 `AddObserverFunc(func(Observed) error)`. `*Store` satisfies it, so at the call site this is
-usually just passing the store instead of the container.
+usually just passing the store instead of the container — and the closures passed to
+`WithSectionDefaultFunc` and friends take a `config.Observed` where they took a
+`config.Containable`.
+
+!!! note "`ApplyInitial` is new capability, not a required fix"
+    The apply callback fires on change and not on binding — and that was true in v0.2.x
+    too, where `apply` was likewise only reachable from inside the registered observer. If
+    your bindings already work, this step does not break them, and you need no
+    `ApplyInitial` call to preserve current behaviour.
+
+    Add it only if you *want* the callback to run once at startup, which v0.2.x could not
+    do at all. See
+    [configure your component at startup](how-to/typed-sections.md#configure-your-component-at-startup-too).
 
 Before:
 
@@ -458,10 +470,23 @@ test satisfies the interface without dragging in the machinery that loads one, a
 
 ## Step 7 — watching
 
-Watching is explicit now, and it fails loudly when it cannot work. The old container
-started an fsnotify watcher during construction, which silently did nothing on a filesystem
-the operating system could not see — so hot reload was quietly dead in exactly the tests and
-virtual-worktree tools that most needed it.
+!!! danger "If you do not add a `Watch` call, hot-reload silently stops working"
+    This is the one migration step with no compiler error and no runtime error to tell you
+    it was missed. v0.2.x started a watcher **during construction** — `watchConfig` ran from
+    every constructor — so consumers got hot-reload without asking and without a call site
+    to port.
+
+    There is nothing to rename here. There is a call to *add*, and if you skip it the code
+    compiles, the tests pass, and configuration simply stops reloading.
+
+    Search your codebase for anything that assumed reload: `ObserveSection`, an observer, or
+    a component re-reading configuration. If any of it exists, you need `Watch`.
+
+Watching is explicit now, and it fails loudly when it cannot work. The old container's
+implicit watcher silently did nothing on a filesystem the operating system could not see —
+so hot reload was quietly dead in exactly the tests and virtual-worktree tools that most
+needed it. Explicit is the fix for both problems: you can see the call, and it tells you
+when it cannot do its job.
 
 ```go
 stop, err := store.Watch(ctx)
@@ -476,6 +501,9 @@ Pass `WithPollInterval(d)` to tune polling, or `WithWatcher(w)` to drive change 
 deterministically in tests. `NewWatcher` picks native notification where it works and
 polling everywhere else. `Store.Close()` does not exist; the returned `stop` is the whole
 lifecycle.
+
+`WithReloadDebounce` becomes `WithSettleInterval`, and moves from construction to `Watch`
+— it only ever applied to foreign changes, and now sits where those are handled.
 
 ## What you gain
 
