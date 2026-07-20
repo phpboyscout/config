@@ -61,6 +61,36 @@ rather than a fixed ranking you cannot change; `Value[T]` reads any type includi
 configuration-dependent tests run in parallel without touching process state; and the
 environment prefix is required as a security control.
 
+## Reacting to change: told once, told in order, told the truth
+
+The usual shape for hot-reload is a callback handed a **filesystem event** — which says a
+file was touched, not what changed, not whether the result was usable, and not whether it
+is still current by the time you read it. An observer here is handed a **configuration**,
+and the guarantees around that delivery are the point:
+
+| Guarantee | What it means |
+|---|---|
+| **Exactly once per logical change** | One `Apply` touching four keys across three files is *one* notification — not four, not three, not once per filesystem event. |
+| **Never for a rejected change** | A file that will not parse, or fails your schema, notifies nobody; announcing it would be a lie. Rejections travel on `OnReloadError`. |
+| **Never for a change that changed nothing** | A write leaving the resolved configuration identical does not notify, even though the file was rewritten. |
+| **In order, always** | Observers are never handed an older snapshot after a newer one. Under concurrent writes a superseded snapshot is dropped, not delivered late. |
+| **Pinned for the whole callback** | One immutable snapshot per delivery, so an observer cannot read half of one configuration and half of the next. |
+| **One failure does not silence the rest** | Observer errors route to `OnObserverError`; the remaining observers still run. |
+| **No writing from inside an observer** | `ErrWriteFromObserver`, rather than a cascade with no natural end. |
+
+Ordering and exactly-once are structural — delivery is serialised and version-checked in
+one place — rather than something each observer must defend itself against. It cannot: by
+the time an older snapshot arrives, an observer has no way to know a newer one already did.
+
+For comparison, [viper](https://github.com/spf13/viper) v1.21.0 calls `OnConfigChange`
+with the `fsnotify.Event`, and its watch loop invokes the callback **after a failed re-read
+as well as a successful one** — the parse error goes to viper's internal logger and the
+callback is told "changed" regardless. It retains the last good values, which is right; but
+an observer that rebuilds a pool or reopens a listener whenever it is told something
+changed will do that work for a change that did not happen.
+
+All of the above is asserted in [`observer_contract_test.go`](observer_contract_test.go).
+
 ## Writing: where it gets genuinely hard
 
 Everything above is a better answer to a problem other libraries also address. This is one
@@ -125,8 +155,9 @@ and records provenance *during* the merge instead of reconstructing it afterward
 
 - **Typed sections + validation.** `ObservedSection[T]` keeps a struct current across
   reloads — decoded in one operation, so it never holds some fields from before a reload
-  and some from after — and `Schema` / `ValidateStruct[T]` check values against field
-  rules on both reload and write. A package consuming settings declares a one-method
+  and some from after, and republished only when the struct actually changed rather than
+  whenever anything in the file did. `Schema` / `ValidateStruct[T]` check values against
+  field rules on both reload and write. A package consuming settings declares a one-method
   interface over its own struct and never imports this one.
 - **Everything is a layer.** Files, one document within a multi-document file, defaults,
   environment, flags and runtime `AddLayer` sources all take part in precedence,

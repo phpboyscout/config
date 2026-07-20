@@ -78,6 +78,46 @@ Beyond that, the ordinary things done deliberately:
   `LOG_LEVEL` would reach every program running there. Ambiguous variable names are
   reported rather than resolved in map-iteration order.
 
+## Reacting to change: told once, told in order, told the truth
+
+The usual shape for hot-reload is a callback handed a **filesystem event**. That leaves
+every hard question to you: the event says a file was touched, not what changed, not
+whether the result was usable, and not whether it is still current by the time you read
+it. You are expected to re-read from live state — which may already have moved on again.
+
+An observer here is handed a **configuration**, not an event, and the guarantees around
+that delivery are the point:
+
+| Guarantee | What it means |
+|---|---|
+| **Exactly once per logical change** | One `Apply` touching four keys across three files is *one* notification, not four or three. Not once per filesystem event. |
+| **Never for a change that was rejected** | A file that will not parse, or fails your schema, notifies nobody. Announcing it would be a lie: the values did not move. Rejections travel on `OnReloadError` instead. |
+| **Never for a change that changed nothing** | A write that leaves the resolved configuration identical does not notify, even though the file really was rewritten. |
+| **In order, always** | Observers are never handed an older snapshot after a newer one. Under concurrent writes, a superseded snapshot is dropped rather than delivered late — each snapshot is complete, so the newer delivery has already said everything the older one would have. |
+| **Pinned for the whole callback** | Every observer sees one immutable snapshot, so it cannot read half of one configuration and half of the next partway through reacting. |
+| **One observer failing does not silence the others** | Errors are collected and routed to `OnObserverError`; the remaining observers still run. |
+| **Writing from inside an observer is refused** | `ErrWriteFromObserver`, rather than a cascade with no natural end. Capture what you need, return, and write from elsewhere. |
+
+The ordering and exactly-once properties are structural — delivery is serialised and
+version-checked in one place — rather than something each observer has to defend itself
+against. That matters, because an observer *cannot* defend itself: by the time an older
+snapshot arrives, it has no way of knowing a newer one already did.
+
+!!! info "For comparison"
+    [viper](https://github.com/spf13/viper) v1.21.0 calls `OnConfigChange` with the
+    `fsnotify.Event`. Reading its watch loop, the callback is invoked **after a failed
+    re-read as well as a successful one** — the parse error goes to viper's internal
+    logger, and the callback is told "changed" regardless. Confirmed by running it: a file
+    edited to invalid YAML still fires the callback, and the callback has no way to
+    discover the reload failed.
+
+    It retains the last good values, which is right. But an observer that reacts to a
+    notification by re-reading, and rebuilds a connection pool or reopens a listener each
+    time it is told something changed, will do that work for a change that did not happen.
+
+All the guarantees above are asserted in
+[`observer_contract_test.go`](https://gitlab.com/phpboyscout/go/config/-/blob/main/observer_contract_test.go).
+
 ## Writing: where it gets genuinely hard
 
 Everything above is a better answer to a problem other libraries also address. This next
@@ -216,8 +256,8 @@ tool — on a shared CI runner or a multi-tenant host, an unrelated process sett
 **Yes, if any of these describe you** — and note that only the first is about writing:
 
 - you have more than two sources and have lost an afternoon to "which one set this?";
-- a long-running service reloads configuration, and reads that straddle a reload, or a
-  broken file taking the service down with it, are not acceptable;
+- a long-running service reloads configuration, and you need reads that never straddle a
+  reload, notifications you can trust, and a broken file that cannot take the service down;
 - your program writes configuration back, and users have to live in the file afterwards;
 - configuration lands in files that get committed, reviewed, or shared between people;
 - you want configuration-dependent tests that run in parallel and do not reach for process
