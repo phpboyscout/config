@@ -419,6 +419,53 @@ read-only layer is a perfectly good citizen: routing skips it, `Apply` lands in 
 writable layer down, and a write that would have gone to it is reported as shadowed rather
 than silently failing.
 
+## Shipping read-only first, and adding writes later
+
+Shipping a backend that reads before it writes is a normal and supported path — often the
+right one, when the format deserves a structure-preserving writer that does not exist yet.
+Reading is most of the value and arrives far sooner.
+
+Four things make the later promotion uneventful:
+
+1. **Fix your constructor and codec type in the first release.** Gaining write support means
+   adding `Prepare` to a type that already exists. A consumer's call site never changes.
+2. **Say so in your package documentation.** A consumer choosing your module should know
+   which way it is going to move.
+3. **Assert the current capability in your tests.** While read-only, assert that routing
+   skips your layer and a write lands beneath it. When you add writing, that assertion flips
+   — the transition shows up as a test change you make deliberately, not as behaviour you
+   discover later.
+4. **Release it as a minor version with a release note** stating what changed, in the terms
+   below.
+
+### What promotion changes for a consumer
+
+Precisely two things, and only one is a surprise:
+
+**Writes to keys your layer defines start working.** Before promotion they routed to the
+layer beneath yours and were reported as ineffective — `Operation.Effective()` false, with
+your layer named in `ShadowedBy`. The module was already saying the write would not take
+effect. Afterwards it does.
+
+**Writes to keys nothing defines yet move to your layer.** Before, they landed in the
+highest-precedence *writable* layer, which was somewhere beneath you. After, they land in
+yours. Both work; the file differs. This is the part worth putting in a release note.
+
+### Pinning routing, if it matters to you
+
+A consumer who depends on writes landing in a particular file asserts it with `Plan`, which
+is the tool for exactly this question:
+
+```go
+plan, err := store.Plan(config.Set("server.name", "prod"))
+require.NoError(t, err)
+
+require.Equal(t, "/etc/app/base.yaml", plan.Targets()[0].Name)
+```
+
+That fails loudly when a dependency changes routing, rather than the write quietly going
+somewhere else.
+
 ## Test it
 
 The interface is small enough to test against a fake rather than the real service. A

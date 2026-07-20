@@ -413,12 +413,10 @@ write this module exists to prevent, arriving through a different door.
   land in the next writable layer and are reported as shadowed — so the transition is a
   visible test change rather than a silent one.
 
-**The consequence to decide before `tomldoc` lands.** When the TOML codec gains editing,
-routing changes for existing consumers: a write that previously skipped the TOML layer and
-landed in the file beneath it will now land in the TOML file. Nothing errors; the write simply
-goes somewhere else. That is observable behaviour changing under a dependency bump.
-
-Recorded here rather than left to be discovered. See open question 10.
+**The promotion itself follows D18**, which specifies the pattern generally rather than
+treating this as a TOML-specific problem. In practice the exposure here is small: `tomldoc`
+is intended as a quick follow, so few consumers will adopt `config-toml` while it is
+read-only. The pattern is specified for the general case, not this one.
 
 ### D17 — The conformance suite lives in the core, using stdlib `testing` only
 
@@ -432,6 +430,64 @@ suite therefore uses stdlib `testing` and plain comparisons.
 
 `depfootprint_test.go` scopes to `go list -deps .` — the root package — so the core's
 dependency claim stays honest and measures what a consumer of `config` actually inherits.
+
+### D18 — Capability promotion is a supported lifecycle event, not a one-off concern
+
+A backend shipping read-only and gaining write support later is expected to be the **normal
+adoption path**, not a TOML-specific wrinkle. It lets a format be useful immediately while
+the structure-preserving writer it deserves is built, and it will apply to every adapter
+here and to backends other people write. It is therefore specified once, as a pattern.
+
+**What promotion actually changes, measured rather than assumed.** With a read-only layer at
+higher precedence than a writable one:
+
+```
+key the read-only layer DEFINES:  target=/base.yaml  effective=false  shadowedBy=[json:/over.json]
+key nothing defines yet:          target=/base.yaml  effective=true   shadowedBy=[]
+```
+
+The two cases behave completely differently, and only one is a surprise.
+
+**Writes to keys the layer already defines were never silent.** They routed to the layer
+beneath and were reported with `Effective() == false` and the read-only layer named in
+`ShadowedBy` — the module was already telling the consumer the write would not take effect.
+Promotion turns a reported failure into a working write. That is an improvement, visible
+before and after, and needs no ceremony.
+
+**Writes to new keys are the real change.** Before promotion they land in the highest-precedence
+*writable* layer; after, they land in the promoted one. Both work. The file differs. This is
+the only genuinely silent part, and it is what the pattern exists to manage.
+
+**Requirements on an adapter that intends to be promoted:**
+
+1. **Constructor and codec type are stable from the first release.** Promotion adds methods
+   to an existing exported codec type; it never changes how the backend is constructed. A
+   consumer's call site is untouched.
+2. **Ship read-only deliberately, and say so.** The package documentation states that write
+   support is planned, so a consumer choosing the module knows which way it will move.
+3. **The conformance suite asserts the current capability.** Read-only today means asserting
+   that routing skips the layer; promotion flips that assertion. The transition is a visible
+   test change in the adapter's own suite, not something noticed in production.
+4. **Promotion is a minor version with a mandatory release note**, stating the routing
+   consequence in the form above: writes to keys this layer defines now take effect; writes
+   to new keys now land here rather than in the layer beneath.
+
+A major version is not required. Promotion is additive at the type level, fixes a
+reported-ineffective case, and the one behaviour that changes is stated. Reserving a major
+bump for it would make the pattern expensive enough that adapters ship read-only and stay
+that way.
+
+**The tool a consumer uses to pin routing** is `Plan`, which already exists for exactly this:
+
+```go
+plan, err := store.Plan(config.Set("server.name", "prod"))
+// plan.Targets() names the layers a write will touch — assert on it if it matters.
+```
+
+A consumer who cares where writes land asserts it, and the assertion fails loudly on
+promotion rather than the behaviour changing quietly. This is worth documenting in
+[Write a custom backend](../../how-to/custom-backend.md) as part of publishing a backend,
+not only here.
 
 ## Rejected alternatives
 
@@ -555,12 +611,10 @@ default arm that degrades usefully.
 9. **Which HOCON implementation.** D14 disqualifies any that performs environment fallback
    and cannot be configured not to. Needs a survey of the available Go libraries before
    Phase 7 is scoped.
-10. **How does `config-toml` gaining write support reach consumers?** Per D16 it changes
-    routing under a dependency bump — a write that skipped the TOML layer starts landing in
-    it. Options: release it as a major version of `config-toml`; ship it behind a separate
-    constructor so it is opt-in; or treat it as a documented minor with the routing change
-    called out in the release notes. Worth settling before `tomldoc` lands rather than at
-    the point it does.
+10. ~~**How does `config-toml` gaining write support reach consumers?**~~
+    **Resolved 2026-07-20:** as a documented minor version, per D18, which specifies
+    capability promotion as a general pattern rather than a TOML-specific concern. Measuring
+    it first showed the two cases behave differently and only one is silent.
 
 ## Implementation phases
 
