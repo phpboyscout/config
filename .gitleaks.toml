@@ -1,0 +1,27 @@
+# gitleaks configuration.
+#
+# The default ruleset, plus one narrowly-scoped allowlist.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = """
+The documentation's worked example of what a merged-view write does to a
+configuration file. It shows a database password arriving from an environment
+variable and being written into a file the user has to live with — which is the
+central argument for this module's write path, and it does not land without a
+value that reads like a real secret.
+
+Allowlisted by literal rather than by path. Allowlisting docs/ or the test would
+mean a genuine secret committed to either goes unreported, and the example is
+one fixed string that can be matched exactly. It appears in docs/index.md,
+docs/about/features.md, README.md and docsclaim_test.go, which asserts the
+example is still true.
+
+If the example's value changes, this changes with it — the point is that exactly
+one known-fake literal is exempt, not that a location is.
+"""
+regexes = [
+  '''hunter2-prod-secret''',
+]
