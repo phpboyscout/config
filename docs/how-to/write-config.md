@@ -8,6 +8,37 @@ Everything here goes through the `Store`. It is the only component that writes, 
 what lets a write be routed to the correct layer, validated, and reflected in the next
 snapshot without a round trip through the filesystem.
 
+## Setup
+
+Every snippet below assumes a `store` and a `ctx`. If you do not already have one, this is
+the whole of it:
+
+```go
+import (
+	"context"
+
+	"github.com/spf13/afero"
+
+	"gitlab.com/phpboyscout/go/config"
+)
+```
+
+```go
+ctx := context.Background()
+
+store, err := config.NewStore(ctx,
+	config.WithFiles(afero.NewOsFs(), "/etc/app/base.yaml", "/etc/app/prod.yaml"),
+	config.WithEnv("APP"),
+)
+if err != nil {
+	return err
+}
+```
+
+The two files are why routing has something to choose between, and the environment layer
+is why a write can succeed without taking effect — both come up below. See
+[Load & merge](load-and-merge.md) for the full set of source options.
+
 ## Plan first: a dry run that cannot drift
 
 `Plan` routes changes without writing anything:
@@ -15,6 +46,7 @@ snapshot without a round trip through the filesystem.
 ```go
 plan, err := store.Plan(
     config.Set("server.port", 9090),
+    config.Set("server.name", "prod-eu-1"), // a key no layer defines yet
     config.Remove("server.tls.cert"),
 )
 if err != nil {
@@ -293,6 +325,8 @@ If an observer needs to change configuration, take the write *out* of the observ
 
 ```go
 store.AddObserverFunc(func(cfg config.Observed) error {
+    // derive is your own function: whatever turns a region into the value
+    // this process needs written back.
     want := derive(cfg.GetString("region"))
 
     select {

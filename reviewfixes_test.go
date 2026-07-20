@@ -721,13 +721,52 @@ func TestAddLayer_AFailingLayerWithdrawsOnlyItself(t *testing.T) {
 		t.Error("an unparseable layer was accepted")
 	}
 
-	if goodErr != nil {
-		t.Fatalf("the good layer was refused: %v", goodErr)
+	// The good layer is allowed to fail here, and this test used to forbid it.
+	//
+	// Both calls adopt their backend and then reload every backend, so if the
+	// bad one is registered when the good one reloads, the good one's reload
+	// legitimately fails: reloading is fail-closed, and a configuration
+	// containing an unparseable layer must be refused whoever asked for it.
+	// Requiring success made the test fail rarely and for a correct reason.
+	//
+	// What must hold either way is the invariant the original defect broke: a
+	// caller told its layer was added must find that layer contributing. The
+	// bug was that a concurrent add could discard a layer whose caller had
+	// already been told it succeeded.
+	if goodErr == nil {
+		if got := s.View().GetString("b"); got != "from-good" {
+			t.Errorf("b = %q — a layer reported as added is not contributing", got)
+		}
 	}
 
-	// The good layer was reported as accepted, so it must actually be there.
+	// And the failed layer must not be left behind, whatever the interleaving:
+	// a backend that cannot load would break every later reload.
+	if got := s.View().Shadowed("a"); len(got) != 1 {
+		t.Errorf("layers defining a = %v, want only the file — the bad layer was not withdrawn", got)
+	}
+}
+
+// TestAddLayer_AFailedLayerIsWithdrawnDeterministically covers the same
+// guarantee without concurrency, so a regression fails every time rather than
+// occasionally.
+func TestAddLayer_AFailedLayerIsWithdrawnDeterministically(t *testing.T) {
+	t.Parallel()
+
+	s := storeOn(t, memFS(t, map[string]string{"/app.yaml": "a: 1\n"}), "/app.yaml")
+
+	if err := s.AddLayer(context.Background(), "bad",
+		strings.NewReader("a:\n  - x\n :\n")); err == nil {
+		t.Fatal("an unparseable layer was accepted")
+	}
+
+	// The bad backend must be gone, so a later add still works.
+	if err := s.AddLayer(context.Background(), "good",
+		strings.NewReader("b: from-good\n")); err != nil {
+		t.Fatalf("a later layer was refused, so the failed one was left registered: %v", err)
+	}
+
 	if got := s.View().GetString("b"); got != "from-good" {
-		t.Errorf("b = %q — a layer reported as added is not contributing", got)
+		t.Errorf("b = %q, want \"from-good\"", got)
 	}
 }
 

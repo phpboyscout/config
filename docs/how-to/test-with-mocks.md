@@ -54,7 +54,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
+	"github.com/spf13/afero"
+
+	"gitlab.com/phpboyscout/go/config"
 	"gitlab.com/phpboyscout/go/config/mocks"
 )
 
@@ -118,6 +123,11 @@ that a component binds the section it claims to, and capture the observer it reg
 so you can fire it yourself:
 
 ```go
+// The two configurations this test moves between. Real stores over in-memory
+// files are less work here than mocking a whole Reader.
+source := storeOver(t, "server:\n  port: 8080\n") // what the binding starts with
+next := storeOver(t, "server:\n  port: 9090\n")   // what a later reload supplies
+
 var observer func(config.Observed) error
 
 binder := mocks.NewMockBinder(t)
@@ -132,6 +142,27 @@ require.Equal(t, 8080, settings.Value().Port)
 
 // Later: simulate a reload with whatever configuration you like.
 require.NoError(t, observer(next.View()))
+require.Equal(t, 9090, settings.Value().Port)
+```
+
+`storeOver` is a two-line helper, and `Server` is your own settings struct:
+
+```go
+type Server struct {
+	Port int `mapstructure:"port"`
+}
+
+func storeOver(t *testing.T, body string) *config.Store {
+	t.Helper()
+
+	fsys := afero.NewMemMapFs()
+	require.NoError(t, afero.WriteFile(fsys, "/config.yaml", []byte(body), 0o600))
+
+	store, err := config.NewStore(context.Background(), config.WithFiles(fsys, "/config.yaml"))
+	require.NoError(t, err)
+
+	return store
+}
 ```
 
 ## When you want real behaviour

@@ -1,5 +1,22 @@
 # Read configuration values
 
+!!! note "Assumed setup"
+    Every snippet below assumes a `store` and a `ctx`:
+
+    ```go
+    ctx := context.Background()
+
+    store, err := config.NewStore(ctx,
+        config.WithFiles(afero.NewOsFs(), "/etc/app/config.yaml"),
+        config.WithEnv("APP"),
+    )
+    if err != nil {
+        return err
+    }
+    ```
+
+    See [Load & merge configuration](load-and-merge.md) for the full set of options.
+
 Every read goes through a `View`, which resolves values from one immutable snapshot and
 performs no I/O. Taking one is a pointer copy, so take them freely:
 
@@ -69,6 +86,11 @@ of them:
 ```go
 type Severity int
 
+const (
+	Debug Severity = iota
+	Info
+)
+
 func (s *Severity) UnmarshalText(text []byte) error {
 	switch string(text) {
 	case "debug":
@@ -81,8 +103,13 @@ func (s *Severity) UnmarshalText(text []byte) error {
 
 	return nil
 }
+```
 
-level, err := config.Value[Severity](view, "log.level")   // reads `level: debug`
+Then read it like anything else:
+
+```go
+// log.level: debug
+level, err := config.Value[Severity](view, "log.level")
 ```
 
 The same hooks are used when decoding a struct, so a `Severity` field inside a
@@ -117,6 +144,11 @@ path, so a scoped view does not lose track of where its values came from.
 ## Decode a whole struct
 
 ```go
+type AppSettings struct {
+	Server ServerSettings `mapstructure:"server"`
+	Log    LogSettings    `mapstructure:"log"`
+}
+
 var settings AppSettings
 
 if err := view.Unmarshal(&settings); err != nil {
@@ -146,12 +178,20 @@ When several values must agree and you would otherwise take more than one view, 
 explicitly:
 
 ```go
+var (
+	host string
+	port int
+)
+
 err := store.With(func(view *config.View) error {
 	host = view.GetString("server.host")
 	port = view.GetInt("server.port")
 
 	return nil
 })
+if err != nil {
+	return err
+}
 ```
 
 ## Related

@@ -5,12 +5,29 @@ user actually set it. `WithFlags` contributes a [pflag](https://github.com/spf13
 flag set to the `Store` as an ordinary layer, and it contributes **only the flags the
 user changed**.
 
+!!! note "Imports used below"
+    ```go
+    import (
+        "context"
+        "testing"
+
+        "github.com/spf13/afero"
+        "github.com/spf13/pflag"
+        "github.com/stretchr/testify/assert"
+        "github.com/stretchr/testify/require"
+
+        "gitlab.com/phpboyscout/go/config"
+    )
+    ```
+
 ## Add the flag set
 
 Add it last. Precedence is the order sources are added, and an explicit flag is the most
 deliberate input a user can give:
 
 ```go
+// cmd is a *cobra.Command here, but nothing requires cobra: WithFlags takes a
+// *pflag.FlagSet, so any source of one will do — see the testing recipe below.
 store, err := config.NewStore(ctx,
 	config.WithFiles(afero.NewOsFs(), "/etc/mytool/config.yaml"),
 	config.WithEnv("MYTOOL"),
@@ -145,18 +162,24 @@ You do not need cobra, or a real command line, to test flag precedence. Build a
 `pflag.FlagSet`, parse an argument slice into it, and hand it to the store:
 
 ```go
-flags := pflag.NewFlagSet("mytool", pflag.ContinueOnError)
-flags.Int("port", 8080, "listen port")
+func TestFlagBeatsFile(t *testing.T) {
+	fsys := afero.NewMemMapFs()
+	require.NoError(t, afero.WriteFile(fsys, "/config.yaml",
+		[]byte("server:\n  port: 8080\n"), 0o600))
 
-require.NoError(t, flags.Parse([]string{"--port", "9090"}))
+	flags := pflag.NewFlagSet("mytool", pflag.ContinueOnError)
+	flags.Int("port", 8080, "listen port")
 
-store, err := config.NewStore(ctx,
-	config.WithFiles(fsys, "/config.yaml"),
-	config.WithFlags(flags, config.BindFlag("port", "server.port")),
-)
-require.NoError(t, err)
+	require.NoError(t, flags.Parse([]string{"--port", "9090"}))
 
-assert.Equal(t, 9090, store.View().GetInt("server.port"))
+	store, err := config.NewStore(context.Background(),
+		config.WithFiles(fsys, "/config.yaml"),
+		config.WithFlags(flags, config.BindFlag("port", "server.port")),
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, 9090, store.View().GetInt("server.port"))
+}
 ```
 
 Parse nothing and the assertion flips: the file's value stands, because an unchanged flag

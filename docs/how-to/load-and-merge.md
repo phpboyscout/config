@@ -5,6 +5,23 @@ user's file, an overlay, the environment, a flag — and know which value wins. 
 guide covers building a `Store`, the precedence chain, and how to ask where a value
 actually came from.
 
+!!! note "Imports used below"
+    ```go
+    import (
+        "context"
+        "errors"
+        "strings"
+
+        "github.com/spf13/afero"
+
+        "gitlab.com/phpboyscout/go/config"
+    )
+    ```
+
+    Snippets use `ctx` (a `context.Context`) and, where flags appear, `cmd` — a
+    `*cobra.Command`. Nothing requires cobra: `WithFlags` takes a `*pflag.FlagSet`, so
+    any source of one will do. See [Bind CLI flags](bind-cli-flags.md).
+
 ## Build a store
 
 A `Store` is the sole owner of configuration I/O: it loads, merges, watches and
@@ -62,14 +79,33 @@ Defaults go in `WithReaders` as a `NamedSource`. The name is what appears in
 provenance, so give it something a user would recognise — `embedded:defaults.yaml`
 rather than `reader1`:
 
+Create `defaults.yaml` next to the Go file that embeds it, then declare the embed at
+**package scope** — `//go:embed` only works there, and only when the `embed` package is
+imported:
+
 ```go
+import (
+	_ "embed" // required for //go:embed, even though nothing references it
+
+	"github.com/spf13/afero"
+
+	"gitlab.com/phpboyscout/go/config"
+)
+
 //go:embed defaults.yaml
 var defaults []byte
+```
 
+Then use it like any other source:
+
+```go
 store, err := config.NewStore(ctx,
 	config.WithReaders(config.NamedSource{Name: "embedded:defaults.yaml", Content: defaults}),
 	config.WithFiles(afero.NewOsFs(), "config.yaml"),
 )
+if err != nil {
+	return err
+}
 ```
 
 Because defaults are a layer like any other, `Origin` can say "this came from the
@@ -98,8 +134,13 @@ A configuration that loads and parses but violates the schema is returned *along
 `ErrInvalidConfig` rather than discarded:
 
 ```go
+schema, err := config.SchemaOf[AppConfig]()
+if err != nil {
+	return err
+}
+
 store, err := config.NewStore(ctx,
-	config.WithFiles(fsys, "config.yaml"),
+	config.WithFiles(afero.NewOsFs(), "config.yaml"),
 	config.WithSchema(schema),
 )
 if err != nil && !errors.Is(err, config.ErrInvalidConfig) {

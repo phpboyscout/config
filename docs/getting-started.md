@@ -9,7 +9,7 @@ each step builds on the last, and you run the program after every one.
 
 ## Prerequisites
 
-- Go 1.26 or newer.
+- Go 1.26.5 or newer.
 
 ## 1. Create a module
 
@@ -184,6 +184,11 @@ go run .
 # port: 9090
 ```
 
+!!! note "Run it a second time and the observer line disappears"
+    That is correct, not a fault. The file already says `9090`, so the write changes
+    nothing about the resolved configuration and observers are not told — they react to
+    values, and none moved. Change the number in the code to see it fire again.
+
 Three things just happened that are worth understanding.
 
 **The plan is not an approximation.** `Plan` runs exactly the routing pass `Apply` runs,
@@ -227,7 +232,10 @@ say so leaves its user staring at a setting that refuses to change. Check for it
 ```go
 	for _, op := range plan.Operations {
 		if !op.Effective() {
-			fmt.Println("warning: written, but still shadowed by", op.ShadowedBy)
+			// ShadowedBy is a []Source, lowest precedence first; the last is
+			// the layer actually winning.
+			fmt.Println("warning: written, but still shadowed by",
+				op.ShadowedBy[len(op.ShadowedBy)-1])
 		}
 	}
 ```
@@ -303,6 +311,9 @@ Now break the file deliberately — set the port to `[oops` and save:
 ```
 # rejected reload: config: source could not be parsed: config.yaml: yamldoc: parse: ...
 ```
+
+Put the port back to a number when you are done — the file is left deliberately broken
+here, and the next `go run .` will refuse to load it.
 
 The observer was **not** called, and the store is still serving `7777`. Reloading is
 fail-closed: a candidate that will not parse, or that violates a schema if you configured

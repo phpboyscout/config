@@ -9,6 +9,23 @@ own settings struct*, not a configuration store. The
 [last section of this page](#stay-extractable-depend-on-a-tiny-local-interface) shows
 how that works.
 
+!!! note "Assumed setup"
+    Every snippet below assumes a `store` and a `ctx`:
+
+    ```go
+    ctx := context.Background()
+
+    store, err := config.NewStore(ctx,
+        config.WithFiles(afero.NewOsFs(), "/etc/app/config.yaml"),
+        config.WithEnv("APP"),
+    )
+    if err != nil {
+        return err
+    }
+    ```
+
+    See [Load & merge configuration](load-and-merge.md) for the full set of options.
+
 ## Unmarshal a section
 
 `UnmarshalSection[T]` decodes the subtree at `key` into a `Section[T]`. It takes a
@@ -16,7 +33,7 @@ how that works.
 the section key:
 
 ```go
-type Server struct {
+type ServerSettings struct {
 	Host string `mapstructure:"host"`
 	Port int    `mapstructure:"port"`
 	TLS  struct {
@@ -25,12 +42,12 @@ type Server struct {
 	} `mapstructure:"tls"`
 }
 
-section, err := config.UnmarshalSection[Server](store.View(), "server")
+section, err := config.UnmarshalSection[ServerSettings](store.View(), "server")
 if err != nil {
 	return err
 }
 
-srv := section.Value    // Server — a plain struct field, not a method
+srv := section.Value    // ServerSettings — a plain struct field, not a method
 if !section.Exists {
 	// the "server" key was absent; srv is the zero value (or your defaults)
 }
@@ -84,26 +101,33 @@ Its first argument is a `config.Binder` — anything with a `View() *View` and a
 `AddObserverFunc`. A `*Store` is one, and so is a stub you write for a test:
 
 ```go
-settings, err := config.ObserveSection[Server](store, "server",
-	config.WithSectionValidator(func(next Server) error {
+// srv is your component — whatever holds the listener, pool or client that
+// these settings configure. It is not this module's type.
+srv := newServer()
+
+settings, err := config.ObserveSection[ServerSettings](store, "server",
+	config.WithSectionValidator(func(next ServerSettings) error {
 		if next.Port <= 0 {
 			return errors.New("port must be positive")
 		}
+
 		return nil
 	}),
-	config.WithSectionApply(func(change config.SectionChange[Server]) error {
-		return server.Reconfigure(&change.Current.Value)
+	config.WithSectionApply(func(change config.SectionChange[ServerSettings]) error {
+		return srv.Reconfigure(&change.Current.Value)
 	}),
 )
 if err != nil {
 	return err
 }
+
+log.Printf("serving on port %d", settings.Value().Port)
 ```
 
 ### Configure your component at startup too
 
 The apply callback fires on **change**, not on binding. Nothing calls it for the section
-the store already had, so the recipe above configures `server` on every later reload and
+the store already had, so the recipe above reconfigures `srv` on every later reload and
 never on the first one.
 
 That is deliberate: `ObserveSection` usually runs while the thing being configured is
@@ -111,16 +135,21 @@ still being built, and firing then would run your callback against a half-constr
 world. You say when your dependencies exist:
 
 ```go
-settings, err := config.ObserveSection[Server](store, "server",
-	config.WithSectionApply(func(change config.SectionChange[Server]) error {
-		return server.Reconfigure(&change.Current.Value)
+// Declared before the binding, assigned after it. The callback closes over the
+// variable, not over its value, so it sees the real server once it exists —
+// and nothing calls it until ApplyInitial does.
+var srv *Server
+
+settings, err := config.ObserveSection[ServerSettings](store, "server",
+	config.WithSectionApply(func(change config.SectionChange[ServerSettings]) error {
+		return srv.Reconfigure(&change.Current.Value)
 	}),
 )
 if err != nil {
 	return err
 }
 
-server := newServer(deps...)
+srv = newServer(deps...) // your constructor, whatever it takes
 
 // Everything the callback needs now exists, so deliver the initial section.
 if err := settings.ApplyInitial(); err != nil {
@@ -176,10 +205,10 @@ Supplying defaults without a merge function returns `ErrNoMergeFunc`: silently
 preferring one over the other would drop half the settings without saying so.
 
 ```go
-defaults := Server{Host: "localhost", Port: 8080}
+defaults := ServerSettings{Host: "localhost", Port: 8080}
 
-settings, err := config.ObserveSection[Server](store, "server",
-	config.WithSectionDefaults(defaults, func(defaults, overlay Server) Server {
+settings, err := config.ObserveSection[ServerSettings](store, "server",
+	config.WithSectionDefaults(defaults, func(defaults, overlay ServerSettings) ServerSettings {
 		if overlay.Host == "" {
 			overlay.Host = defaults.Host
 		}
@@ -196,12 +225,28 @@ A package that may one day become its own module should **not** import this one 
 to read reload-aware settings. Define a minimal interface locally:
 
 ```go
-// in your reusable package — no config import
+// in your reusable package — no config import at all
+
+// ServerSettings is declared here, by the package that consumes it.
+type ServerSettings struct {
+	Host string `mapstructure:"host"`
+	Port int    `mapstructure:"port"`
+}
+
+// SettingsSource is the whole dependency: one method.
 type SettingsSource interface {
 	Current() *ServerSettings
 }
 
-func NewServer(src SettingsSource) *Server { ... }
+type Server struct{ settings SettingsSource }
+
+func NewServer(src SettingsSource) *Server { return &Server{settings: src} }
+
+func (s *Server) addr() string {
+	cur := s.settings.Current()
+
+	return fmt.Sprintf("%s:%d", cur.Host, cur.Port)
+}
 ```
 
 `*config.ObservedSection[ServerSettings]` satisfies that shape structurally, so the

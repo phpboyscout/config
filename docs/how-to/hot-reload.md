@@ -5,6 +5,23 @@ restart. A `Store` can watch its file-backed sources, re-read them on a change, 
 if the result is valid and actually different — publish a new snapshot and tell your
 observers. This guide shows how to wire that up and the traps to avoid.
 
+!!! note "Assumed setup"
+    Every snippet below assumes a `store` and a `ctx`:
+
+    ```go
+    ctx := context.Background()
+
+    store, err := config.NewStore(ctx,
+        config.WithFiles(afero.NewOsFs(), "/etc/app/config.yaml"),
+        config.WithEnv("APP"),
+    )
+    if err != nil {
+        return err
+    }
+    ```
+
+    See [Load & merge configuration](load-and-merge.md) for the full set of options.
+
 ## Start watching
 
 `Watch` begins reacting to changes made outside this process, and returns a function
@@ -87,7 +104,9 @@ func (w *levelWatcher) Run(cfg config.Observed) error {
 
 	return nil
 }
+```
 
+```go
 store.AddObserver(&levelWatcher{logger: slog.Default()})
 ```
 

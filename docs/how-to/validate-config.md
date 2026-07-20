@@ -8,6 +8,36 @@ Validation always runs against the **resolved** configuration, never a single la
 base file that omits a key its overlay supplies is legitimate, and judging layers
 individually would reject a perfectly correct setup.
 
+!!! note "Assumed setup"
+    Snippets below use a `store`, a `ctx` and the imports named here:
+
+    ```go
+    import (
+        "context"
+        "errors"
+        "fmt"
+        "log/slog"
+
+        "github.com/spf13/afero"
+
+        "gitlab.com/phpboyscout/go/config"
+    )
+    ```
+
+    ```go
+    ctx := context.Background()
+
+    store, err := config.NewStore(ctx,
+        config.WithFiles(afero.NewOsFs(), "/etc/mytool/config.yaml"),
+    )
+    if err != nil {
+        return err
+    }
+    ```
+
+    The store gains a schema in [attach the schema to the store](#attach-the-schema-to-the-store);
+    until then the examples validate a view explicitly.
+
 ## Describe the shape with tags
 
 A schema is derived from a tagged struct:
@@ -76,17 +106,23 @@ reflection. Calls that pass options build fresh, because an option can change th
 
 ## Build a schema you can reuse
 
-`SchemaOf[T]` gives you the `*Schema` itself, which is what you attach to a store.
-`NewSchema` is the longer form, for when you want to compose options explicitly:
+`SchemaOf[T]` gives you the `*Schema` itself, which is what you attach to a store:
 
 ```go
 schema, err := config.SchemaOf[AppConfig]()
 if err != nil {
 	return err
 }
+```
 
-// equivalently
-schema, err = config.NewSchema(config.WithStructSchema(AppConfig{}))
+`NewSchema` is the longer form of the same thing, for when you want to compose options
+explicitly:
+
+```go
+schema, err := config.NewSchema(config.WithStructSchema(AppConfig{}))
+if err != nil {
+	return err
+}
 ```
 
 A schema with no fields is refused with `ErrEmptySchema`. A schema that constrains
@@ -133,13 +169,22 @@ a known field is never reported — `server` is fine when `server.port` is in th
 When you own the whole file and want typos caught hard, opt into strict mode:
 
 ```go
-err := config.ValidateStruct[AppConfig](store.View(), config.WithStrictMode())
-// now `server.prot` is an error rather than a warning
+// `server.prot` is now an error rather than a warning
+if err := config.ValidateStruct[AppConfig](store.View(), config.WithStrictMode()); err != nil {
+	return err
+}
+```
 
+Or on a schema you build once and attach to the store:
+
+```go
 schema, err := config.NewSchema(
 	config.WithStructSchema(AppConfig{}),
 	config.WithStrictMode(),
 )
+if err != nil {
+	return err
+}
 ```
 
 ## Attach the schema to the store
@@ -248,6 +293,40 @@ typed schema or declare it as a string.
 Each package should validate its own keys with its own struct. There is deliberately no
 global schema: a central one would have to know which features are active in a given
 build, and would couple otherwise-independent packages together.
+
+This is also where checks a schema cannot express belong — anything relational, conditional,
+or needing a non-zero number rather than merely a present one:
+
+```go
+type Pool struct {
+	Min int `config:"pool.min" validate:"required"`
+	Max int `config:"pool.max" validate:"required"`
+}
+
+// validatePool covers what struct tags cannot: `required` means present, so a
+// deliberate 0 passes it, and no tag can say "min must not exceed max".
+func validatePool(view *config.View) error {
+	section, err := config.UnmarshalSection[Pool](view, "")
+	if err != nil {
+		return err
+	}
+
+	pool := section.Value
+
+	if pool.Max <= 0 {
+		return fmt.Errorf("pool.max must be greater than zero, got %d", pool.Max)
+	}
+
+	if pool.Min > pool.Max {
+		return fmt.Errorf("pool.min (%d) must not exceed pool.max (%d)", pool.Min, pool.Max)
+	}
+
+	return nil
+}
+```
+
+Call it after the schema has run, so the cheap structural checks report first and your
+rule only sees values that are already the right shape.
 
 For a typed section that stays current across reloads, `WithSectionValidator` validates
 each decoded snapshot before it is published, and a snapshot that fails keeps the previous
