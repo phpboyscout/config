@@ -238,7 +238,7 @@ reason.
 | INI | `config-ini` | yes | no | advertised by the incumbent, decoder absent |
 | Java properties | `config-properties` | yes | no | advertised by the incumbent, decoder absent |
 | dotenv | `config-dotenv` | yes | no | flat; the incumbent does decode this one |
-| HCL / tfvars | `config-hcl` | yes | **no** | a language — see D11 |
+| HCL / tfvars | `config-hcl` | declarative subset | fast follow | `hclwrite` makes writing cheap — see D11, D19 |
 | HOCON | `config-hocon` | yes | **no** | a language with includes and env fallback — see D11, D12, D14 |
 
 Read-only is the default position for anything that is not YAML or JSON. Reading is most of
@@ -252,9 +252,18 @@ HCL and HOCON are declarative and readable, and both get read support. Neither g
 `EditingCodec`: routing skips them, and a write lands in the next writable layer down,
 reported as shadowed rather than failing.
 
-Writing is refused because in a document where one value can reference another, an edit can
-silently change a value the user did not touch. That is exactly the class of harm the write
-path exists to prevent, and no amount of care in the codec removes it.
+Writing is refused **for now on demand rather than difficulty**. The first draft justified it
+by saying editing an expression-bearing document could silently change a value the user did
+not touch. That reasoning does not survive contact with the rest of this decision: a document
+containing expressions is already refused at load, so every document the adapter accepts is
+expression-free and therefore exactly as safe to edit as YAML. The refusal that makes reading
+honest also makes writing safe.
+
+And writing is cheap — `hclwrite` does it already (D19). So the reason to ship read-only
+first is that nothing has been shown to need it: the surveyed production codebase reads HCL
+in three places and writes it in none. Write support is a fast follow under the promotion
+pattern (D18) whenever a consumer appears, and the adapter is built with the writer-shaped
+hole (D16) from the start.
 
 **Reading needs a distinction that "declarative language" hides.** These two look alike and
 are not:
@@ -285,6 +294,29 @@ relies on a wrong value.
 
 Function calls (`file()`, `join()`) are refused on the same grounds — `file()` in particular
 would read a file the Store does not know about, which is D12.
+
+**Field evidence that the refusal is the right shape.** A production codebase reading HCL
+this way already has the bug D11 prevents. It resolves attributes with an empty evaluation
+context:
+
+```go
+val, diag := attr.Expr.Value(&hcl.EvalContext{})
+```
+
+That works for a string literal and fails for anything else. Its caller reads
+`terraform.source` from a Terragrunt file, and a real file writing
+`source = "git::...?ref=${local.ref}"` produces a diagnostic, which becomes a logged error
+and an early return — the module is **silently dropped from the pipeline**. Nobody is told
+the configuration was not understood; the work simply does not happen.
+
+That is the same defect D11 refuses, at the same point, differing only in when it surfaces:
+at use, quietly, per attribute, rather than at load, loudly, naming the construct. Refusing
+at load is not a stricter version of that behaviour — it is the version that tells you.
+
+The same codebase also draws exactly the line D11 draws. Where it genuinely needs the full
+language — resolving a Terragrunt dependency graph — it does not use its HCL helper at all;
+it calls Terragrunt's own parser, with a real evaluation context. Declarative extraction and
+real evaluation are already separate tools there, independently.
 
 **What provenance says for a resolved value.** `Origin` names the file and document, which
 is what it can honestly say. It cannot point at "the expression on line 14", and a reader
@@ -489,6 +521,47 @@ promotion rather than the behaviour changing quietly. This is worth documenting 
 [Write a custom backend](../../how-to/custom-backend.md) as part of publishing a backend,
 not only here.
 
+### D19 — `hcldoc` is a thin wrapper over `hclwrite`, not a build like `tomldoc`
+
+HCL is the opposite of TOML on cost. HashiCorp's `hclwrite` already performs
+structure-preserving edits, and it does so to the same standard this module promises for
+YAML. Verified:
+
+```hcl
+# Which port the public listener binds to.     # after SetAttributeValue("port", 9090):
+# Changing this needs a firewall change too.   # ...identical, except
+server {                                        server {
+  host = "localhost"   # loopback only in dev     host = "localhost" # loopback only in dev
+  port = 8080                                     port = 9090
+}                                               }
+```
+
+Leading comments, the inline comment, block order and indentation all survive; only the
+value asked for changed. Inline comment padding is normalised, exactly as the YAML path
+does, and within the same stated contract.
+
+So there is no `hcldoc` to build in the sense `tomldoc` must be built. What the adapter
+needs is a codec that maps between HCL and layer values, and the writing is delegated.
+
+**What the existing `als` package contributes.** It is a convenience wrapper over the same
+libraries — `hclparse` for reading, `hclwrite` for editing — which is independently the same
+dual-parse split this module uses for YAML. Its reusable part is the **path traversal**:
+`traverseBlocks`, `getAttribute` and the `getNested*` family resolve a dotted path through
+blocks, labels, objects, maps and list indices. That logic is the non-obvious work and is
+worth porting.
+
+Its writing is superseded by calling `hclwrite` directly, and two of its choices are worth
+not repeating:
+
+- `Update` matches on block *type* only, ignoring labels, so it would update every
+  `resource` block at once. Its own documentation acknowledges this.
+- `Get` splits a path across two arguments — block path and attribute path — and where the
+  split falls is load-bearing and undocumented. One path is better.
+
+**Cost implication.** HCL write support is cheaper than TOML's, not more expensive. That
+inverts the assumption in the first draft of D11, which treated writing HCL as the hard part.
+It is not; the hard part was always the semantics.
+
 ## Rejected alternatives
 
 **Add decoders to the core, switching on file extension.** The obvious approach, and what
@@ -598,13 +671,30 @@ default arm that degrades usefully.
 5. ~~**INI/properties/dotenv nesting.**~~ **Resolved 2026-07-20:** the rule differs per
    format and only dotenv is ambiguous. INI nests section plus key; properties are already
    dotted; dotenv reuses the environment backend's resolution, exported per D15.
-6. **How much real HCL survives D11?** The adapter reads plain key-value HCL and refuses
-   `var.*`, functions and includes. That may be most `.hcl` configuration files or almost
-   none — worth sampling real ones before Phase 7, because if it is almost none the module
-   is not worth publishing and the honest answer is "use Terraform".
-7. **HCL block labels.** `resource "aws_instance" "web" { … }` is a three-part name with no
-   obvious dotted-key equivalent. Flatten to `resource.aws_instance.web`, or refuse labelled
-   blocks? Affects how much of question 6 is readable.
+6. ~~**How much real HCL survives D11?**~~ **Resolved 2026-07-20 by survey**, and the
+   answer splits cleanly:
+
+   - **Terraform and Terragrunt files largely do not survive it.** Real ones use
+     `find_in_parent_folders()`, `${local.environment}`, `toset(var.…)` and `include`
+     blocks. A declarative-subset reader gets little from them.
+   - **Purpose-built HCL configuration survives it entirely.** A migration DSL in the
+     surveyed codebase — labelled blocks, string and list literals, decoded with a *nil*
+     evaluation context — passes without a single refusal, because it is variable-free by
+     construction. Nomad, Consul, Vault and Packer configuration are the same shape.
+
+   So `config-hcl` serves **HCL as a configuration format** and explicitly does not serve
+   Terraform. That is worth stating in the module's own documentation rather than leaving a
+   user to discover it: someone pointing it at a `.tf` file should get a clear refusal
+   naming the construct, not a puzzling one.
+7. ~~**HCL block labels.**~~ **Resolved 2026-07-20:** labels become path segments, so
+   `migration "multi_state" "move_redis" { … }` is `migration.multi_state.move_redis`.
+   Refusing labelled blocks was considered and rejected — both the surveyed migration DSL
+   and Terraform itself use labels structurally, so refusing them would leave the adapter
+   able to read almost nothing.
+
+   Two blocks sharing a type and every label collide, and that is an error naming both
+   rather than a silent last-one-wins. Repeated *unlabelled* blocks of the same type have no
+   dotted-key representation at all and are refused for the same reason.
 8. ~~**Should the flat formats share a module after all?**~~ **Resolved 2026-07-20:**
    separate modules, per D9. Their nesting rules genuinely differ, so they share less than
    the grouping suggested.
@@ -641,11 +731,15 @@ remaining formats individually.
 
 **Phase 6 — `config-xml`**, read-only.
 
-**Phase 7 — `config-hcl` and `config-hocon`**, read-only. Both refuse external
-parameterisation, function calls and includes at load (D11, D12), and HOCON resolves
-substitutions within the document with no environment fallback (D14). Last of the named
-formats because they are the ones most likely to surface a case D11 got wrong, and doing
-them after five simpler adapters means the seam is settled before it meets a hard format.
+**Phase 7 — `config-hcl` and `config-hocon`**, read-only with writer-shaped holes. Both
+refuse external parameterisation, function calls and includes at load (D11, D12), and HOCON
+resolves substitutions within the document with no environment fallback (D14). `config-hcl`
+ports the path-traversal logic from the surveyed package (D19) and delegates any future
+writing to `hclwrite`. Its documentation states plainly that it reads HCL-as-configuration
+and not Terraform.
+
+Sequenced after the simpler adapters so the seam is settled before it meets a hard format,
+but note the cost is now known to be lower than TOML's: there is no `hcldoc` to build.
 
 **Phase 8 — `tomldoc` and TOML write support.** The committed fast follow: a
 structure-preserving TOML editor, then `config-toml` gains an `EditingCodec` through the hole
