@@ -336,10 +336,17 @@ Comment-preserving YAML editing lives in its own module,
 
 ## Migrating from v0.2.x
 
-v0.3 replaced the Viper-backed container with the Store. The typed-section semantics are
+v0.3.0 is a breaking release: the Viper-backed container became the `Store`, and `afero.Fs`
+became a six-method `config.FS` the module defines itself. The typed-section semantics are
 unchanged, so a package consuming `ObservedSection[T]` through its own interface needs no
-change at all; code holding a `Containable` does. See the
-[migration guide](https://config.go.phpboyscout.uk/migrating/) and the
+change at all; code holding a `Containable` does.
+
+Two traps have no compiler error. **Watching is explicit now** — v0.2.x watched from inside
+every constructor, so skipping `Store.Watch(ctx)` means configuration silently stops
+reloading. And **`ApplyInitial` is not a required fix** — delivery has always been
+change-only.
+
+See the [migration guide](https://config.go.phpboyscout.uk/migrating/) and the
 [history](https://config.go.phpboyscout.uk/about/history/) of how the module got here.
 
 ## Documentation

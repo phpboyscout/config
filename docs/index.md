@@ -150,11 +150,22 @@ then understand.
 
 ## Coming from v0.2.x
 
-v0.2.x had a different architecture and a different API. The
-**[migration guide](migrating.md)** covers it step by step: `Containable` becomes
-`Reader`, the several constructors become `NewStore`, and the handful of call sites that
-are genuine ports rather than renames — writing, flag binding, and the old escape hatch —
+v0.3.0 is a breaking release. Two things changed: the Viper-backed container became the
+`Store`, and `afero.Fs` became a six-method `config.FS` the module defines itself.
+
+The **[migration guide](migrating.md)** covers both step by step — `Containable` becomes
+`Reader`, the several constructors become `NewStore`, `afero.NewOsFs()` becomes
+`config.OS()`, and the handful of call sites that are genuine ports rather than renames
 each get their own section.
+
+!!! warning "Two traps with no compiler error"
+    **Watching is explicit now.** v0.2.x started a watcher inside every constructor, so you
+    got hot-reload without a call site to port. Skip `Store.Watch(ctx)` and the code
+    compiles, the tests pass, and configuration silently stops reloading.
+
+    **`ApplyInitial` is not a required fix.** Section delivery has always been change-only,
+    so nothing needs accommodating. Add it only if you *want* startup delivery, which
+    v0.2.x could not do at all.
 
 If your reusable packages declare their own one-method interface and take an
 `ObservedSection[T]` structurally, they need no change at all. That decoupling boundary is
