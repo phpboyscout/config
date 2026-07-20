@@ -24,6 +24,7 @@ nav = [
     { "Hot-reload safety" = "explanation/hot-reload-safety.md" },
   ] },
   { About = [
+    { "What it does, and why" = "about/features.md" },
     { History = "about/history.md" },
     { "Migrating from v0.2.x" = "migrating.md" },
   ] },
