@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"reflect"
 
 	"slices"
 	"strings"
@@ -91,16 +92,23 @@ func validateSnapshot(snap *Snapshot, schema *Schema) *ValidationResult {
 	return validateView(NewView(snap), schema)
 }
 
-// validateView checks whatever the view describes against a schema.
+// validateView checks whatever the reader describes against a schema.
 //
-// Going through the view rather than the snapshot is what makes a scoped view
+// Going through the reader rather than the snapshot is what makes a scoped view
 // validate its own subtree: a schema written for a section is meant to be
 // applied to that section, and reading the snapshot directly would silently
 // judge the whole configuration against it instead.
-func validateView(view *View, schema *Schema) *ValidationResult {
+//
+// It takes [Reader] rather than *View because it only ever calls Get, Has, Keys
+// and Shadowed, all of which Reader has. That is what lets [ValidateStruct]
+// accept a mock — see its doc comment.
+func validateView(view Reader, schema *Schema) *ValidationResult {
 	result := &ValidationResult{}
 
-	if schema == nil || view == nil {
+	// isNil rather than view == nil: a (*View)(nil) stored in a Reader is a
+	// non-nil interface holding a nil pointer, so the plain comparison stopped
+	// catching the case it was written for the moment this took an interface.
+	if schema == nil || isNil(view) {
 		return result
 	}
 
@@ -157,6 +165,31 @@ func validateField(key string, field FieldSchema, value any, present bool, resul
 			result.addError(key, fmt.Sprintf("value %q is not allowed", strVal),
 				fmt.Sprintf("allowed values: %s", strings.Join(allowed, ", ")))
 		}
+	}
+}
+
+// isNil reports whether a Reader is unusable, covering both an interface that
+// holds nothing and one holding a nil pointer.
+//
+// The second case is why this exists. Before validation took an interface, a
+// plain view == nil caught a nil *View. Boxed in a Reader that comparison is
+// false — the interface has a type — so the guard would have passed a nil
+// pointer through to Get and panicked, on the exact input it was written to
+// protect against.
+func isNil(r Reader) bool {
+	if r == nil {
+		return true
+	}
+
+	value := reflect.ValueOf(r)
+
+	switch value.Kind() {
+	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan:
+		return value.IsNil()
+	default:
+		// A non-nilable kind — a struct value implementing Reader — is always
+		// usable.
+		return false
 	}
 }
 
@@ -244,7 +277,7 @@ func isDuration(v any) bool {
 // into the key space and be rejected as an unknown key, so a deployment
 // platform could stop an application starting by exporting a variable that has
 // nothing to do with it.
-func configuredKeys(view *View) []string {
+func configuredKeys(view Reader) []string {
 	all := view.Keys()
 	out := make([]string, 0, len(all))
 

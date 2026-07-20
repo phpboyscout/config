@@ -54,14 +54,21 @@ func SchemaOf[T any](opts ...SchemaOption) (*Schema, error) {
 //		return err
 //	}
 //
+// The parameter is [Reader] rather than *View so that code under test can pass
+// a mock. Validation only reads — Get, Has, Keys and Shadowed — so requiring
+// the concrete type bought nothing and made every caller's own validation
+// untestable without a real Store.
+//
 // Schema options such as [WithStrictMode] may be passed through.
-func ValidateStruct[T any](cfg *View, opts ...SchemaOption) error {
+func ValidateStruct[T any](cfg Reader, opts ...SchemaOption) error {
 	schema, err := SchemaOf[T](opts...)
 	if err != nil {
 		return err
 	}
 
-	if result := cfg.Validate(schema); !result.Valid() {
+	// validateView rather than cfg.Validate: Validate is on *View, and this
+	// takes anything that can read. View.Validate is unchanged and still works.
+	if result := validateView(cfg, schema); !result.Valid() {
 		return fmt.Errorf("%w: %s", ErrInvalidConfig, result.Error())
 	}
 
