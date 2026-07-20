@@ -72,6 +72,60 @@ interface, and one that does not, does not. `RealPather`'s documentation now sta
 requirement on implementations rather than leaving it implied.
 
 
+### R4 — 2026-07-20: `Dir` opens per operation rather than holding the root
+
+**D3 shipped holding the `*os.Root` for the FS's lifetime, and that was a
+file-descriptor leak.** `FS` has no `Close`, nothing in the module closes a filesystem, and
+there is no path by which a caller could release one. The doc comment presented the held
+handle as a feature — the root survives being renamed underneath it — which is how it
+passed review, mine included.
+
+Measured rather than argued about. Two hundred `Dir` calls leak exactly two hundred
+descriptors. At a default 1024 limit the call fails after 1021; at the 256 typical of macOS,
+after 253:
+
+```
+config.Dir failed after 1021 calls: too many open files   # ulimit -n 1024
+config.Dir failed after  253 calls: too many open files   # ulimit -n 256
+```
+
+That matters more than the raw numbers suggest, because [R1](#r1--2026-07-20-the-consumer-testing-story-is-dir-not-an-afero-adapter)
+made `config.Dir(t.TempDir())` the recommended testing pattern — so the guidance in this
+same spec is what drives a consumer into it.
+
+**The root is now opened per operation** through a single helper, so there is one place a
+descriptor is acquired and one place it is released. Five hundred `Dir` calls and a thousand
+operations leak nothing, pinned by `TestDir_DoesNotAccumulateDescriptors`.
+
+The cost is one extra `openat` per operation, on a path that runs at startup, on reload and
+on write. That is not a hot path, and a leak surfacing only at scale is the worse trade.
+
+Rename survival is lost. On reflection that was never a feature worth having: a
+configuration directory that has been moved should stop resolving, not silently keep serving
+the old location. It was documented as a benefit because the implementation happened to
+produce it, which is the wrong direction for a doc comment to travel.
+
+### R5 — 2026-07-20: `RealPath`'s `ok` is load-bearing, and was being discarded
+
+Two independent reviews proposed deleting the `bool` from
+`RealPath(name string) (string, bool)` on the grounds that no implementation ever returned
+false. Both were right about the fact and wrong about the conclusion.
+
+Nothing returned false because `realPathResolver` collapsed the pair into
+`func(string) string`, mapping "no real path" onto "use the path as given" — so an
+implementation had no reason to produce an answer the caller could not consume. The bool was
+not dead; it was unreachable.
+
+It matters in two ways. A filesystem can have real paths for some names and not others,
+which is exactly a copy-on-write overlay. And `configafero`'s adapter had a bug caused
+directly by the missing channel: unable to say "I cannot resolve this", it returned the
+un-based name and labelled it real, which config would then have resolved against the
+process working directory.
+
+`realPathResolver` now passes `RealPath` through unwrapped, and a false answer routes
+straight to polling without the two `Stat` calls `isReallyOnDisk` would have spent
+rediscovering it.
+
 ## Problem
 
 `afero.Fs` is in the public API. `WithFiles`, `NewFileBackend` and `NewWatcher` all take one,
@@ -148,6 +202,10 @@ breaking change for every implementation, so it starts as small as the module ca
 
 ### D2 — The concrete type-switch becomes an optional interface
 
+> **Extended by [R5](#r5--2026-07-20-realpaths-ok-is-load-bearing-and-was-being-discarded).**
+> The `ok` return was being discarded by the caller, which made it look dead and caused a
+> bug in the first external adapter.
+
 > **Extended by [R2](#r2--2026-07-20-readlink-joins-realpath-as-an-optional-interface) and
 > [R3](#r3--2026-07-20-an-implementation-must-not-satisfy-an-optional-interface-it-cannot-honour).**
 > A second optional interface was needed for symlinks, and satisfying one conditionally
@@ -174,6 +232,9 @@ diagnosis.
 filesystem produces real-looking paths for files that exist only in memory.
 
 ### D3 — The module ships one implementation: the real filesystem
+
+> **Amended by [R4](#r4--2026-07-20-dir-opens-per-operation-rather-than-holding-the-root).**
+> `Dir` no longer holds the root open — doing so leaked a descriptor per call.
 
 ```go
 // OS returns an FS backed by the operating system.
