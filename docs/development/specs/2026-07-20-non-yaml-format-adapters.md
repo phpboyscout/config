@@ -1,5 +1,5 @@
 ---
-title: Non-YAML format adapters — JSON, JSONL, TOML and beyond as sibling modules
+title: Non-YAML format adapters — advertised parity and beyond, as sibling modules
 date: 2026-07-20
 author: matt.cockayne
 status: draft
@@ -228,65 +228,69 @@ reason.
 
 ### D10 — Write support is per-format and read-only is a first-class outcome
 
-| Format | Read | Write | Notes |
-|---|---|---|---|
-| JSON | yes | yes | no comments to preserve; key order and indentation must survive |
-| JSONL | yes | yes | one line per document; edits target a document index |
-| TOML | yes | **deferred** | has comments; structure-preserving edit needs a `tomldoc` equivalent of `yamldoc` — a module-sized undertaking, not a codec |
-| XML | yes | no | attribute-versus-element is ambiguous for a dotted-key model; read-only unless a concrete need appears |
-| INI / properties / dotenv | yes | undecided | flat key spaces; needs a stated nesting rule before anything else |
-| HCL / tfvars | see D11 | no | a language, not a data format — see D11 |
-| HOCON | see D11 | no | a language with file includes — see D11 and D12 |
+| Format | Module | Read | Write | Notes |
+|---|---|---|---|---|
+| YAML | core | yes | yes | the default; `yamldoc` gives comment-preserving edits |
+| JSON | `config-json` | yes | yes | no comments; key order and indentation must survive |
+| JSONL | `config-json` | yes | yes | one line per document; edits target a document index |
+| TOML | `config-toml` | yes | fast follow | writer-shaped hole now, `tomldoc` next — see D16 |
+| XML | `config-xml` | yes | no | attribute-versus-element is ambiguous for a dotted-key model |
+| INI | `config-ini` | yes | no | advertised by the incumbent, decoder absent |
+| Java properties | `config-properties` | yes | no | advertised by the incumbent, decoder absent |
+| dotenv | `config-dotenv` | yes | no | flat; the incumbent does decode this one |
+| HCL / tfvars | `config-hcl` | yes | **no** | a language — see D11 |
+| HOCON | `config-hocon` | yes | **no** | a language with includes and env fallback — see D11, D12, D14 |
 
-Shipping TOML read-only first is deliberate. Reading it is most of the value, and a
-half-working structure-preserving writer that mangles a user's file is worse than no writer
-at all — the whole argument on the landing page.
+Read-only is the default position for anything that is not YAML or JSON. Reading is most of
+the value, and a half-working structure-preserving writer that mangles a user's file is
+worse than no writer at all — the whole argument on the landing page. Write support is added
+per format when someone needs it and the format can support it honestly.
 
-### D11 — A format that is a language is decoded in its declarative subset, or not at all
+### D11 — Language formats are read, never written; substitution is resolved only when it is self-contained
 
-HCL and HOCON are not data formats. They are small languages with expressions,
-substitutions and functions:
+HCL and HOCON are declarative and readable, and both get read support. Neither gets an
+`EditingCodec`: routing skips them, and a write lands in the next writable layer down,
+reported as shadowed rather than failing.
 
-```hcl
-port    = var.base_port + 1
-address = "${var.host}:${var.port}"
-secret  = file("/run/secrets/token")
-```
+Writing is refused because in a document where one value can reference another, an edit can
+silently change a value the user did not touch. That is exactly the class of harm the write
+path exists to prevent, and no amount of care in the codec removes it.
+
+**Reading needs a distinction that "declarative language" hides.** These two look alike and
+are not:
 
 ```hocon
-base { host = "localhost", port = 8080 }
+# HOCON — self-contained. The reference resolves inside this document.
+base    { host = "localhost", port = 8080 }
 derived { url = "http://"${base.host}":"${base.port} }
 ```
 
-That breaks three assumptions this module is built on.
+```hcl
+# HCL — not self-contained. var.* is supplied from outside: variable files,
+# -var flags, TF_VAR_ environment. None of which a config library has.
+port = var.base_port + 1
+```
 
-**Provenance stops meaning anything.** `Origin` answers "which layer supplied this value".
-For `port = var.base_port + 1` the honest answer is "computed from something in this file",
-which is not a layer and cannot be pointed at. The whole value proposition — being able to
-say where a number came from — degrades to naming the file, which is what every other
-library already does.
+**Self-contained substitution is resolved.** A HOCON reference to another path in the same
+document has one correct answer, the HOCON specification defines how to compute it, and
+resolving it produces exactly the value the author intended. Refusing it would reject a
+large share of real HOCON files for no benefit.
 
-**Evaluation needs a context this module cannot supply.** Terraform's HCL resolves `var.*`
-from variable files, `-var` flags and environment. A config backend has none of that, and
-inventing a half-context produces values that differ from what Terraform would compute —
-worse than refusing, because it looks right.
+**Externally-parameterised interpolation is refused**, at load, with `ErrBackendUnsafe`
+naming the construct and the line. `var.base_port` has no correct answer without a variable
+context this module does not have and should not invent, and a value computed from a
+half-context is worse than an error because it looks right. The same treatment, and the same
+reasoning, as a YAML flow collection that cannot be round-tripped safely: fail before anyone
+relies on a wrong value.
 
-**Writing becomes unsafe.** Editing a document where one value is an expression referencing
-another means an edit can silently change a value the user did not touch. That is precisely
-the class of harm the write path exists to prevent.
+Function calls (`file()`, `join()`) are refused on the same grounds — `file()` in particular
+would read a file the Store does not know about, which is D12.
 
-**Decision: an HCL or HOCON adapter decodes the declarative subset and refuses the rest.**
-A document containing substitutions, interpolations, function calls or includes is rejected
-at load with `ErrBackendUnsafe`, naming the construct and the line — the same treatment,
-and the same reasoning, as a YAML flow collection with interior comments. Both are refused
-at load rather than at use, so the failure arrives before anyone has relied on a wrong value.
-
-Both are **read-only**: no `EditingCodec`, so routing skips them and a write lands in the
-next writable layer down.
-
-This makes the adapters useful for the common case — an HCL file that is plain key-value
-configuration, which many are — and honest about the case they cannot serve. A consumer who
-needs evaluated HCL wants Terraform, not a config library.
+**What provenance says for a resolved value.** `Origin` names the file and document, which
+is what it can honestly say. It cannot point at "the expression on line 14", and a reader
+tracing a substituted value follows it in the source. Noted because provenance is this
+module's headline claim, and it is weaker here than for a plain data format — a real cost of
+supporting these formats, not something to gloss.
 
 ### D12 — Includes are refused, because the Store owns file I/O
 
@@ -316,6 +320,119 @@ directive halfway down a file.
 
 The same applies to any format with an include mechanism.
 
+### D13 — The target is every format the incumbent advertises, plus more
+
+The incumbent advertises eleven extensions and decodes four families. The target here is
+**everything it advertises, working** — including HCL, tfvars, INI and Java properties, which
+it names and cannot read — plus formats it never claimed, starting with HOCON, XML and JSONL.
+
+Read-only counts as support. A format that can be read but not written is genuinely useful
+and honestly described; a format that is advertised and fails at parse time is neither.
+
+This is a positioning decision as much as a technical one. "Everything it claims, plus what
+it doesn't" is a defensible sentence only if the advertised list actually works, which is why
+the low-value formats (INI, properties) are in scope at all — each is a small parser and a
+nesting rule, and leaving them out would leave the claim false.
+
+### D14 — HOCON's environment-variable fallback is disabled
+
+The HOCON specification says an unresolved substitution falls back to the system
+environment. That must not happen here.
+
+The module requires an environment prefix and treats it as a security control: without one,
+any variable matching a configuration key could reconfigure the program, which on a shared
+runner or multi-tenant host means an unrelated process's `LOG_LEVEL` reaches every tool.
+A HOCON file containing `${HOME}` or `${LOG_LEVEL}` would walk straight through that control,
+reading unprefixed environment through a side door the Store does not own.
+
+So the codec resolves substitutions **within the document only**. An unresolved reference is
+an error, not an environment lookup. A consumer who wants environment values adds
+`config.WithEnv("PREFIX")` as an ordinary layer, where the prefix applies, provenance names
+the variable, and precedence is visible at the call site.
+
+This needs verifying against whichever Go HOCON implementation is chosen — if it performs
+env fallback internally and cannot be configured not to, that disqualifies it.
+
+### D15 — The core exports the key helpers a flat-format adapter needs
+
+INI, Java properties and dotenv all produce flat keys that must become a nested tree, and
+dotenv's names are ambiguous in exactly the way environment variables are. The core already
+solves both, in `nest`, `mapKey` and `envName` — all unexported.
+
+**`nest` is exported.** Every flat adapter needs it, and building the tree wrongly is the
+documented trap in the custom-backend guide: `{"server.port": 9090}` produces a key with a
+literal dot rather than a nested path. Layer keys are lower-cased at the boundary by
+`normalised`, so case is not a coupling — shape is.
+
+**The ambiguity resolver is exported for dotenv's benefit.** `DATABASE_HOST` could mean
+`database.host` or `database_host`, and the existing strategy — resolve against the keys the
+lower layers already define, fall back to underscore-as-separator, return `ErrAmbiguousEnvKey`
+naming both candidates when two collide — is worth reusing rather than reimplementing. An
+adapter that reimplements it and picks a candidate in map-iteration order behaves differently
+between runs of the same program, which is the specific bug the current code exists to
+prevent.
+
+This is also the second real consumer of `Load`'s `below` argument, which until now only the
+environment backend used. That the argument was there and sufficient is evidence the seam was
+cut in the right place.
+
+### D16 — `config-toml` ships read-only with a writer-shaped hole
+
+TOML gets a structure-preserving writer via a `tomldoc` module, as a **fast follow** rather
+than a prerequisite. `config-toml` ships read-only first so TOML reading is not blocked behind
+a module-sized piece of work.
+
+The evidence that `tomldoc` is genuinely necessary, rather than a preference: no existing Go
+library round-trips TOML without destroying the file. `go-toml` v2 dropped editing entirely;
+v1 has an editable `Tree`, and a load-set-write cycle produces this:
+
+```toml
+# before                          # after Set("server.port", 9090)
+# Which port the listener binds.
+# Needs a firewall change too.    [features]
+[server]                            beta_ui = false
+host = "localhost"  # dev only
+port = 8080                       [server]
+                                    host = "localhost"
+# Feature flags.                    port = 9090
+[features]
+beta_ui = false
+```
+
+Every comment gone, sections alphabetised, indentation injected. That is the merged-view
+write this module exists to prevent, arriving through a different door.
+
+**What "writer-shaped hole" requires concretely:**
+
+- The codec is a named exported type, not an anonymous value, so it can gain methods later
+  without changing how it is constructed.
+- Adding `Check`, `Apply` and `Empty` turns it into an `EditingCodec`, and `NewCodecBackend`
+  (D5) then returns a writable backend automatically. No consumer call site changes.
+- The adapter's constructor signature is fixed now and does not change when writing lands.
+- The conformance suite asserts *read-only* behaviour for it today — routing skips it, writes
+  land in the next writable layer and are reported as shadowed — so the transition is a
+  visible test change rather than a silent one.
+
+**The consequence to decide before `tomldoc` lands.** When the TOML codec gains editing,
+routing changes for existing consumers: a write that previously skipped the TOML layer and
+landed in the file beneath it will now land in the TOML file. Nothing errors; the write simply
+goes somewhere else. That is observable behaviour changing under a dependency bump.
+
+Recorded here rather than left to be discovered. See open question 10.
+
+### D17 — The conformance suite lives in the core, using stdlib `testing` only
+
+`gitlab.com/phpboyscout/go/config/conformance`, so every adapter can run it without taking
+another dependency or tracking another module's version.
+
+**It must not import testify.** The core has testify as a test dependency today, which costs
+consumers nothing because nothing in the library graph reaches it. A `conformance` package
+importing it would make it a link-time dependency for every adapter that runs the suite. The
+suite therefore uses stdlib `testing` and plain comparisons.
+
+`depfootprint_test.go` scopes to `go list -deps .` — the root package — so the core's
+dependency claim stays honest and measures what a consumer of `config` actually inherits.
+
 ## Rejected alternatives
 
 **Add decoders to the core, switching on file extension.** The obvious approach, and what
@@ -333,6 +450,12 @@ read-only, where there is nothing hard to get wrong. The write path has one spec
 that is invisible until someone races you, and every adapter would face it independently.
 D3 exists so that mistake can be made once, in one place, with one regression test.
 
+**Refusing HCL and HOCON outright as "not data formats".** The first draft of this spec came
+close to it. Rejected because it conflates two things: HOCON's self-contained substitution
+has one correct answer and is worth resolving, while HCL's `var.*` does not. Refusing both
+would have discarded a large share of readable HOCON for a reason that only applies to HCL.
+See D11.
+
 **Full HCL evaluation with a supplied variable context.** Would make the adapter useful for
 real Terraform configuration. Rejected for now on scope and honesty: it means implementing
 (or vendoring) an evaluation context, keeping it consistent with whichever Terraform version
@@ -347,13 +470,19 @@ either lose what it exists to protect, or become a union of every format's quirk
 
 ## Public API
 
-Net new exported names in the core: **three**.
+Net new exported names in the core:
 
 ```go
 type Codec interface{ ... }        // D4
 type EditingCodec interface{ ... } // D4
 func NewCodecBackend(filesystem afero.Fs, path string, codec Codec) Backend  // D5
+
+// D15 — what a flat-format adapter needs and would otherwise reimplement.
+func NestKey(path string, value any) map[string]any
+func ResolveFlatKey(name string, below []Layer) (string, error)
 ```
+
+Plus one new package, `config/conformance` (D17), importing only stdlib `testing`.
 
 Unchanged: `NewFileBackend`, `WithFiles`, `Backend`, `WritableBackend`, `WatchableBackend`,
 `Pending`, `Edit`, `Layer`, `Source`, `Capabilities`, `NewWatcher`. Everything an adapter
@@ -403,48 +532,73 @@ default arm that degrades usefully.
 1. ~~**Module naming.**~~ **Resolved 2026-07-20:** one module per format, named
    `config-<format>` — `config-json`, `config-xml`, `config-toml` — specifically to keep
    each consumer's dependency graph as lean as possible. See D9.
-2. **Which formats first.** D10 proposes JSON and JSONL for the first module. Is TOML read
-   support wanted in the same phase, given it is likely the most-asked-for after JSON?
-3. **Does `tomldoc` get built?** Structure-preserving TOML editing is a module-sized piece
-   of work comparable to `yamldoc`. Worth committing to only if someone actually needs to
-   *write* TOML; reading it is cheap.
-4. **Should the conformance suite live in the core or its own module?** In the core it is
-   available to every adapter without another dependency, but it drags `testing` into the
-   main module's import graph. A `config-conformance` module keeps the core clean at the
-   cost of another repository.
-5. **INI/properties/dotenv nesting.** These are flat. `DATABASE_HOST` → `database.host`
-   needs a stated rule, and the environment backend's key-resolution problem is a warning
-   about how ambiguous that gets. Possibly out of scope entirely.
-6. **Is a declarative-subset HCL adapter worth shipping?** D11 makes it honest but narrow:
-   it serves an HCL file that is plain key-value configuration and refuses anything using
-   the language features people typically choose HCL *for*. That may be most `.hcl` config
-   files, or it may be almost none — worth a look at real files before committing to
-   Phase 5.
+2. ~~**Which formats first.**~~ **Resolved 2026-07-20:** everything the incumbent
+   advertises, plus HOCON, XML and JSONL. Read-only where that is the honest answer. See
+   D13 and the phase list.
+3. ~~**Does `tomldoc` get built?**~~ **Resolved 2026-07-20:** yes, committed, but phased —
+   `config-toml` ships read-only with a writer-shaped hole and `tomldoc` follows. See D16.
+4. ~~**Should the conformance suite live in the core or its own module?**~~
+   **Resolved 2026-07-20:** in the core as `config/conformance`, stdlib `testing` only. See D17.
+5. ~~**INI/properties/dotenv nesting.**~~ **Resolved 2026-07-20:** the rule differs per
+   format and only dotenv is ambiguous. INI nests section plus key; properties are already
+   dotted; dotenv reuses the environment backend's resolution, exported per D15.
+6. **How much real HCL survives D11?** The adapter reads plain key-value HCL and refuses
+   `var.*`, functions and includes. That may be most `.hcl` configuration files or almost
+   none — worth sampling real ones before Phase 7, because if it is almost none the module
+   is not worth publishing and the honest answer is "use Terraform".
 7. **HCL block labels.** `resource "aws_instance" "web" { … }` is a three-part name with no
    obvious dotted-key equivalent. Flatten to `resource.aws_instance.web`, or refuse labelled
-   blocks under D11? Only matters if question 6 is answered yes.
+   blocks? Affects how much of question 6 is readable.
+8. ~~**Should the flat formats share a module after all?**~~ **Resolved 2026-07-20:**
+   separate modules, per D9. Their nesting rules genuinely differ, so they share less than
+   the grouping suggested.
+9. **Which HOCON implementation.** D14 disqualifies any that performs environment fallback
+   and cannot be configured not to. Needs a survey of the available Go libraries before
+   Phase 7 is scoped.
+10. **How does `config-toml` gaining write support reach consumers?** Per D16 it changes
+    routing under a dependency bump — a write that skipped the TOML layer starts landing in
+    it. Options: release it as a major version of `config-toml`; ship it behind a separate
+    constructor so it is opt-in; or treat it as a documented minor with the routing change
+    called out in the release notes. Worth settling before `tomldoc` lands rather than at
+    the point it does.
 
 ## Implementation phases
 
 **Phase 1 — the codec seam, no behaviour change.** Extract `Codec`/`EditingCodec`, add
 `NewCodecBackend`, reimplement `fileBackend` on top of it as a YAML codec. Done when the
-existing suite passes unmodified.
+existing suite passes **unmodified** — a test needing adjustment means the refactor changed
+something it should not have, and that is the gate rather than a green run.
 
 **Phase 2 — the conformance suite.** Written against the YAML codec first, since its
-behaviour is already known-good, then exported.
+behaviour is already known-good, then exported for adapters to run against themselves.
 
 **Phase 3 — `config-json`.** JSON and JSONL, read and write. The first real consumer of the
-seam, and the test of whether Phase 1 extracted the right thing.
+seam, and the test of whether Phase 1 extracted the right thing. Write support here because
+JSON is the most-asked-for format and has no comments to lose.
 
-**Phase 4 — `config-toml`, read-only.** Decode via an established parser; no `EditingCodec`.
+**Phase 4 — `config-toml`**, read-only, with the writer-shaped hole of D16: a named exported
+codec type and a fixed constructor signature, so Phase 8 adds methods rather than restructuring.
 
-**Phase 5 — `config-hcl` and `config-hocon`, read-only, declarative subset.** Both refuse
-substitutions, function calls and includes at load (D11, D12). Sequenced last of the named
+**Phase 5 — the flat formats**: `config-dotenv`, `config-ini`, `config-properties`.
+Read-only. Grouped because they share one problem — a flat key space needing a stated
+nesting rule (OQ5) — and solving it once is most of the work. Sequenced here because they
+are small, and because closing the advertised-parity gap (D13) is worth more than the
+remaining formats individually.
+
+**Phase 6 — `config-xml`**, read-only.
+
+**Phase 7 — `config-hcl` and `config-hocon`**, read-only. Both refuse external
+parameterisation, function calls and includes at load (D11, D12), and HOCON resolves
+substitutions within the document with no environment fallback (D14). Last of the named
 formats because they are the ones most likely to surface a case D11 got wrong, and doing
-them after three simpler adapters means the seam is settled before it meets a hard format.
+them after five simpler adapters means the seam is settled before it meets a hard format.
 
-**Phase 6 — revisit.** XML, INI, dotenv, TOML writing and any evaluated-HCL question are
-decided on demand, informed by what the earlier phases actually cost.
+**Phase 8 — `tomldoc` and TOML write support.** The committed fast follow: a
+structure-preserving TOML editor, then `config-toml` gains an `EditingCodec` through the hole
+left for it in Phase 4. Settle open question 10 before releasing it.
+
+**Phase 9 — revisit.** Evaluated HCL, XML or flat-format writing, and anything the earlier
+phases showed to be wrong.
 
 Phases 1 and 2 are the only ones touching this repository. Everything after is additive and
 independently releasable, which is the point.
