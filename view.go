@@ -274,9 +274,23 @@ func decodeInto(input, target any) error {
 		// left every inherited field at its zero value with no error.
 		Squash:   true,
 		Metadata: nil,
+		// Configuration arrives as text, so the decoder is told how to read
+		// the types a configuration file actually holds. The last hook is the
+		// one that future-proofs this: any type implementing
+		// encoding.TextUnmarshaler decodes itself, which is how Go models an
+		// enum or a domain type — so a consumer's own types work without this
+		// module having heard of them.
 		DecodeHook: mapstructure.ComposeDecodeHookFunc(
 			mapstructure.StringToTimeDurationHookFunc(),
 			mapstructure.StringToSliceHookFunc(","),
+			mapstructure.StringToNetIPAddrHookFunc(),
+			mapstructure.StringToNetIPAddrPortHookFunc(),
+			mapstructure.StringToNetIPPrefixHookFunc(),
+			mapstructure.StringToIPHookFunc(),
+			mapstructure.StringToIPNetHookFunc(),
+			mapstructure.StringToURLHookFunc(),
+			mapstructure.StringToTimeLocationHookFunc(),
+			mapstructure.TextUnmarshallerHookFunc(),
 		),
 	})
 	if err != nil {

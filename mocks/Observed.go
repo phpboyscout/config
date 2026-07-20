@@ -295,6 +295,57 @@ func (_c *MockObserved_GetFloat_Call) RunAndReturn(run func(path string) float64
 	return _c
 }
 
+// GetFloat64 provides a mock function for the type MockObserved
+func (_mock *MockObserved) GetFloat64(path string) float64 {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetFloat64")
+	}
+
+	var r0 float64
+	if returnFunc, ok := ret.Get(0).(func(string) float64); ok {
+		r0 = returnFunc(path)
+	} else {
+		r0 = ret.Get(0).(float64)
+	}
+	return r0
+}
+
+// MockObserved_GetFloat64_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetFloat64'
+type MockObserved_GetFloat64_Call struct {
+	*mock.Call
+}
+
+// GetFloat64 is a helper method to define mock.On call
+//   - path string
+func (_e *MockObserved_Expecter) GetFloat64(path interface{}) *MockObserved_GetFloat64_Call {
+	return &MockObserved_GetFloat64_Call{Call: _e.mock.On("GetFloat64", path)}
+}
+
+func (_c *MockObserved_GetFloat64_Call) Run(run func(path string)) *MockObserved_GetFloat64_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockObserved_GetFloat64_Call) Return(f float64) *MockObserved_GetFloat64_Call {
+	_c.Call.Return(f)
+	return _c
+}
+
+func (_c *MockObserved_GetFloat64_Call) RunAndReturn(run func(path string) float64) *MockObserved_GetFloat64_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetInt provides a mock function for the type MockObserved
 func (_mock *MockObserved) GetInt(path string) int {
 	ret := _mock.Called(path)
@@ -346,6 +397,212 @@ func (_c *MockObserved_GetInt_Call) RunAndReturn(run func(path string) int) *Moc
 	return _c
 }
 
+// GetInt32 provides a mock function for the type MockObserved
+func (_mock *MockObserved) GetInt32(path string) int32 {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetInt32")
+	}
+
+	var r0 int32
+	if returnFunc, ok := ret.Get(0).(func(string) int32); ok {
+		r0 = returnFunc(path)
+	} else {
+		r0 = ret.Get(0).(int32)
+	}
+	return r0
+}
+
+// MockObserved_GetInt32_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetInt32'
+type MockObserved_GetInt32_Call struct {
+	*mock.Call
+}
+
+// GetInt32 is a helper method to define mock.On call
+//   - path string
+func (_e *MockObserved_Expecter) GetInt32(path interface{}) *MockObserved_GetInt32_Call {
+	return &MockObserved_GetInt32_Call{Call: _e.mock.On("GetInt32", path)}
+}
+
+func (_c *MockObserved_GetInt32_Call) Run(run func(path string)) *MockObserved_GetInt32_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockObserved_GetInt32_Call) Return(n int32) *MockObserved_GetInt32_Call {
+	_c.Call.Return(n)
+	return _c
+}
+
+func (_c *MockObserved_GetInt32_Call) RunAndReturn(run func(path string) int32) *MockObserved_GetInt32_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetInt64 provides a mock function for the type MockObserved
+func (_mock *MockObserved) GetInt64(path string) int64 {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetInt64")
+	}
+
+	var r0 int64
+	if returnFunc, ok := ret.Get(0).(func(string) int64); ok {
+		r0 = returnFunc(path)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+	return r0
+}
+
+// MockObserved_GetInt64_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetInt64'
+type MockObserved_GetInt64_Call struct {
+	*mock.Call
+}
+
+// GetInt64 is a helper method to define mock.On call
+//   - path string
+func (_e *MockObserved_Expecter) GetInt64(path interface{}) *MockObserved_GetInt64_Call {
+	return &MockObserved_GetInt64_Call{Call: _e.mock.On("GetInt64", path)}
+}
+
+func (_c *MockObserved_GetInt64_Call) Run(run func(path string)) *MockObserved_GetInt64_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockObserved_GetInt64_Call) Return(n int64) *MockObserved_GetInt64_Call {
+	_c.Call.Return(n)
+	return _c
+}
+
+func (_c *MockObserved_GetInt64_Call) RunAndReturn(run func(path string) int64) *MockObserved_GetInt64_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetIntSlice provides a mock function for the type MockObserved
+func (_mock *MockObserved) GetIntSlice(path string) []int {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetIntSlice")
+	}
+
+	var r0 []int
+	if returnFunc, ok := ret.Get(0).(func(string) []int); ok {
+		r0 = returnFunc(path)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]int)
+		}
+	}
+	return r0
+}
+
+// MockObserved_GetIntSlice_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetIntSlice'
+type MockObserved_GetIntSlice_Call struct {
+	*mock.Call
+}
+
+// GetIntSlice is a helper method to define mock.On call
+//   - path string
+func (_e *MockObserved_Expecter) GetIntSlice(path interface{}) *MockObserved_GetIntSlice_Call {
+	return &MockObserved_GetIntSlice_Call{Call: _e.mock.On("GetIntSlice", path)}
+}
+
+func (_c *MockObserved_GetIntSlice_Call) Run(run func(path string)) *MockObserved_GetIntSlice_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockObserved_GetIntSlice_Call) Return(ints []int) *MockObserved_GetIntSlice_Call {
+	_c.Call.Return(ints)
+	return _c
+}
+
+func (_c *MockObserved_GetIntSlice_Call) RunAndReturn(run func(path string) []int) *MockObserved_GetIntSlice_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetSizeInBytes provides a mock function for the type MockObserved
+func (_mock *MockObserved) GetSizeInBytes(path string) uint {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetSizeInBytes")
+	}
+
+	var r0 uint
+	if returnFunc, ok := ret.Get(0).(func(string) uint); ok {
+		r0 = returnFunc(path)
+	} else {
+		r0 = ret.Get(0).(uint)
+	}
+	return r0
+}
+
+// MockObserved_GetSizeInBytes_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetSizeInBytes'
+type MockObserved_GetSizeInBytes_Call struct {
+	*mock.Call
+}
+
+// GetSizeInBytes is a helper method to define mock.On call
+//   - path string
+func (_e *MockObserved_Expecter) GetSizeInBytes(path interface{}) *MockObserved_GetSizeInBytes_Call {
+	return &MockObserved_GetSizeInBytes_Call{Call: _e.mock.On("GetSizeInBytes", path)}
+}
+
+func (_c *MockObserved_GetSizeInBytes_Call) Run(run func(path string)) *MockObserved_GetSizeInBytes_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockObserved_GetSizeInBytes_Call) Return(v uint) *MockObserved_GetSizeInBytes_Call {
+	_c.Call.Return(v)
+	return _c
+}
+
+func (_c *MockObserved_GetSizeInBytes_Call) RunAndReturn(run func(path string) uint) *MockObserved_GetSizeInBytes_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetString provides a mock function for the type MockObserved
 func (_mock *MockObserved) GetString(path string) string {
 	ret := _mock.Called(path)
@@ -393,6 +650,165 @@ func (_c *MockObserved_GetString_Call) Return(s string) *MockObserved_GetString_
 }
 
 func (_c *MockObserved_GetString_Call) RunAndReturn(run func(path string) string) *MockObserved_GetString_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetStringMap provides a mock function for the type MockObserved
+func (_mock *MockObserved) GetStringMap(path string) map[string]any {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetStringMap")
+	}
+
+	var r0 map[string]any
+	if returnFunc, ok := ret.Get(0).(func(string) map[string]any); ok {
+		r0 = returnFunc(path)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(map[string]any)
+		}
+	}
+	return r0
+}
+
+// MockObserved_GetStringMap_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetStringMap'
+type MockObserved_GetStringMap_Call struct {
+	*mock.Call
+}
+
+// GetStringMap is a helper method to define mock.On call
+//   - path string
+func (_e *MockObserved_Expecter) GetStringMap(path interface{}) *MockObserved_GetStringMap_Call {
+	return &MockObserved_GetStringMap_Call{Call: _e.mock.On("GetStringMap", path)}
+}
+
+func (_c *MockObserved_GetStringMap_Call) Run(run func(path string)) *MockObserved_GetStringMap_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockObserved_GetStringMap_Call) Return(stringToV map[string]any) *MockObserved_GetStringMap_Call {
+	_c.Call.Return(stringToV)
+	return _c
+}
+
+func (_c *MockObserved_GetStringMap_Call) RunAndReturn(run func(path string) map[string]any) *MockObserved_GetStringMap_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetStringMapString provides a mock function for the type MockObserved
+func (_mock *MockObserved) GetStringMapString(path string) map[string]string {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetStringMapString")
+	}
+
+	var r0 map[string]string
+	if returnFunc, ok := ret.Get(0).(func(string) map[string]string); ok {
+		r0 = returnFunc(path)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(map[string]string)
+		}
+	}
+	return r0
+}
+
+// MockObserved_GetStringMapString_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetStringMapString'
+type MockObserved_GetStringMapString_Call struct {
+	*mock.Call
+}
+
+// GetStringMapString is a helper method to define mock.On call
+//   - path string
+func (_e *MockObserved_Expecter) GetStringMapString(path interface{}) *MockObserved_GetStringMapString_Call {
+	return &MockObserved_GetStringMapString_Call{Call: _e.mock.On("GetStringMapString", path)}
+}
+
+func (_c *MockObserved_GetStringMapString_Call) Run(run func(path string)) *MockObserved_GetStringMapString_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockObserved_GetStringMapString_Call) Return(stringToString map[string]string) *MockObserved_GetStringMapString_Call {
+	_c.Call.Return(stringToString)
+	return _c
+}
+
+func (_c *MockObserved_GetStringMapString_Call) RunAndReturn(run func(path string) map[string]string) *MockObserved_GetStringMapString_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetStringMapStringSlice provides a mock function for the type MockObserved
+func (_mock *MockObserved) GetStringMapStringSlice(path string) map[string][]string {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetStringMapStringSlice")
+	}
+
+	var r0 map[string][]string
+	if returnFunc, ok := ret.Get(0).(func(string) map[string][]string); ok {
+		r0 = returnFunc(path)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(map[string][]string)
+		}
+	}
+	return r0
+}
+
+// MockObserved_GetStringMapStringSlice_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetStringMapStringSlice'
+type MockObserved_GetStringMapStringSlice_Call struct {
+	*mock.Call
+}
+
+// GetStringMapStringSlice is a helper method to define mock.On call
+//   - path string
+func (_e *MockObserved_Expecter) GetStringMapStringSlice(path interface{}) *MockObserved_GetStringMapStringSlice_Call {
+	return &MockObserved_GetStringMapStringSlice_Call{Call: _e.mock.On("GetStringMapStringSlice", path)}
+}
+
+func (_c *MockObserved_GetStringMapStringSlice_Call) Run(run func(path string)) *MockObserved_GetStringMapStringSlice_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockObserved_GetStringMapStringSlice_Call) Return(stringToStrings map[string][]string) *MockObserved_GetStringMapStringSlice_Call {
+	_c.Call.Return(stringToStrings)
+	return _c
+}
+
+func (_c *MockObserved_GetStringMapStringSlice_Call) RunAndReturn(run func(path string) map[string][]string) *MockObserved_GetStringMapStringSlice_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -497,6 +913,261 @@ func (_c *MockObserved_GetTime_Call) Return(time1 time.Time) *MockObserved_GetTi
 }
 
 func (_c *MockObserved_GetTime_Call) RunAndReturn(run func(path string) time.Time) *MockObserved_GetTime_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetUint provides a mock function for the type MockObserved
+func (_mock *MockObserved) GetUint(path string) uint {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetUint")
+	}
+
+	var r0 uint
+	if returnFunc, ok := ret.Get(0).(func(string) uint); ok {
+		r0 = returnFunc(path)
+	} else {
+		r0 = ret.Get(0).(uint)
+	}
+	return r0
+}
+
+// MockObserved_GetUint_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetUint'
+type MockObserved_GetUint_Call struct {
+	*mock.Call
+}
+
+// GetUint is a helper method to define mock.On call
+//   - path string
+func (_e *MockObserved_Expecter) GetUint(path interface{}) *MockObserved_GetUint_Call {
+	return &MockObserved_GetUint_Call{Call: _e.mock.On("GetUint", path)}
+}
+
+func (_c *MockObserved_GetUint_Call) Run(run func(path string)) *MockObserved_GetUint_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockObserved_GetUint_Call) Return(v uint) *MockObserved_GetUint_Call {
+	_c.Call.Return(v)
+	return _c
+}
+
+func (_c *MockObserved_GetUint_Call) RunAndReturn(run func(path string) uint) *MockObserved_GetUint_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetUint16 provides a mock function for the type MockObserved
+func (_mock *MockObserved) GetUint16(path string) uint16 {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetUint16")
+	}
+
+	var r0 uint16
+	if returnFunc, ok := ret.Get(0).(func(string) uint16); ok {
+		r0 = returnFunc(path)
+	} else {
+		r0 = ret.Get(0).(uint16)
+	}
+	return r0
+}
+
+// MockObserved_GetUint16_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetUint16'
+type MockObserved_GetUint16_Call struct {
+	*mock.Call
+}
+
+// GetUint16 is a helper method to define mock.On call
+//   - path string
+func (_e *MockObserved_Expecter) GetUint16(path interface{}) *MockObserved_GetUint16_Call {
+	return &MockObserved_GetUint16_Call{Call: _e.mock.On("GetUint16", path)}
+}
+
+func (_c *MockObserved_GetUint16_Call) Run(run func(path string)) *MockObserved_GetUint16_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockObserved_GetUint16_Call) Return(v uint16) *MockObserved_GetUint16_Call {
+	_c.Call.Return(v)
+	return _c
+}
+
+func (_c *MockObserved_GetUint16_Call) RunAndReturn(run func(path string) uint16) *MockObserved_GetUint16_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetUint32 provides a mock function for the type MockObserved
+func (_mock *MockObserved) GetUint32(path string) uint32 {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetUint32")
+	}
+
+	var r0 uint32
+	if returnFunc, ok := ret.Get(0).(func(string) uint32); ok {
+		r0 = returnFunc(path)
+	} else {
+		r0 = ret.Get(0).(uint32)
+	}
+	return r0
+}
+
+// MockObserved_GetUint32_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetUint32'
+type MockObserved_GetUint32_Call struct {
+	*mock.Call
+}
+
+// GetUint32 is a helper method to define mock.On call
+//   - path string
+func (_e *MockObserved_Expecter) GetUint32(path interface{}) *MockObserved_GetUint32_Call {
+	return &MockObserved_GetUint32_Call{Call: _e.mock.On("GetUint32", path)}
+}
+
+func (_c *MockObserved_GetUint32_Call) Run(run func(path string)) *MockObserved_GetUint32_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockObserved_GetUint32_Call) Return(v uint32) *MockObserved_GetUint32_Call {
+	_c.Call.Return(v)
+	return _c
+}
+
+func (_c *MockObserved_GetUint32_Call) RunAndReturn(run func(path string) uint32) *MockObserved_GetUint32_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetUint64 provides a mock function for the type MockObserved
+func (_mock *MockObserved) GetUint64(path string) uint64 {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetUint64")
+	}
+
+	var r0 uint64
+	if returnFunc, ok := ret.Get(0).(func(string) uint64); ok {
+		r0 = returnFunc(path)
+	} else {
+		r0 = ret.Get(0).(uint64)
+	}
+	return r0
+}
+
+// MockObserved_GetUint64_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetUint64'
+type MockObserved_GetUint64_Call struct {
+	*mock.Call
+}
+
+// GetUint64 is a helper method to define mock.On call
+//   - path string
+func (_e *MockObserved_Expecter) GetUint64(path interface{}) *MockObserved_GetUint64_Call {
+	return &MockObserved_GetUint64_Call{Call: _e.mock.On("GetUint64", path)}
+}
+
+func (_c *MockObserved_GetUint64_Call) Run(run func(path string)) *MockObserved_GetUint64_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockObserved_GetUint64_Call) Return(v uint64) *MockObserved_GetUint64_Call {
+	_c.Call.Return(v)
+	return _c
+}
+
+func (_c *MockObserved_GetUint64_Call) RunAndReturn(run func(path string) uint64) *MockObserved_GetUint64_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetUint8 provides a mock function for the type MockObserved
+func (_mock *MockObserved) GetUint8(path string) uint8 {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetUint8")
+	}
+
+	var r0 uint8
+	if returnFunc, ok := ret.Get(0).(func(string) uint8); ok {
+		r0 = returnFunc(path)
+	} else {
+		r0 = ret.Get(0).(uint8)
+	}
+	return r0
+}
+
+// MockObserved_GetUint8_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetUint8'
+type MockObserved_GetUint8_Call struct {
+	*mock.Call
+}
+
+// GetUint8 is a helper method to define mock.On call
+//   - path string
+func (_e *MockObserved_Expecter) GetUint8(path interface{}) *MockObserved_GetUint8_Call {
+	return &MockObserved_GetUint8_Call{Call: _e.mock.On("GetUint8", path)}
+}
+
+func (_c *MockObserved_GetUint8_Call) Run(run func(path string)) *MockObserved_GetUint8_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockObserved_GetUint8_Call) Return(v uint8) *MockObserved_GetUint8_Call {
+	_c.Call.Return(v)
+	return _c
+}
+
+func (_c *MockObserved_GetUint8_Call) RunAndReturn(run func(path string) uint8) *MockObserved_GetUint8_Call {
 	_c.Call.Return(run)
 	return _c
 }

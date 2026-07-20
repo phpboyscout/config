@@ -295,6 +295,57 @@ func (_c *MockReader_GetFloat_Call) RunAndReturn(run func(path string) float64) 
 	return _c
 }
 
+// GetFloat64 provides a mock function for the type MockReader
+func (_mock *MockReader) GetFloat64(path string) float64 {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetFloat64")
+	}
+
+	var r0 float64
+	if returnFunc, ok := ret.Get(0).(func(string) float64); ok {
+		r0 = returnFunc(path)
+	} else {
+		r0 = ret.Get(0).(float64)
+	}
+	return r0
+}
+
+// MockReader_GetFloat64_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetFloat64'
+type MockReader_GetFloat64_Call struct {
+	*mock.Call
+}
+
+// GetFloat64 is a helper method to define mock.On call
+//   - path string
+func (_e *MockReader_Expecter) GetFloat64(path interface{}) *MockReader_GetFloat64_Call {
+	return &MockReader_GetFloat64_Call{Call: _e.mock.On("GetFloat64", path)}
+}
+
+func (_c *MockReader_GetFloat64_Call) Run(run func(path string)) *MockReader_GetFloat64_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockReader_GetFloat64_Call) Return(f float64) *MockReader_GetFloat64_Call {
+	_c.Call.Return(f)
+	return _c
+}
+
+func (_c *MockReader_GetFloat64_Call) RunAndReturn(run func(path string) float64) *MockReader_GetFloat64_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetInt provides a mock function for the type MockReader
 func (_mock *MockReader) GetInt(path string) int {
 	ret := _mock.Called(path)
@@ -346,6 +397,212 @@ func (_c *MockReader_GetInt_Call) RunAndReturn(run func(path string) int) *MockR
 	return _c
 }
 
+// GetInt32 provides a mock function for the type MockReader
+func (_mock *MockReader) GetInt32(path string) int32 {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetInt32")
+	}
+
+	var r0 int32
+	if returnFunc, ok := ret.Get(0).(func(string) int32); ok {
+		r0 = returnFunc(path)
+	} else {
+		r0 = ret.Get(0).(int32)
+	}
+	return r0
+}
+
+// MockReader_GetInt32_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetInt32'
+type MockReader_GetInt32_Call struct {
+	*mock.Call
+}
+
+// GetInt32 is a helper method to define mock.On call
+//   - path string
+func (_e *MockReader_Expecter) GetInt32(path interface{}) *MockReader_GetInt32_Call {
+	return &MockReader_GetInt32_Call{Call: _e.mock.On("GetInt32", path)}
+}
+
+func (_c *MockReader_GetInt32_Call) Run(run func(path string)) *MockReader_GetInt32_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockReader_GetInt32_Call) Return(n int32) *MockReader_GetInt32_Call {
+	_c.Call.Return(n)
+	return _c
+}
+
+func (_c *MockReader_GetInt32_Call) RunAndReturn(run func(path string) int32) *MockReader_GetInt32_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetInt64 provides a mock function for the type MockReader
+func (_mock *MockReader) GetInt64(path string) int64 {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetInt64")
+	}
+
+	var r0 int64
+	if returnFunc, ok := ret.Get(0).(func(string) int64); ok {
+		r0 = returnFunc(path)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+	return r0
+}
+
+// MockReader_GetInt64_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetInt64'
+type MockReader_GetInt64_Call struct {
+	*mock.Call
+}
+
+// GetInt64 is a helper method to define mock.On call
+//   - path string
+func (_e *MockReader_Expecter) GetInt64(path interface{}) *MockReader_GetInt64_Call {
+	return &MockReader_GetInt64_Call{Call: _e.mock.On("GetInt64", path)}
+}
+
+func (_c *MockReader_GetInt64_Call) Run(run func(path string)) *MockReader_GetInt64_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockReader_GetInt64_Call) Return(n int64) *MockReader_GetInt64_Call {
+	_c.Call.Return(n)
+	return _c
+}
+
+func (_c *MockReader_GetInt64_Call) RunAndReturn(run func(path string) int64) *MockReader_GetInt64_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetIntSlice provides a mock function for the type MockReader
+func (_mock *MockReader) GetIntSlice(path string) []int {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetIntSlice")
+	}
+
+	var r0 []int
+	if returnFunc, ok := ret.Get(0).(func(string) []int); ok {
+		r0 = returnFunc(path)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]int)
+		}
+	}
+	return r0
+}
+
+// MockReader_GetIntSlice_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetIntSlice'
+type MockReader_GetIntSlice_Call struct {
+	*mock.Call
+}
+
+// GetIntSlice is a helper method to define mock.On call
+//   - path string
+func (_e *MockReader_Expecter) GetIntSlice(path interface{}) *MockReader_GetIntSlice_Call {
+	return &MockReader_GetIntSlice_Call{Call: _e.mock.On("GetIntSlice", path)}
+}
+
+func (_c *MockReader_GetIntSlice_Call) Run(run func(path string)) *MockReader_GetIntSlice_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockReader_GetIntSlice_Call) Return(ints []int) *MockReader_GetIntSlice_Call {
+	_c.Call.Return(ints)
+	return _c
+}
+
+func (_c *MockReader_GetIntSlice_Call) RunAndReturn(run func(path string) []int) *MockReader_GetIntSlice_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetSizeInBytes provides a mock function for the type MockReader
+func (_mock *MockReader) GetSizeInBytes(path string) uint {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetSizeInBytes")
+	}
+
+	var r0 uint
+	if returnFunc, ok := ret.Get(0).(func(string) uint); ok {
+		r0 = returnFunc(path)
+	} else {
+		r0 = ret.Get(0).(uint)
+	}
+	return r0
+}
+
+// MockReader_GetSizeInBytes_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetSizeInBytes'
+type MockReader_GetSizeInBytes_Call struct {
+	*mock.Call
+}
+
+// GetSizeInBytes is a helper method to define mock.On call
+//   - path string
+func (_e *MockReader_Expecter) GetSizeInBytes(path interface{}) *MockReader_GetSizeInBytes_Call {
+	return &MockReader_GetSizeInBytes_Call{Call: _e.mock.On("GetSizeInBytes", path)}
+}
+
+func (_c *MockReader_GetSizeInBytes_Call) Run(run func(path string)) *MockReader_GetSizeInBytes_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockReader_GetSizeInBytes_Call) Return(v uint) *MockReader_GetSizeInBytes_Call {
+	_c.Call.Return(v)
+	return _c
+}
+
+func (_c *MockReader_GetSizeInBytes_Call) RunAndReturn(run func(path string) uint) *MockReader_GetSizeInBytes_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetString provides a mock function for the type MockReader
 func (_mock *MockReader) GetString(path string) string {
 	ret := _mock.Called(path)
@@ -393,6 +650,165 @@ func (_c *MockReader_GetString_Call) Return(s string) *MockReader_GetString_Call
 }
 
 func (_c *MockReader_GetString_Call) RunAndReturn(run func(path string) string) *MockReader_GetString_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetStringMap provides a mock function for the type MockReader
+func (_mock *MockReader) GetStringMap(path string) map[string]any {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetStringMap")
+	}
+
+	var r0 map[string]any
+	if returnFunc, ok := ret.Get(0).(func(string) map[string]any); ok {
+		r0 = returnFunc(path)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(map[string]any)
+		}
+	}
+	return r0
+}
+
+// MockReader_GetStringMap_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetStringMap'
+type MockReader_GetStringMap_Call struct {
+	*mock.Call
+}
+
+// GetStringMap is a helper method to define mock.On call
+//   - path string
+func (_e *MockReader_Expecter) GetStringMap(path interface{}) *MockReader_GetStringMap_Call {
+	return &MockReader_GetStringMap_Call{Call: _e.mock.On("GetStringMap", path)}
+}
+
+func (_c *MockReader_GetStringMap_Call) Run(run func(path string)) *MockReader_GetStringMap_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockReader_GetStringMap_Call) Return(stringToV map[string]any) *MockReader_GetStringMap_Call {
+	_c.Call.Return(stringToV)
+	return _c
+}
+
+func (_c *MockReader_GetStringMap_Call) RunAndReturn(run func(path string) map[string]any) *MockReader_GetStringMap_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetStringMapString provides a mock function for the type MockReader
+func (_mock *MockReader) GetStringMapString(path string) map[string]string {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetStringMapString")
+	}
+
+	var r0 map[string]string
+	if returnFunc, ok := ret.Get(0).(func(string) map[string]string); ok {
+		r0 = returnFunc(path)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(map[string]string)
+		}
+	}
+	return r0
+}
+
+// MockReader_GetStringMapString_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetStringMapString'
+type MockReader_GetStringMapString_Call struct {
+	*mock.Call
+}
+
+// GetStringMapString is a helper method to define mock.On call
+//   - path string
+func (_e *MockReader_Expecter) GetStringMapString(path interface{}) *MockReader_GetStringMapString_Call {
+	return &MockReader_GetStringMapString_Call{Call: _e.mock.On("GetStringMapString", path)}
+}
+
+func (_c *MockReader_GetStringMapString_Call) Run(run func(path string)) *MockReader_GetStringMapString_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockReader_GetStringMapString_Call) Return(stringToString map[string]string) *MockReader_GetStringMapString_Call {
+	_c.Call.Return(stringToString)
+	return _c
+}
+
+func (_c *MockReader_GetStringMapString_Call) RunAndReturn(run func(path string) map[string]string) *MockReader_GetStringMapString_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetStringMapStringSlice provides a mock function for the type MockReader
+func (_mock *MockReader) GetStringMapStringSlice(path string) map[string][]string {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetStringMapStringSlice")
+	}
+
+	var r0 map[string][]string
+	if returnFunc, ok := ret.Get(0).(func(string) map[string][]string); ok {
+		r0 = returnFunc(path)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(map[string][]string)
+		}
+	}
+	return r0
+}
+
+// MockReader_GetStringMapStringSlice_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetStringMapStringSlice'
+type MockReader_GetStringMapStringSlice_Call struct {
+	*mock.Call
+}
+
+// GetStringMapStringSlice is a helper method to define mock.On call
+//   - path string
+func (_e *MockReader_Expecter) GetStringMapStringSlice(path interface{}) *MockReader_GetStringMapStringSlice_Call {
+	return &MockReader_GetStringMapStringSlice_Call{Call: _e.mock.On("GetStringMapStringSlice", path)}
+}
+
+func (_c *MockReader_GetStringMapStringSlice_Call) Run(run func(path string)) *MockReader_GetStringMapStringSlice_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockReader_GetStringMapStringSlice_Call) Return(stringToStrings map[string][]string) *MockReader_GetStringMapStringSlice_Call {
+	_c.Call.Return(stringToStrings)
+	return _c
+}
+
+func (_c *MockReader_GetStringMapStringSlice_Call) RunAndReturn(run func(path string) map[string][]string) *MockReader_GetStringMapStringSlice_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -497,6 +913,261 @@ func (_c *MockReader_GetTime_Call) Return(time1 time.Time) *MockReader_GetTime_C
 }
 
 func (_c *MockReader_GetTime_Call) RunAndReturn(run func(path string) time.Time) *MockReader_GetTime_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetUint provides a mock function for the type MockReader
+func (_mock *MockReader) GetUint(path string) uint {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetUint")
+	}
+
+	var r0 uint
+	if returnFunc, ok := ret.Get(0).(func(string) uint); ok {
+		r0 = returnFunc(path)
+	} else {
+		r0 = ret.Get(0).(uint)
+	}
+	return r0
+}
+
+// MockReader_GetUint_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetUint'
+type MockReader_GetUint_Call struct {
+	*mock.Call
+}
+
+// GetUint is a helper method to define mock.On call
+//   - path string
+func (_e *MockReader_Expecter) GetUint(path interface{}) *MockReader_GetUint_Call {
+	return &MockReader_GetUint_Call{Call: _e.mock.On("GetUint", path)}
+}
+
+func (_c *MockReader_GetUint_Call) Run(run func(path string)) *MockReader_GetUint_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockReader_GetUint_Call) Return(v uint) *MockReader_GetUint_Call {
+	_c.Call.Return(v)
+	return _c
+}
+
+func (_c *MockReader_GetUint_Call) RunAndReturn(run func(path string) uint) *MockReader_GetUint_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetUint16 provides a mock function for the type MockReader
+func (_mock *MockReader) GetUint16(path string) uint16 {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetUint16")
+	}
+
+	var r0 uint16
+	if returnFunc, ok := ret.Get(0).(func(string) uint16); ok {
+		r0 = returnFunc(path)
+	} else {
+		r0 = ret.Get(0).(uint16)
+	}
+	return r0
+}
+
+// MockReader_GetUint16_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetUint16'
+type MockReader_GetUint16_Call struct {
+	*mock.Call
+}
+
+// GetUint16 is a helper method to define mock.On call
+//   - path string
+func (_e *MockReader_Expecter) GetUint16(path interface{}) *MockReader_GetUint16_Call {
+	return &MockReader_GetUint16_Call{Call: _e.mock.On("GetUint16", path)}
+}
+
+func (_c *MockReader_GetUint16_Call) Run(run func(path string)) *MockReader_GetUint16_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockReader_GetUint16_Call) Return(v uint16) *MockReader_GetUint16_Call {
+	_c.Call.Return(v)
+	return _c
+}
+
+func (_c *MockReader_GetUint16_Call) RunAndReturn(run func(path string) uint16) *MockReader_GetUint16_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetUint32 provides a mock function for the type MockReader
+func (_mock *MockReader) GetUint32(path string) uint32 {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetUint32")
+	}
+
+	var r0 uint32
+	if returnFunc, ok := ret.Get(0).(func(string) uint32); ok {
+		r0 = returnFunc(path)
+	} else {
+		r0 = ret.Get(0).(uint32)
+	}
+	return r0
+}
+
+// MockReader_GetUint32_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetUint32'
+type MockReader_GetUint32_Call struct {
+	*mock.Call
+}
+
+// GetUint32 is a helper method to define mock.On call
+//   - path string
+func (_e *MockReader_Expecter) GetUint32(path interface{}) *MockReader_GetUint32_Call {
+	return &MockReader_GetUint32_Call{Call: _e.mock.On("GetUint32", path)}
+}
+
+func (_c *MockReader_GetUint32_Call) Run(run func(path string)) *MockReader_GetUint32_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockReader_GetUint32_Call) Return(v uint32) *MockReader_GetUint32_Call {
+	_c.Call.Return(v)
+	return _c
+}
+
+func (_c *MockReader_GetUint32_Call) RunAndReturn(run func(path string) uint32) *MockReader_GetUint32_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetUint64 provides a mock function for the type MockReader
+func (_mock *MockReader) GetUint64(path string) uint64 {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetUint64")
+	}
+
+	var r0 uint64
+	if returnFunc, ok := ret.Get(0).(func(string) uint64); ok {
+		r0 = returnFunc(path)
+	} else {
+		r0 = ret.Get(0).(uint64)
+	}
+	return r0
+}
+
+// MockReader_GetUint64_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetUint64'
+type MockReader_GetUint64_Call struct {
+	*mock.Call
+}
+
+// GetUint64 is a helper method to define mock.On call
+//   - path string
+func (_e *MockReader_Expecter) GetUint64(path interface{}) *MockReader_GetUint64_Call {
+	return &MockReader_GetUint64_Call{Call: _e.mock.On("GetUint64", path)}
+}
+
+func (_c *MockReader_GetUint64_Call) Run(run func(path string)) *MockReader_GetUint64_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockReader_GetUint64_Call) Return(v uint64) *MockReader_GetUint64_Call {
+	_c.Call.Return(v)
+	return _c
+}
+
+func (_c *MockReader_GetUint64_Call) RunAndReturn(run func(path string) uint64) *MockReader_GetUint64_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetUint8 provides a mock function for the type MockReader
+func (_mock *MockReader) GetUint8(path string) uint8 {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetUint8")
+	}
+
+	var r0 uint8
+	if returnFunc, ok := ret.Get(0).(func(string) uint8); ok {
+		r0 = returnFunc(path)
+	} else {
+		r0 = ret.Get(0).(uint8)
+	}
+	return r0
+}
+
+// MockReader_GetUint8_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetUint8'
+type MockReader_GetUint8_Call struct {
+	*mock.Call
+}
+
+// GetUint8 is a helper method to define mock.On call
+//   - path string
+func (_e *MockReader_Expecter) GetUint8(path interface{}) *MockReader_GetUint8_Call {
+	return &MockReader_GetUint8_Call{Call: _e.mock.On("GetUint8", path)}
+}
+
+func (_c *MockReader_GetUint8_Call) Run(run func(path string)) *MockReader_GetUint8_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockReader_GetUint8_Call) Return(v uint8) *MockReader_GetUint8_Call {
+	_c.Call.Return(v)
+	return _c
+}
+
+func (_c *MockReader_GetUint8_Call) RunAndReturn(run func(path string) uint8) *MockReader_GetUint8_Call {
 	_c.Call.Return(run)
 	return _c
 }

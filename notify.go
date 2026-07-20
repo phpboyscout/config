@@ -19,16 +19,33 @@ type Reader interface {
 	GetString(path string) string
 	GetBool(path string) bool
 	GetInt(path string) int
+	GetInt32(path string) int32
+	GetInt64(path string) int64
+	GetUint(path string) uint
+	GetUint8(path string) uint8
+	GetUint16(path string) uint16
+	GetUint32(path string) uint32
+	GetUint64(path string) uint64
 	GetFloat(path string) float64
+	GetFloat64(path string) float64
 	GetDuration(path string) time.Duration
 	GetTime(path string) time.Time
+	GetSizeInBytes(path string) uint
+
 	GetStringSlice(path string) []string
+	GetIntSlice(path string) []int
+	GetStringMap(path string) map[string]any
+	GetStringMapString(path string) map[string]string
+	GetStringMapStringSlice(path string) map[string][]string
 
 	Has(path string) bool
 	IsSet(path string) bool
 	SectionExists(path string) bool
 	Keys() []string
 
+	// Unmarshal decodes into a struct, and UnmarshalKey decodes one section.
+	// [Value] is the general form: it reads any type, including a consumer's
+	// own, so this interface does not have to grow a method per type.
 	Unmarshal(target any) error
 	UnmarshalKey(path string, target any) error
 
