@@ -349,3 +349,41 @@ func TestCloneMap_IsDeep(t *testing.T) {
 		t.Error("mutating the clone changed the original's slice")
 	}
 }
+
+// TestSource_StringDistinguishesDocumentsForAnyKind covers a multi-document
+// source that is not a YAML file.
+//
+// The document index used to be rendered only for SourceFile, so a backend
+// contributing one layer per document — a JSONL file is the obvious case —
+// had every layer render identically and provenance could not say which one
+// supplied a value.
+func TestSource_StringDistinguishesDocumentsForAnyKind(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		src  Source
+		want string
+	}{
+		{"file, first document", Source{Kind: SourceFile, Name: "/app.yaml"}, "/app.yaml"},
+		{"file, later document", Source{Kind: SourceFile, Name: "/app.yaml", Document: 2}, "/app.yaml#2"},
+		{"custom kind", Source{Kind: SourceKind("jsonl"), Name: "/s.jsonl"}, "jsonl:/s.jsonl"},
+		{
+			"custom kind, later document",
+			Source{Kind: SourceKind("jsonl"), Name: "/s.jsonl", Document: 1},
+			"jsonl:/s.jsonl#1",
+		},
+		{"named env", Source{Kind: SourceEnv, Name: "APP_PORT"}, "env:APP_PORT"},
+		{"kind with no name", Source{Kind: SourceKind("consul")}, "consul"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := tc.src.String(); got != tc.want {
+				t.Errorf("String() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

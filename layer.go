@@ -47,29 +47,34 @@ type Source struct {
 
 // String renders a source for display and for provenance reporting.
 func (s Source) String() string {
-	switch s.Kind {
-	case SourceFile:
-		if s.Document > 0 {
-			return fmt.Sprintf("%s#%d", s.Name, s.Document)
-		}
-
-		return s.Name
-	default:
-		// Named, because a caller asking where a value came from needs to know
-		// which variable, flag, set of defaults, runtime layer or remote key
-		// supplied it, not merely that it was one of them.
-		//
-		// Deliberately the default arm rather than a list of known kinds. A
-		// backend defined outside this package brings its own kind, and listing
-		// kinds meant those sources rendered as the bare kind with their name
-		// dropped — so provenance, the one thing this module exists to answer,
-		// was least useful for exactly the sources it knows least about.
-		if s.Name == "" {
+	// A file renders as its bare path, because that is what a user would type
+	// to open it. Everything else is qualified by kind, so "9090" can be traced
+	// to a variable, a flag, a set of defaults or a remote key rather than
+	// merely to "somewhere".
+	//
+	// Deliberately not a list of known kinds. A backend defined outside this
+	// package brings its own, and enumerating kinds meant those sources
+	// rendered as the bare kind with their name dropped — so provenance, the
+	// one thing this module exists to answer, was least useful for exactly the
+	// sources it knows least about.
+	name := s.Name
+	if s.Kind != SourceFile && s.Kind != "" {
+		if name == "" {
 			return string(s.Kind)
 		}
 
-		return string(s.Kind) + ":" + s.Name
+		name = string(s.Kind) + ":" + name
 	}
+
+	// The document index belongs to any multi-document source, not only to a
+	// YAML file. A JSONL backend contributes one layer per line and a
+	// multi-document source of any format contributes one per document; without
+	// this they all render identically and provenance cannot say which one won.
+	if s.Document > 0 {
+		return fmt.Sprintf("%s#%d", name, s.Document)
+	}
+
+	return name
 }
 
 // Authored reports whether a source is one a person edits and a schema should
