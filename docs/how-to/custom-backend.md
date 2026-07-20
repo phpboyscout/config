@@ -4,12 +4,60 @@ You want configuration from somewhere this module has never heard of — Consul,
 manager, an HTTP endpoint, a database table, a device's NVRAM — and you want it to behave
 like every other layer: precedence, provenance, shadowing, hot-reload, the lot.
 
-That is what `Backend` is for. This guide builds one, then adds watching and writing.
+That is what `Backend` is for. This guide builds one end to end: reading first, then
+watching, then writing. Each stage works on its own, so stop wherever your source stops.
 
 !!! tip "The code here is compiled"
-    Every snippet below comes from
+    Every snippet is taken from
     [`custombackend_test.go`](https://gitlab.com/phpboyscout/go/config/-/blob/main/custombackend_test.go)
-    in the module's own suite, so it cannot drift from an API that still works.
+    in this module's own suite, where it is exercised against a fake remote — including the
+    write path and the conflict case. It cannot drift from an API that still works.
+
+## What we are building
+
+A backend over a remote key-value store with compare-and-swap semantics — the shape Consul,
+etcd and most parameter stores have. Keeping the service behind an interface is what lets
+the backend be tested without it:
+
+```go
+// remoteStore is whatever you actually talk to.
+type remoteStore interface {
+	// Fetch returns the current values and a version identifying them.
+	Fetch(ctx context.Context) (map[string]any, uint64, error)
+	// Put writes values only if the remote is still at ifVersion.
+	Put(ctx context.Context, values map[string]any, ifVersion uint64) error
+}
+```
+
+The backend itself, and its constructor:
+
+```go
+package myapp
+
+import (
+	"context"
+	"fmt"
+	"io/fs"
+	"sync"
+	"time"
+
+	"gitlab.com/phpboyscout/go/config"
+)
+
+type remoteBackend struct {
+	store  remoteStore
+	prefix string
+
+	// version is what Load last saw. The write path compares against it, so a
+	// change landing since the load is detected rather than overwritten.
+	mu      sync.Mutex
+	version uint64
+}
+
+func newRemoteBackend(store remoteStore, prefix string) *remoteBackend {
+	return &remoteBackend{store: store, prefix: prefix}
+}
+```
 
 ## Read: the three methods you must implement
 
@@ -21,18 +69,13 @@ type Backend interface {
 }
 ```
 
-That is the whole read contract. Here is one over a remote key-value store:
+That is the whole read contract.
 
 ```go
-type remoteBackend struct {
-	store  remoteStore // whatever you actually talk to
-	prefix string
-}
-
-func (b *remoteBackend) ID() string { return "remote:" + b.prefix }
+func (b *remoteBackend) ID() string { return b.prefix }
 
 func (b *remoteBackend) Load(ctx context.Context, _ []config.Layer) ([]config.Layer, error) {
-	values, _, err := b.store.Fetch(ctx)
+	values, version, err := b.store.Fetch(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -43,16 +86,28 @@ func (b *remoteBackend) Load(ctx context.Context, _ []config.Layer) ([]config.La
 		return nil, fs.ErrNotExist
 	}
 
+	b.mu.Lock()
+	b.version = version
+	b.mu.Unlock()
+
 	return []config.Layer{{
 		Source: config.Source{
 			Kind:     config.SourceKind("remote"),
 			Name:     b.prefix,
-			Writable: true,
+			Writable: true, // only if you implement WritableBackend — see below
 		},
 		Values: values,
 	}}, nil
 }
 ```
+
+!!! warning "`ID()` and `Source.Name` must agree"
+    Write routing finds your backend again by matching a layer's `Source.Name` against
+    `ID()`. If they differ, reads work perfectly and **writes fail** with an error saying no
+    backend answers to that name.
+
+    It is an easy mistake — an `ID()` of `"remote:" + prefix` reads better in a log — and it
+    fails nowhere near where you made it. Pick one string and use it for both.
 
 Register it like any other source. Precedence is the order you add them:
 
@@ -80,7 +135,7 @@ Four things decide how your layer behaves:
 | Field | What to set it to |
 |---|---|
 | `Source.Kind` | Your own `config.SourceKind("consul")`. It is a string type, so you are not limited to the built-in kinds. |
-| `Source.Name` | What a *user* would recognise — the key prefix, the endpoint, the table. It is what `Explain` prints. |
+| `Source.Name` | What a *user* would recognise — the key prefix, the endpoint, the table. It is what `Explain` prints, **and it must equal `ID()`**. |
 | `Source.Writable` | `true` only if you also implement `WritableBackend`. Routing offers writable layers as targets, so claiming it without implementing it makes writes fail late. |
 | `Values` | A nested `map[string]any`. `{"server": {"port": 9090}}` — **not** a flat `{"server.port": 9090}`, which would create a key with a literal dot in its name. |
 
@@ -131,18 +186,30 @@ every caller checking a flag — and so a backend cannot claim one thing and do 
 
 ## Watch: take part in hot-reload
 
-Implement one more method and your source joins hot-reload:
+Implement `WatchableBackend` — one more method — and your source joins hot-reload. This
+example assumes the remote offers a subscription:
 
 ```go
+// Subscribe returns a channel signalled whenever the remote data changes.
+type subscriber interface{ Subscribe() <-chan struct{} }
+
 func (b *remoteBackend) Watch(
 	ctx context.Context,
 	interval time.Duration,
 	onChange func(),
 ) (func(), error) {
+	sub, ok := b.store.(subscriber)
+	if !ok {
+		// No subscription available. Returning a no-op stop and no error says
+		// "nothing to watch here" without failing the whole watch set; return
+		// an error instead if being unwatchable is a real problem.
+		return func() {}, nil
+	}
+
 	done := make(chan struct{})
 
 	go func() {
-		events := b.store.Subscribe()
+		events := sub.Subscribe()
 
 		for {
 			select {
@@ -192,9 +259,15 @@ weakest member.
 type WritableBackend interface {
 	Backend
 
-	// Prepare stages edits without making them visible. It must not modify
-	// the source: everything it does has to be abandonable.
+	// Prepare stages edits without making them visible.
 	Prepare(ctx context.Context, edits []Edit) (Pending, error)
+}
+
+type Edit struct {
+	Document int    // index within a multi-document source; 0 for most backends
+	Path     string // the dotted key
+	Value    any    // the new value
+	Remove   bool   // true to delete the key rather than set it
 }
 ```
 
@@ -202,19 +275,125 @@ type WritableBackend interface {
 
 ```go
 type Pending interface {
-	Layers() []Layer                  // what you will contribute once committed
-	Verify(ctx context.Context) error  // is the source still as it was at Prepare?
-	Commit(ctx context.Context) error  // make it visible
-	Rollback(ctx context.Context) error // undo a commit, best effort
-	Discard(ctx context.Context) error  // abandon work never committed
+	Layers() []Layer                    // what you will contribute once committed
+	Verify(ctx context.Context) error    // is the source still as it was at Load?
+	Commit(ctx context.Context) error    // make it visible
+	Rollback(ctx context.Context) error  // undo a commit, best effort
+	Discard(ctx context.Context) error   // abandon work never committed
 }
 ```
 
-The three-phase shape — **prepare, verify, commit** — exists so the expensive and
-failure-prone part happens while nothing is visible, and the window in which a
-partially-applied batch could be observed is as short as you can make it.
+### Staging
 
-The Store drives it like this:
+`Prepare` must not modify the source. The Store may abandon this batch because some *other*
+backend's `Verify` failed, and that has to cost nothing:
+
+```go
+func (b *remoteBackend) Prepare(ctx context.Context, edits []config.Edit) (config.Pending, error) {
+	current, _, err := b.store.Fetch(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if current == nil {
+		current = map[string]any{}
+	}
+
+	// The version recorded at Load, NOT one fetched here. See the warning below.
+	b.mu.Lock()
+	version := b.version
+	b.mu.Unlock()
+
+	// Work on a copy, so nothing staged is visible to a concurrent Load.
+	next := make(map[string]any, len(current))
+	for k, v := range current {
+		next[k] = v
+	}
+
+	for _, edit := range edits {
+		if edit.Remove {
+			delete(next, edit.Path)
+
+			continue
+		}
+
+		next[edit.Path] = edit.Value
+	}
+
+	return &remotePending{backend: b, next: next, previous: current, version: version}, nil
+}
+```
+
+### The pending write
+
+```go
+type remotePending struct {
+	backend   *remoteBackend
+	next      map[string]any
+	previous  map[string]any
+	version   uint64
+	committed bool
+}
+
+// Layers is what this backend will contribute once committed — the
+// post-commit state, which is what lets the Store build the next snapshot
+// from what was just written instead of re-reading and hoping.
+func (p *remotePending) Layers() []config.Layer {
+	return []config.Layer{{
+		Source: config.Source{
+			Kind:     config.SourceKind("remote"),
+			Name:     p.backend.prefix,
+			Writable: true,
+		},
+		Values: p.next,
+	}}
+}
+
+func (p *remotePending) Verify(ctx context.Context) error {
+	_, version, err := p.backend.store.Fetch(ctx)
+	if err != nil {
+		return err
+	}
+
+	if version != p.version {
+		return fmt.Errorf("%w: remote moved from version %d to %d",
+			config.ErrConflict, p.version, version)
+	}
+
+	return nil
+}
+
+func (p *remotePending) Commit(ctx context.Context) error {
+	if err := p.backend.store.Put(ctx, p.next, p.version); err != nil {
+		return err
+	}
+
+	p.committed = true
+
+	return nil
+}
+
+// Rollback restores what was there before, best effort, for when a later
+// commit in the same batch failed.
+func (p *remotePending) Rollback(ctx context.Context) error {
+	if !p.committed {
+		return nil
+	}
+
+	_, version, err := p.backend.store.Fetch(ctx)
+	if err != nil {
+		return err
+	}
+
+	return p.backend.store.Put(ctx, p.previous, version)
+}
+
+// Discard abandons staged work. Nothing was written, so there is nothing to
+// undo — which is the point of staging.
+func (p *remotePending) Discard(context.Context) error { return nil }
+```
+
+### How the Store drives it
 
 1. `Prepare` on every affected backend. Nothing is visible yet.
 2. `Verify` on every one of them. Any failure and the whole batch is abandoned with
@@ -222,18 +401,18 @@ The Store drives it like this:
 3. `Commit` each in turn. If one fails partway, the already-committed ones are `Rollback`ed
    and the caller gets `ErrPartialCommit` naming exactly what is in which state.
 
-Two obligations that are easy to miss:
+!!! warning "`Verify` must compare against what `Load` read, not what `Prepare` read"
+    This is the single easiest thing to get wrong, and it fails silently — every write
+    succeeds, and conflict detection simply never fires.
 
-**`Layers()` must return what you will contribute *after* the commit.** This is what lets
-the Store build the next snapshot from the content just written rather than re-reading and
-hoping for the same answer — which is why there is no window where memory and your source
-disagree.
+    Routing decided where this write goes based on what `Load` saw. A change that landed
+    since then invalidates that decision. If `Prepare` fetches a fresh version and `Verify`
+    compares against *that*, you are comparing the intruder's data with itself and it will
+    always match.
 
-**`Verify` must compare against what was read at `Load`, not at `Prepare`.** Routing
-decisions were made against the loaded content, so a change that landed since then
-invalidates them. A fingerprint taken at write time compares the intruder's data with
-itself and finds nothing wrong. This is exactly how a compare-and-swap version works — keep
-the version from `Load`, and `Verify` fails if it has moved.
+    Keep the version from `Load` — as `remoteBackend.version` does above — and the
+    conflict is caught. There is a test for exactly this case in the suite, because the
+    first draft of this guide got it wrong.
 
 If your source cannot do any of this safely, **do not implement `WritableBackend`.** A
 read-only layer is a perfectly good citizen: routing skips it, `Apply` lands in the next
@@ -242,7 +421,54 @@ than silently failing.
 
 ## Test it
 
-The interface is small enough to test against a fake rather than the real service:
+The interface is small enough to test against a fake rather than the real service. A
+minimal one, with the compare-and-swap the backend depends on:
+
+```go
+type fakeRemote struct {
+	mu      sync.Mutex
+	values  map[string]any
+	version uint64
+	events  chan struct{}
+}
+
+func newFakeRemote(values map[string]any) *fakeRemote {
+	return &fakeRemote{values: values, version: 1, events: make(chan struct{}, 8)}
+}
+
+func (f *fakeRemote) Fetch(context.Context) (map[string]any, uint64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if f.values == nil {
+		return nil, 0, nil
+	}
+
+	out := make(map[string]any, len(f.values))
+	for k, v := range f.values {
+		out[k] = v
+	}
+
+	return out, f.version, nil
+}
+
+func (f *fakeRemote) Put(_ context.Context, values map[string]any, ifVersion uint64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if f.version != ifVersion {
+		return errors.New("version conflict")
+	}
+
+	f.values, f.version = values, f.version+1
+
+	return nil
+}
+
+func (f *fakeRemote) Subscribe() <-chan struct{} { return f.events }
+```
+
+Then assert the behaviours a backend can be subtly wrong about:
 
 ```go
 func TestRemoteBackend(t *testing.T) {
@@ -261,7 +487,7 @@ func TestRemoteBackend(t *testing.T) {
 
 	view := store.View()
 
-	assert.Equal(t, 9090, view.GetInt("server.port"))      // the remote wins
+	assert.Equal(t, 9090, view.GetInt("server.port"))           // the remote wins
 	assert.Equal(t, "localhost", view.GetString("server.host")) // merging is per-key
 
 	src, _ := view.Origin("server.port")
@@ -269,13 +495,18 @@ func TestRemoteBackend(t *testing.T) {
 }
 ```
 
-Worth asserting specifically, because each is a way a backend can be subtly wrong:
+Worth covering, because each is a way a backend can be subtly wrong:
 
 - **precedence** — that being added later actually wins;
 - **per-key merging** — that a key you do not supply still comes from below;
 - **provenance** — that `Origin` names you, with the name a user would recognise;
 - **absence** — that `fs.ErrNotExist` is tolerated rather than fatal;
-- **hot-reload** — that a change reaches observers, if you implement `Watch`.
+- **hot-reload** — that a change reaches observers, if you implement `Watch`;
+- **writes** — that `Apply` reaches the source *and* that the Store's view agrees;
+- **conflicts** — that a change landing after `Load` is refused with `ErrConflict`.
+
+The last two matter most, because a write path that never detects a conflict passes every
+happy-path test you will write.
 
 `mocks.MockBackend`, `MockWritableBackend` and `MockWatchableBackend` are published for
 testing code that *consumes* a backend. For testing a backend you wrote, a hand-written

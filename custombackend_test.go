@@ -3,6 +3,7 @@ package config_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"sync"
 	"testing"
@@ -36,8 +37,10 @@ func newRemoteBackend(store remoteStore, prefix string) *remoteBackend {
 	return &remoteBackend{store: store, prefix: prefix}
 }
 
-// ID identifies the backend in diagnostics.
-func (b *remoteBackend) ID() string { return "remote:" + b.prefix }
+// ID identifies the backend in diagnostics — and, for a writable backend, is
+// how the Store finds it again when routing a write. It must equal the
+// Source.Name of the layers Load returns.
+func (b *remoteBackend) ID() string { return b.prefix }
 
 // Capabilities describes what this source can and cannot do.
 func (b *remoteBackend) Capabilities() config.Capabilities {
@@ -263,5 +266,190 @@ func TestCustomBackend_AbsentSourceIsNotFatal(t *testing.T) {
 
 	if got := store.View().GetInt("port"); got != 8080 {
 		t.Errorf("port = %d, want the defaults to stand", got)
+	}
+}
+
+// --- writing -------------------------------------------------------------
+//
+// Everything below implements WritableBackend, so the write half of the guide
+// has compiled code behind it rather than only prose.
+
+// Prepare stages edits without touching the remote.
+//
+// Nothing here may modify the source: the Store may abandon this batch because
+// some *other* backend's Verify failed, and that must cost nothing.
+func (b *remoteBackend) Prepare(ctx context.Context, edits []config.Edit) (config.Pending, error) {
+	current, _, err := b.store.Fetch(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if current == nil {
+		current = map[string]any{}
+	}
+
+	// The version recorded at Load, NOT one fetched here. Routing decided
+	// where this write goes based on what Load saw, so a change that landed
+	// since then invalidates that decision. Comparing a prepare-time version
+	// against a commit-time one compares the intruder's data with itself and
+	// finds nothing wrong.
+	b.mu.Lock()
+	version := b.version
+	b.mu.Unlock()
+
+	// Work on a copy. The staged result must not be visible to a concurrent
+	// Load, and must be discardable without having changed anything.
+	next := make(map[string]any, len(current))
+	for k, v := range current {
+		next[k] = v
+	}
+
+	for _, edit := range edits {
+		if edit.Remove {
+			delete(next, edit.Path)
+
+			continue
+		}
+
+		next[edit.Path] = edit.Value
+	}
+
+	return &remotePending{
+		backend: b,
+		next:    next,
+		// The version read here is what Verify compares against, so a change
+		// landing between now and commit is detected rather than overwritten.
+		version: version,
+		previous: func() map[string]any {
+			copied := make(map[string]any, len(current))
+			for k, v := range current {
+				copied[k] = v
+			}
+
+			return copied
+		}(),
+	}, nil
+}
+
+// remotePending is one backend's staged write.
+type remotePending struct {
+	backend   *remoteBackend
+	next      map[string]any
+	previous  map[string]any
+	version   uint64
+	committed bool
+}
+
+// Layers is what this backend will contribute once committed.
+//
+// It describes the post-commit state, which is what lets the Store build the
+// next snapshot from what was just written instead of re-reading and hoping.
+func (p *remotePending) Layers() []config.Layer {
+	return []config.Layer{{
+		Source: config.Source{
+			Kind:     config.SourceKind("remote"),
+			Name:     p.backend.prefix,
+			Writable: true,
+		},
+		Values: p.next,
+	}}
+}
+
+// Verify reports whether the remote is still as it was when Prepare ran.
+func (p *remotePending) Verify(ctx context.Context) error {
+	_, version, err := p.backend.store.Fetch(ctx)
+	if err != nil {
+		return err
+	}
+
+	if version != p.version {
+		return fmt.Errorf("%w: remote moved from version %d to %d",
+			config.ErrConflict, p.version, version)
+	}
+
+	return nil
+}
+
+// Commit makes the staged values visible, conditional on the version still
+// being the one Prepare saw.
+func (p *remotePending) Commit(ctx context.Context) error {
+	if err := p.backend.store.Put(ctx, p.next, p.version); err != nil {
+		return err
+	}
+
+	p.committed = true
+
+	return nil
+}
+
+// Rollback restores what was there before, best effort, for when a later
+// commit in the same batch failed.
+func (p *remotePending) Rollback(ctx context.Context) error {
+	if !p.committed {
+		return nil
+	}
+
+	_, version, err := p.backend.store.Fetch(ctx)
+	if err != nil {
+		return err
+	}
+
+	return p.backend.store.Put(ctx, p.previous, version)
+}
+
+// Discard abandons staged work. Nothing was written, so there is nothing to
+// undo — which is the point of staging.
+func (p *remotePending) Discard(context.Context) error { return nil }
+
+func TestCustomBackend_ReceivesWrites(t *testing.T) {
+	t.Parallel()
+
+	remote := newFakeRemote(map[string]any{"level": "info"})
+
+	store, err := config.NewStore(context.Background(),
+		config.WithBackend(newRemoteBackend(remote, "app/")))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.Apply(context.Background(), config.Set("level", "debug")); err != nil {
+		t.Fatal(err)
+	}
+
+	// The value the Store now serves...
+	if got := store.View().GetString("level"); got != "debug" {
+		t.Errorf("view = %q, want \"debug\"", got)
+	}
+
+	// ...and the value that actually reached the remote.
+	values, _, _ := remote.Fetch(context.Background())
+	if got := values["level"]; got != "debug" {
+		t.Errorf("remote = %v, want \"debug\"", got)
+	}
+}
+
+func TestCustomBackend_VerifyDetectsAConcurrentChange(t *testing.T) {
+	t.Parallel()
+
+	remote := newFakeRemote(map[string]any{"level": "info"})
+	backend := newRemoteBackend(remote, "app/")
+
+	store, err := config.NewStore(context.Background(), config.WithBackend(backend))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Something else changes the remote after the Store loaded it.
+	remote.set("other", "value")
+
+	_, err = store.Apply(context.Background(), config.Set("level", "debug"))
+	if !errors.Is(err, config.ErrConflict) {
+		t.Errorf("err = %v, want ErrConflict — a stale write was accepted", err)
+	}
+
+	// And nothing was written.
+	values, _, _ := remote.Fetch(context.Background())
+	if got := values["level"]; got != "info" {
+		t.Errorf("remote level = %v, want the original \"info\"", got)
 	}
 }

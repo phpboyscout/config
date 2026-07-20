@@ -38,6 +38,11 @@ var (
 // either lie about those differences or degrade to the weakest member.
 type Backend interface {
 	// ID identifies the backend for diagnostics and provenance.
+	//
+	// For a [WritableBackend] it is also how the Store finds this backend
+	// again when routing a write, by matching a layer's Source.Name against
+	// it. Those two must therefore agree: a backend whose Load reports layers
+	// named something other than what ID returns cannot receive writes.
 	ID() string
 
 	// Load returns the layers this backend contributes, in precedence order.

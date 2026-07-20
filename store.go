@@ -737,7 +737,16 @@ func (s *Store) prepare(ctx context.Context, plan *Plan) (map[string]Pending, []
 		if !ok {
 			discardAll(ctx, pending)
 
-			return nil, nil, fmt.Errorf("%w: no backend for %s", ErrInternal, id)
+			// Reachable from a custom backend, not only from a bug here: write
+			// routing finds a backend by matching a layer's Source.Name against
+			// ID(), so a backend whose Load reports a different name than it
+			// answers to cannot be found again. Saying "internal invariant" and
+			// nothing else sent the one person who could fix it looking in the
+			// wrong codebase.
+			return nil, nil, fmt.Errorf(
+				"%w: no backend answers to %q. A writable backend's ID() must equal "+
+					"the Source.Name of the layers its Load returns",
+				ErrInternal, id)
 		}
 
 		writable, ok := backend.(WritableBackend)
