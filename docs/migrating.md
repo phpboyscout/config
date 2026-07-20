@@ -52,7 +52,7 @@ After:
 ```go
 store, err := config.NewStore(ctx,
     config.WithReaders(config.NamedSource{Name: "embedded:defaults.yaml", Content: defaults}),
-    config.WithFiles(fs, paths...),
+    config.WithFiles(config.OS(), paths...),   // was an afero.Fs — see step 2
     config.WithEnv("MYTOOL"),
     config.WithFlags(flags),
     config.WithSchema(schema),
@@ -79,7 +79,77 @@ added first — if that is your embedded defaults, it is those that become manda
 There is no equivalent of `LoadEnv`. If you relied on a `.env` file being read from the
 working directory, load it yourself before calling `NewStore`.
 
-## Step 2 — the mechanical rename
+## Step 2 — the filesystem
+
+`WithFiles` no longer takes an `afero.Fs`. It takes `config.FS`, a six-method interface
+this module defines, and the module ships two implementations.
+
+For the overwhelmingly common case the change is one call:
+
+```go
+config.WithFiles(afero.NewOsFs(), paths...)   // before
+config.WithFiles(config.OS(), paths...)       // after
+```
+
+If you passed afero only to reach the real filesystem, you can drop the dependency
+entirely.
+
+### If you have an `afero.Fs` to pass through
+
+Wrap it. The adapter is six methods, and two optional ones worth including — without
+`RealPath` your filesystem is polled rather than watched natively, and without `Readlink`
+a write through a symlink replaces the link instead of following it:
+
+```go
+type aferoFS struct{ fs afero.Fs }
+
+func (a aferoFS) ReadFile(name string) ([]byte, error) { return afero.ReadFile(a.fs, name) }
+func (a aferoFS) Stat(name string) (fs.FileInfo, error) { return a.fs.Stat(name) }
+func (a aferoFS) Rename(old, new string) error          { return a.fs.Rename(old, new) }
+func (a aferoFS) Remove(name string) error              { return a.fs.Remove(name) }
+
+func (a aferoFS) WriteFile(name string, data []byte, perm fs.FileMode) error {
+	return afero.WriteFile(a.fs, name, data, perm)
+}
+
+func (a aferoFS) MkdirAll(path string, perm fs.FileMode) error {
+	return a.fs.MkdirAll(path, perm)
+}
+```
+
+!!! warning "Only implement `RealPath` when the filesystem really has OS paths"
+    `RealPather` is how the module decides whether native notification can work at all. An
+    adapter that implements it unconditionally — returning `false` from the method rather
+    than not having the method — makes every filesystem look watchable, so `fsnotify` is
+    selected and the absence of anything to watch is discovered one path at a time.
+
+    Give the method to a type that wraps `*afero.OsFs` or `*afero.BasePathFs`, and use a
+    plain type for anything else.
+
+### Testing
+
+If you used `afero.NewMemMapFs()` in tests, `config.Dir(t.TempDir())` replaces it with no
+dependency at all:
+
+```go
+fsys, err := config.Dir(t.TempDir())
+require.NoError(t, err)
+require.NoError(t, fsys.WriteFile("config.yaml", []byte(body), 0o600))
+
+store, err := config.NewStore(ctx, config.WithFiles(fsys, "config.yaml"))
+```
+
+It is a real directory, so watching works and a write behaves exactly as it does in
+production — which an in-memory filesystem cannot exercise.
+
+!!! warning "`Dir` takes paths relative to its root"
+    Pass `"config.yaml"`, not `"/tmp/xyz/config.yaml"`. An absolute path is treated as an
+    attempt to escape the root and fails with `path escapes from parent` — **not**
+    `fs.ErrNotExist`. The distinction matters: a missing optional source is normal and
+    skipped, whereas an escape is fatal, so an absolute path turns a merely-absent file
+    into a hard failure.
+
+## Step 3 — the mechanical rename
 
 `Containable` is gone. The read surface is `Reader`, and it is deliberately free of any
 dependency's types: nothing in it exposes an underlying library, because anything
@@ -114,7 +184,7 @@ must take the `*Store` (or a `Binder`) instead, not a scoped view.
 In tests, `mocks.MockContainable` becomes `mocks.NewMockReader`, with
 `mocks.NewMockBinder` and `mocks.NewMockObserved` alongside it.
 
-## Step 3 — what was removed, and what replaces it
+## Step 4 — what was removed, and what replaces it
 
 | Removed | Use instead | Note |
 |---|---|---|
@@ -150,7 +220,7 @@ In tests, `mocks.MockContainable` becomes `mocks.NewMockReader`, with
 | `ErrConfigFileNotFound`, `ErrNoFilesFound` | `ErrNoSources`, and `fs.ErrNotExist` from a backend | |
 | `DefaultReloadDebounce` | `DefaultPollInterval` | |
 
-## Step 4 — the genuinely breaking cases
+## Step 5 — the genuinely breaking cases
 
 ### `GetViper()`
 
@@ -334,7 +404,7 @@ snap, err := store.Apply(ctx,
 Batched changes land together. If you genuinely wanted an in-process override that is never
 persisted, that is `AddLayer`.
 
-## Step 5 — `ObserveSection`
+## Step 6 — `ObserveSection`
 
 The semantics are unchanged. What changed is the first parameter: `ObserveSection` now
 takes a `Binder`, which is anything with `View() *View` and
@@ -386,12 +456,12 @@ test satisfies the interface without dragging in the machinery that loads one, a
 `Current()`, `Value()`, `Exists()` and `Version()` are untouched, as are
 `WithSectionDefaults`, `WithSectionEqual`, `WithSectionValidator` and `WithSectionApply`.
 
-## Step 6 — watching
+## Step 7 — watching
 
 Watching is explicit now, and it fails loudly when it cannot work. The old container
-started an fsnotify watcher during construction, which silently did nothing on a non-OS
-`afero.Fs` — so hot reload was quietly dead in exactly the tests and virtual-worktree tools
-that most needed it.
+started an fsnotify watcher during construction, which silently did nothing on a filesystem
+the operating system could not see — so hot reload was quietly dead in exactly the tests and
+virtual-worktree tools that most needed it.
 
 ```go
 stop, err := store.Watch(ctx)

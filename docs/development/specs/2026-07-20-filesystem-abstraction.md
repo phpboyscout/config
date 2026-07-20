@@ -316,8 +316,23 @@ extra edit per call site rather than a second migration.
    containment for a tool reading a user-supplied directory — and could ship separately. It
    is here because `os.Root` is what makes dropping afero viable, so the two arguments are
    the same argument.
-2. **Should `config-afero` exist at all, or just be documented?** The adapter is roughly
-   twenty lines. A module is friendlier; documentation is one fewer repository to release.
+2. ~~**Should `config-afero` exist at all, or just be documented?**~~
+   **Resolved 2026-07-20: it should exist.** Two pieces of evidence.
+
+   `go-tool-base` carries 232 non-test references to afero, so the primary consumer of this
+   module genuinely holds `afero.Fs` values and will be adapting them rather than switching
+   wholesale. It is not a hypothetical user.
+
+   And the adapter is not as trivial as "twenty lines" suggested. [R3](#r3--2026-07-20-an-implementation-must-not-satisfy-an-optional-interface-it-cannot-honour)
+   is exactly the mistake a hand-written one makes: implementing `RealPath` unconditionally
+   looks correct, compiles, and silently costs native notification. Shipping it once means
+   that is got right once rather than rediscovered per consumer.
+
+   A `config/aferofs` subpackage was considered as simpler than a separate repository. Both
+   keep afero out of what a consumer links, and the subpackage saves a release cadence — but
+   it makes afero a non-test requirement of the core module, and the leanness claim this
+   spec exists to protect is easier to defend when the core module has no path to afero at
+   all. Separate module, per D5.
 3. **Is six methods right?** `ReadDir` and `OpenFile` were cut because each has one caller.
    If either turns out to be needed by a format adapter — a directory-scanning backend, for
    instance — adding it later breaks every implementation. Worth a second look while writing
