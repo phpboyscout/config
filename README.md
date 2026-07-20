@@ -15,35 +15,103 @@
 
 ---
 
-`gitlab.com/phpboyscout/go/config` gives configuration a single owner. A `Store` reads
-every source — files, compiled-in defaults, environment variables, command-line flags —
-merges them in a defined precedence order, records which layer supplied each value, and
-is the only thing that writes any of them back. Everything else is a view over the
-snapshot it publishes.
+## Why
 
-That single rule is what makes the rest possible. Because merging happens in one place,
-provenance can be recorded while it happens rather than reconstructed afterwards. Because
-one component owns the files, a write can be aimed at the layer that actually owns a key
-instead of flattening the merged view over it.
+Reading configuration is a solved problem. If reading is all you need, you do not need
+this module.
+
+It stops being solved the moment your program **writes** configuration back — a settings
+screen, a `--set` flag, a first-run wizard, an `auth login` that stores a token. Here is
+what changing one value does when a library serialises its merged view over your file:
+
+<table>
+<tr><th>Before</th><th>After changing <code>server.port</code></th></tr>
+<tr valign="top">
+<td>
+
+```yaml
+# Which port the listener binds to.
+# Needs a firewall change too.
+server:
+  host: localhost   # dev only
+  port: 8080
+
+# Feature flags. Keep alphabetical.
+features:
+  beta_ui: false
+```
+
+</td>
+<td>
+
+```yaml
+db:
+    password: hunter2-prod-secret
+features:
+    beta_ui: false
+log:
+    level: info
+server:
+    host: localhost
+    port: 9090
+```
+
+</td>
+</tr>
+</table>
+
+Every comment is gone, the order is now alphabetical rather than meaningful, a default the
+program never had written down is now pinned into the user's file — and a production
+password that arrived from an environment variable and was never in any file is now
+sitting in one that is probably in git.
+
+That is not a bug in anything. It is what "serialise the merged view" means, and it
+follows from merging eagerly: once every source is folded into one map, a writer holding
+that map has nothing to write *but* the whole of it. It cannot leave the environment's
+contribution out, because it can no longer tell which contribution was the environment's.
+
+**This module never folds its layers away.** A `Store` owns every read, write and watch,
+and records provenance *during* the merge instead of reconstructing it afterwards. Changing
+`server.port` above changes `server.port`, and nothing else.
 
 ## Design
 
-- **Writes preserve what you wrote.** Saving a value changes that value and nothing else:
-  comments, key order and block style survive, and the change lands in the file that owns
-  the key rather than in a re-encoding of everything the process could see. `Plan` shows
-  what a write would do before it does it.
+- **Writes preserve what a human wrote.** Comments stay attached to their keys; order,
+  quoting and block style survive; repeated writes converge. The change lands in the layer
+  that actually owns the key, so the value you set is the value you read back — and
+  nothing from another layer comes along for the ride. `Plan` is a dry run that cannot
+  drift from `Apply`, because it *is* the same routing pass.
 - **Per-key provenance.** `Origin` reports which source supplied a value, `Shadowed` lists
   every layer defining it, and `Explain` renders the chain — so "why is this value what it
-  is" has an answer.
+  is" has an answer. A write that a higher layer still shadows says so rather than
+  appearing to succeed.
 - **Safe hot-reload.** A candidate that fails to build or validate is rejected and the
-  last-known-good configuration is retained. Observers are told exactly once per logical
-  change; rejections travel on `OnReloadError` instead.
+  last-known-good configuration is retained — never a mixture of before and after.
+  Observers are told exactly once per logical change; rejections travel on
+  `OnReloadError`. Writing from inside an observer is refused, so the cascade it would
+  cause is unrepresentable rather than something to remember to break.
 - **Typed sections + validation.** `ObservedSection[T]` keeps a struct current across
   reloads, and `Schema` / `ValidateStruct[T]` check values against field rules. A package
   consuming settings declares a one-method interface over its own struct and never imports
   this one.
+- **Read any type, including your own.** `Value[T]` reads whatever `T` is; durations, IP
+  addresses, URLs, timezones and anything implementing `encoding.TextUnmarshaler` decode
+  from their ordinary written form.
 - **Everything is a layer.** Files, defaults, environment, flags and runtime `AddLayer`
   sources all take part in precedence, provenance and shadowing the same way.
+
+## Should you use this?
+
+**Probably not**, if your program only reads configuration, or one file and some
+environment variables cover you. [Viper](https://github.com/spf13/viper) does that job
+well, is battle-tested by an enormous number of programs, and has an ecosystem this module
+does not. Much of what is here was learned from years of using it — see the
+[history](https://config.go.phpboyscout.uk/about/history/).
+
+**Yes**, if your program writes configuration back and users live in the file afterwards;
+if you have lost an afternoon to "which source set this?"; if a long-running service needs
+reload to be safe rather than eager; or if config lands in files that get committed and
+reviewed.
 
 ## Install
 
