@@ -235,9 +235,10 @@ feels like.
   errors carry a fix hint alongside the message.
 - **Context on every operation that does I/O**, so configuration work participates in your
   shutdown path instead of ignoring it.
-- **A smaller dependency graph than the thing it replaces**, while doing more — 26
-  non-stdlib packages across 10 modules, against viper's 36 across 13 (library only, no
-  test dependencies).
+- **A smaller dependency graph than the thing it replaces**, while doing more — 20
+  non-stdlib packages across 8 modules, against viper's 36 across 13 (library only, no test
+  dependencies). The filesystem is a six-method interface this module defines, so you are
+  not made to import one.
 - **Typed sections + validation.** `ObservedSection[T]` keeps a struct current across
   reloads — decoded in one operation, so it never holds some fields from before a reload
   and some from after, and republished only when the struct actually changed. Defaults take

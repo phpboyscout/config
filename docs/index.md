@@ -62,6 +62,7 @@ so it changes the key you asked for, and nothing else.
 | **Any source as a layer** | `WithBackend` takes any three-method `Backend`, so Consul, a secrets manager or an HTTP endpoint gets full precedence, provenance and shadowing. |
 | **Typed sections** | `ObserveSection[T]` keeps your struct current across reloads, and the package consuming it never imports this one. |
 | **Read any type** | `Value[T]` reads whatever `T` is — durations, IP addresses, URLs, and your own `encoding.TextUnmarshaler` types. |
+| **No filesystem imposed** | `config.FS` is six methods you can satisfy over `os`, a rooted directory, or your own. `config.Dir(path)` confines every operation to that directory. |
 
 **[→ The full case, with the reasoning and the measurements](about/features.md)**
 

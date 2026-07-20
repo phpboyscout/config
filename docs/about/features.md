@@ -349,7 +349,15 @@ dependencies only, no test-only packages:
 | | non-stdlib packages | distinct modules |
 |---|---|---|
 | viper 1.21.0 | 36 | 13 |
-| `config` | **26** | **10** |
+| `config` | **20** | **8** |
+
+**The filesystem is an interface this module defines, not one it imposes.** `config.FS` is
+six methods. `config.OS()` is the operating system; `config.Dir(path)` is backed by
+`os.Root`, so every operation is confined to that directory and a path resolving outside it
+— through `..`, an absolute path, or a symlink pointing away — is refused by the operating
+system rather than by a check this module performs. A tool reading configuration from a
+directory a user named gets that containment without asking. And a test needs no filesystem
+dependency at all: `config.Dir(t.TempDir())` gives real file semantics, watching included.
 
 **Section defaults with your own merge function.** `WithSectionDefaults` takes both the
 defaults and the function that combines them with what was configured, so "merge" means
