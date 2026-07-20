@@ -234,7 +234,7 @@ reason.
 | JSON | `config-json` | yes | yes | no comments; key order and indentation must survive |
 | JSONL | `config-json` | yes | yes | one line per document; edits target a document index |
 | TOML | `config-toml` | yes | fast follow | writer-shaped hole now, `tomldoc` next — see D16 |
-| XML | `config-xml` | yes | no | attribute-versus-element is ambiguous for a dotted-key model |
+| XML | `config-xml` | yes | no | attributes merge with elements; collisions refused — see D21 |
 | INI | `config-ini` | yes | no | advertised by the incumbent, decoder absent |
 | Java properties | `config-properties` | yes | no | advertised by the incumbent, decoder absent |
 | dotenv | `config-dotenv` | yes | no | flat; the incumbent does decode this one |
@@ -592,6 +592,50 @@ sequenced behind everything that does.
 An upstream option to disable environment fallback would be a small and well-motivated
 contribution, and would reopen this decision if it landed.
 
+### D21 — XML merges attributes with child elements, and refuses what it cannot represent
+
+XML was initially assessed as barely viable, on the grounds that its shape depends on its
+data: `<host>a</host>` decodes to a scalar and two of them decode to a list, so a
+configuration working with two entries would break with one. That is structurally true of
+XML and cannot be fixed at the parser.
+
+**It was also already solved, and the objection should have been checked before it was
+raised.** Both read paths promote a scalar to a single-element slice:
+
+```
+host: a       GetStringSlice=[a]    Unmarshal into []string=[a]
+host: [a, b]  GetStringSlice=[a b]  Unmarshal into []string=[a b]
+```
+
+A consumer declaring `Hosts []string` is correct for one element or many. The other
+direction — two elements into a `string` field — fails loudly with a decode error rather
+than silently choosing one. So the residual cost is a documented convention: **declare
+repeatable elements as slices**, which is advice, not a blocker.
+
+What remains genuinely needs deciding.
+
+**Attributes and child elements share one namespace.** `<server port="8080"><host>local</host></server>`
+gives `server.port` and `server.host`, and a path reads the same as it would in any other
+format. Real configuration XML is attribute-heavy — log4j and .NET `appSettings` are almost
+entirely attributes — so this is the common case rather than an edge one, and burdening it
+with a sigil would make the format's ordinary paths the ugly ones.
+
+A document where an attribute and a child element share a name is **refused at load** with
+`ErrBackendUnsafe` naming both. This is the same treatment as an ambiguous environment
+variable name: the module has two candidates, no basis to choose, and says so rather than
+picking one. The alternative — letting elements win — silently discards the attribute, which
+is the class of quiet wrong answer refused everywhere else here.
+
+**An element with both attributes and text content is refused.** `<host type="dns">localhost</host>`
+is simultaneously a scalar and a map, and a nested value tree cannot hold both at one key.
+A magic `#text` key would handle it, at the cost of a path nobody would guess and that exists
+in no other format. Refusing keeps the invariant that every path is either a value or a map,
+and the construct is uncommon in real configuration — log4j, .NET `appSettings` and Maven
+POMs all avoid it. The decision is reversible if evidence says otherwise.
+
+XML stays **read-only**. No Go library round-trips it preserving formatting and comments, so
+writing is in the same position as TOML but with materially less demand.
+
 ## Rejected alternatives
 
 **Add decoders to the core, switching on file extension.** The obvious approach, and what
@@ -771,7 +815,8 @@ nesting rule (OQ5) — and solving it once is most of the work. Sequenced here b
 are small, and because closing the advertised-parity gap (D13) is worth more than the
 remaining formats individually.
 
-**Phase 6 — `config-xml`**, read-only.
+**Phase 6 — `config-xml`**, read-only, per D21: attributes merged into the element
+namespace, name collisions and mixed attribute-plus-text elements refused at load.
 
 **Phase 7 — `config-hcl`**, read-only with a writer-shaped hole. Refuses external
 parameterisation, function calls and includes at load (D11, D12). Ports the path-traversal
