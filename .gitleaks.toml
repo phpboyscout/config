@@ -19,6 +19,12 @@ one fixed string that can be matched exactly. It appears in docs/index.md,
 docs/about/features.md, README.md and docsclaim_test.go, which asserts the
 example is still true.
 
+Note that the CI scan is already correctly scoped — the go-security component
+scans CI_MERGE_REQUEST_DIFF_BASE_SHA..CI_COMMIT_SHA, so it sees this branch's
+commits and not unrelated history. This allowlist is needed regardless of
+scoping, because the string is genuinely introduced by these commits. No scan
+configuration avoids it; only exempting the value does.
+
 If the example's value changes, this changes with it — the point is that exactly
 one known-fake literal is exempt, not that a location is.
 """
