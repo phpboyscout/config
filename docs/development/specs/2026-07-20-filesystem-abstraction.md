@@ -2,7 +2,8 @@
 title: Filesystem abstraction — a narrow interface owned by this module
 date: 2026-07-20
 author: matt.cockayne
-status: draft
+status: approved
+approved: 2026-07-20
 issue: phpboyscout/go/config#3
 ---
 
@@ -144,11 +145,25 @@ config.NewStore(ctx, config.WithFiles(aferofs.Wrap(myAferoFs), "/etc/app.yaml"))
 Placed in its own module for the same reason the format adapters are: a consumer who does not
 use afero should not acquire it.
 
-### D6 — This lands before any format adapter is published
+### D6 — This ships in the core module, in the same release as the Store architecture
 
-Stated as a decision so the ordering is not treated as advisory. Every adapter takes a
-filesystem in its constructor. Publishing eight modules against `afero.Fs` and changing them
-afterwards is the same work done twice, plus eight migrations for consumers.
+Not a prerequisite to be scheduled, but part of the core delivery: `config.FS` lands in the
+`config` package alongside the Store rewrite and YAML support, and the format adapters follow
+after it.
+
+Two reasons, and the second is the stronger one.
+
+Every adapter takes a filesystem in its constructor, so publishing eight modules against
+`afero.Fs` and changing them afterwards is the same work done twice plus eight consumer
+migrations.
+
+More importantly, **`go-tool-base` depends entirely on this module today and has to migrate
+to the Store architecture regardless.** `WithFiles` changing its parameter type is a break for
+it either way. Landing both in one release means it migrates once; landing them separately
+means it migrates twice, for no benefit, against a module it cannot avoid.
+
+The delivery order is therefore: core Store plus YAML plus `config.FS` in one release, then
+adapters as fast follows.
 
 ## Rejected alternatives
 
@@ -219,6 +234,10 @@ one-line change at the call site.
 This lands in the same release as the Store architecture migration, so consumers taking
 v0.3.0 absorb both at once rather than migrating twice. The migration guide gains a section.
 
+`go-tool-base` is the migration that matters, being wholly dependent on this module. Its port
+to the Store architecture is outstanding anyway, so `WithFiles` changing type costs it one
+extra edit per call site rather than a second migration.
+
 ## Open questions
 
 1. **Does `Dir` belong in this spec or its own?** It is additive and independently useful —
@@ -243,5 +262,7 @@ keeping `isReallyOnDisk` as the verification step.
 
 **Phase 3 — `config-afero`**, if open question 2 resolves in its favour.
 
-**Phase 4 — migration guide and release**, alongside the Store architecture migration so
-consumers absorb one break rather than two.
+**Phase 4 — migration guide and release**, as part of v0.3.0 alongside the Store architecture,
+so consumers — `go-tool-base` first among them — absorb one break rather than two.
+
+Format adapters follow as fast follows once this has shipped.

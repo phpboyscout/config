@@ -209,7 +209,7 @@ not need; it cannot infer one it was never given.
 
 | Spec | Status |
 |---|---|
-| [Filesystem abstraction](2026-07-20-filesystem-abstraction.md) | draft |
-| [Non-YAML format adapters](2026-07-20-non-yaml-format-adapters.md) | draft |
+| [Filesystem abstraction](2026-07-20-filesystem-abstraction.md) | approved |
+| [Non-YAML format adapters](2026-07-20-non-yaml-format-adapters.md) | approved |
 | [Store architecture](2026-07-19-store-architecture.md) | approved |
 | [Structure-preserving config writes](2026-07-18-structure-preserving-config-writes.md) | superseded |

@@ -2,7 +2,8 @@
 title: Non-YAML format adapters — advertised parity and beyond, as sibling modules
 date: 2026-07-20
 author: matt.cockayne
-status: draft
+status: approved
+approved: 2026-07-20
 issue: phpboyscout/go/config#2
 ---
 
@@ -790,9 +791,12 @@ default arm that degrades usefully.
 ## Implementation phases
 
 **Phase 0 — the filesystem interface**, specified separately in
-[the filesystem abstraction spec](2026-07-20-filesystem-abstraction.md). It is a prerequisite
-rather than part of this work: every adapter takes a filesystem in its constructor, so
-settling it after publishing eight modules would mean changing eight APIs.
+[the filesystem abstraction spec](2026-07-20-filesystem-abstraction.md) and delivered as part
+of the **core** module rather than as a phase of this work. Every adapter takes a filesystem
+in its constructor, so it has to be settled first; and `go-tool-base`, which depends wholly
+on this module, migrates once instead of twice by taking it with the Store rewrite.
+
+Everything below is a fast follow after the core module ships with YAML support.
 
 **Phase 1 — the codec seam, no behaviour change.** Extract `Codec`/`EditingCodec`, add
 `NewCodecBackend`, reimplement `fileBackend` on top of it as a YAML codec. Done when the
