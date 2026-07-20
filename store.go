@@ -959,7 +959,7 @@ func (s *Store) backendByID(id string) (Backend, bool) {
 // nothing: an application that believes it will hear about changes and never
 // does is worse off than one that knows it must restart.
 func (s *Store) Watch(ctx context.Context, opts ...WatchOption) (stop func(), err error) {
-	cfg := watchConfig{interval: DefaultPollInterval}
+	cfg := watchConfig{interval: DefaultPollInterval, settle: DefaultSettleInterval}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -969,16 +969,38 @@ func (s *Store) Watch(ctx context.Context, opts ...WatchOption) (stop func(), er
 		return nil, fmt.Errorf("%w: no watchable sources", ErrWatchUnavailable)
 	}
 
-	onChange := func() {
+	// An injected watcher supplies precisely what the settle window exists to
+	// compensate for — it says when to reload, rather than leaving the Store to
+	// infer it from a burst of filesystem events. Defaulting it to no window
+	// keeps WithWatcher deterministic, which is the whole reason to use one.
+	if cfg.watcher != nil && !cfg.settleSet {
+		cfg.settle = 0
+	}
+
+	// Foreign changes are coalesced; the Store's own writes are not, and never
+	// reach here. Apply knows the extent of its batch and notifies directly, so
+	// exactly-once for a write is by construction rather than by timing. This
+	// window exists only because the filesystem reports that files changed and
+	// not that they changed together.
+	settle := newSettler(cfg.settle, func() {
 		// A watch event means the sources *may* have changed. Reload decides
 		// whether anything actually did, and only notifies observers if so.
 		_ = s.Reload(ctx)
-	}
+	})
+
+	onChange := settle.trigger
 
 	// An injected watcher stands in for the whole set, which is how a test
 	// drives change detection without a real filesystem.
 	if cfg.watcher != nil {
-		return cfg.watcher.Watch(ctx, s.watchedPaths(), onChange)
+		stop, err := cfg.watcher.Watch(ctx, s.watchedPaths(), onChange)
+		if err != nil {
+			settle.stop()
+
+			return nil, err
+		}
+
+		return func() { settle.stop(); stop() }, nil
 	}
 
 	var stops []func()
@@ -997,6 +1019,7 @@ func (s *Store) Watch(ctx context.Context, opts ...WatchOption) (stop func(), er
 			// reporting success would leave the caller believing it will hear
 			// about sources it never will.
 			stopAll(stops)
+			settle.stop()
 
 			return nil, err
 		}
@@ -1004,7 +1027,7 @@ func (s *Store) Watch(ctx context.Context, opts ...WatchOption) (stop func(), er
 		stops = append(stops, stop)
 	}
 
-	return func() { stopAll(stops) }, nil
+	return func() { settle.stop(); stopAll(stops) }, nil
 }
 
 // watchedPaths lists the paths of file-backed sources, for an injected watcher
@@ -1035,12 +1058,36 @@ type WatchOption func(*watchConfig)
 
 type watchConfig struct {
 	interval time.Duration
-	watcher  Watcher
+	settle   time.Duration
+	// settleSet records that the caller chose a window, so an injected watcher
+	// can default to none without overriding an explicit choice.
+	settleSet bool
+	watcher   Watcher
 }
 
 // WithPollInterval sets how often a polling watcher checks for changes.
 func WithPollInterval(d time.Duration) WatchOption {
 	return func(c *watchConfig) { c.interval = d }
+}
+
+// WithSettleInterval sets how long a burst of foreign changes is allowed to
+// settle before the Store reloads.
+//
+// A logical configuration change is not always one filesystem event: a deploy
+// replacing two overlays produces two, and nothing in the filesystem says they
+// were meant as one. Waiting for the burst to settle turns them into a single
+// reload, and a single notification.
+//
+// Zero disables settling, reloading on each report. Tests driving an injected
+// watcher usually want that, so the trigger and the reload stay in step
+// without waiting on a timer.
+//
+// This does not make a multi-file change atomic. Writes spaced further apart
+// than the window are still seen as separate changes — the guarantee belongs
+// to whoever writes the files, by writing them atomically or by keeping
+// settings that change together in one file.
+func WithSettleInterval(d time.Duration) WatchOption {
+	return func(c *watchConfig) { c.settle, c.settleSet = d, true }
 }
 
 // WithWatcher supplies a watcher, mainly so tests can drive change detection

@@ -353,6 +353,52 @@ nothing and returned without decoding — so a prefix-less binding reported its 
 and handed back an untouched target, while `Unmarshal` on the same view decoded correctly. An
 empty key now means the scope the view describes, which is what such a binding plainly intends.
 
+### R10 — 2026-07-20: D8's foreign-change coalescing is implemented
+
+**D8 required two things and only one was built.** It says notification is "exactly once per
+logical change… Own writes achieve this by construction (D4); **foreign changes coalesce**."
+The first half was implemented and is what makes `Apply` exactly-once regardless of how many
+files it touches. The second half was not: a foreign change spanning two files produced two
+reloads and two notifications, and the first carried a combination nobody intended — the first
+file updated, the second not yet.
+
+Measured before being fixed: two files written 5ms apart gave two notifications with the first
+showing the half-applied state, and only writes landing inside the same reload window (0ms
+apart, by luck) gave one. The behaviour was documented as a caveat before it was recognised as
+a divergence from an approved decision, which is the same failure mode as [R1](#r1--2026-07-19-viper-is-removed-not-retained)
+— documenting what the code does rather than checking it against what was agreed.
+
+**Why the removed debounce was right to remove, and why this is not it.** D8 rejected the
+pre-Store 250ms debounce because it was "nondeterministic for multi-file saves": a `Save()`
+writing two layers could fire observers once or twice depending on whether the bursts straddled
+the window. That criticism is correct and stands. The answer was to make the Store's own writes
+exactly-once *by construction* — the component that performs a write knows its extent, and needs
+no timing heuristic to recognise it.
+
+That reasoning applies only to writes this Store performs. For a foreign change there is no
+construction to appeal to: the filesystem reports that two files changed and not that they
+changed together, and no amount of architecture recovers information the operating system never
+supplied. Timing is genuinely the only signal available, so it is used here and nowhere else.
+
+**What is implemented.** A settle window on the watcher-triggered path only. `Apply` never
+reaches it and remains exactly-once by construction. `WithSettleInterval` configures it;
+`DefaultSettleInterval` is 250ms, inherited from the pre-Store default where it was chosen to
+tolerate slow and networked filesystems. An injected watcher (`WithWatcher`) defaults to no
+window, because such a caller is supplying precisely the information the window compensates for
+— overriding that would make `WithWatcher` non-deterministic, which is the only reason to use it.
+
+Settling is bounded at four times the window from the first change in a burst. A pure
+wait-for-quiet window never fires while changes keep arriving faster than it, which would leave
+observers told nothing at all — the silent-failure mode refused everywhere else in this design.
+
+**What this does not do, stated because the honest limit matters more than the mitigation.**
+It reduces the problem; it does not remove it. Writes spaced further apart than the window are
+indistinguishable from two separate changes, because that is what they look like. A logical
+change spanning several files is atomic only if whoever makes it makes it atomically. The
+guarantee belongs to the writer — by writing atomically, or by keeping settings that change
+together in one file, which is always read atomically. Both the residual case and the coalescing
+are asserted in tests so neither is folklore.
+
 ## Why this exists
 
 The module needs to write configuration back to the files it was loaded from — preserving
@@ -682,6 +728,9 @@ keryx uses. Silent absence of a declared capability is prohibited.
 
 - **Exactly once** per logical change. A multi-file `Apply` emits one notification, not one
   per file. Own writes achieve this by construction (D4); foreign changes coalesce.
+  > **Implemented by [R10](#r10--2026-07-20-d8s-foreign-change-coalescing-is-implemented).**
+  > The construction half shipped with the rewrite; foreign coalescing did not, and is now a
+  > settle window on the watcher path alone.
 - **A write that changes nothing is not a logical change.** A write may still rewrite the file
   — reflowing comments, moving a key into the layer that should own it — without altering the
   resolved configuration. Observers react to configuration, so that write MUST NOT notify.

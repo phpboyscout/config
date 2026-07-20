@@ -84,12 +84,16 @@ the time an older snapshot arrives, an observer has no way to know a newer one a
 
 **The limit worth knowing:** exactly-once is per logical change *as the Store understands
 it*. An `Apply` is one change however many files it touches, because the Store performs it
-and knows the batch. Two files changed by something else are two events — nothing in the
-filesystem says they were one intended change — so observers are told twice, and the first
-telling can carry a combination nobody meant: first file updated, second not yet. Each
-snapshot is still internally coherent, never a mixture of two reads. Keep settings that
-change together in one file, which is always read atomically, or swap the directory at once
-as a Kubernetes ConfigMap update does. Measured and pinned in the test above.
+and knows the batch. Two files changed by something else are separate events — nothing in
+the filesystem says they were one intended change — so foreign changes are coalesced behind
+a settle window (250ms by default, `WithSettleInterval`) and reload once.
+
+That reduces the problem rather than removing it: writes spaced wider than the window look
+exactly like two changes, so observers run twice and the first run sees a combination nobody
+meant. Each snapshot is still internally coherent, never a mixture of two reads. A change
+spanning files is atomic only if the writer makes it atomic — keep settings that change
+together in one file, or swap the directory at once as a Kubernetes ConfigMap update does.
+Both the coalescing and the residual case are pinned by tests.
 
 Change detection is hybrid and per-path: native OS notification where it genuinely works,
 polling where it does not — in-memory filesystems, network mounts, containers with inotify

@@ -157,33 +157,40 @@ The Store's own writes never travel through the watcher. `Apply` builds the next
 snapshot from the content it just wrote and notifies directly, so a write cannot come
 back round through the filesystem and be seen a second time.
 
-!!! warning "A foreign change spanning several files notifies once per file"
+!!! info "A foreign change spanning several files is coalesced — up to a point"
     "Exactly once per logical change" means a change the Store performed. An `Apply` is
     one logical change however many files it touches, because the Store knows the batch.
 
     When **something else** changes two files — a deploy, a config-management run, an
-    operator editing two overlays — those are two filesystem events, and nothing tells the
-    Store they were meant as one change. Your observers run **twice**, and the first run
-    sees the first file updated and the second not yet.
+    operator editing two overlays — those are separate filesystem events, and nothing
+    tells the Store they were meant as one change. So it waits for the burst to settle
+    before reloading: `DefaultSettleInterval`, 250ms, configurable with
+    `WithSettleInterval`.
 
-    Each snapshot is internally coherent — a real read of the files at a moment in time,
-    never a mixture of two reads — so you will not see a torn value. But you can see a
-    real combination that nobody intended.
+    ```go
+    stop, err := store.Watch(ctx, config.WithSettleInterval(500*time.Millisecond))
+    ```
 
-    If that matters to your component:
+    **This reduces the problem rather than removing it.** Writes spaced further apart than
+    the window are indistinguishable from two separate changes, because that is what they
+    look like — observers run twice, and the first run sees the first file updated and the
+    second not yet. Each snapshot is still internally coherent, never a mixture of two
+    reads, so you will not see a torn value; you can see a real combination nobody
+    intended.
+
+    If it matters to your component, in order of preference:
 
     - **Keep settings that change together in one file.** A single file is always read
-      atomically, so this removes the problem rather than mitigating it. This is the right
-      answer nearly always.
+      atomically, which removes the problem rather than shortening the window in which it
+      can happen. This is the right answer nearly always.
     - **Swap atomically at the directory level** if the deploy system can — a Kubernetes
-      ConfigMap update replaces a symlinked directory in one operation, so both files
-      appear to change at once.
-    - **Make the reaction idempotent and cheap**, so running it twice costs little. If it
-      is expensive — rebuilding a pool, reopening a listener — debounce inside your own
-      observer, where you know how long to wait.
-    - **Use a typed section.** `ObserveSection[T]` only delivers when *your struct*
-      changed, so an intermediate state that does not affect your fields is never
-      delivered to you at all.
+      ConfigMap update replaces a symlinked directory in one operation.
+    - **Widen the window** to cover your deploy's write span, accepting the reload latency.
+    - **Use a typed section.** `ObserveSection[T]` delivers only when *your struct*
+      changed, so an intermediate state that does not touch your fields never reaches you.
+
+    Settling applies only to foreign changes. `Apply` never waits, and an injected watcher
+    (`WithWatcher`) defaults to no window so tests stay deterministic.
 
 ## Observers do not fire at startup
 

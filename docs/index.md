@@ -103,23 +103,26 @@ version-checked in one place — rather than something each observer has to defe
 against. That matters, because an observer *cannot* defend itself: by the time an older
 snapshot arrives, it has no way of knowing a newer one already did.
 
-!!! warning "The limit of exactly-once: a change spanning several files"
+!!! info "The limit of exactly-once, and what is done about it"
     Exactly-once is per logical change **as the Store understands it**. An `Apply` is one
     logical change however many files it touches, because the Store performs it and knows
     the batch.
 
-    Two files changed by *something else* are two events, and nothing in the filesystem
-    says they were meant as one change — so observers are told **twice**, and the first
-    telling can carry a combination nobody intended: the first file updated, the second
-    not yet.
+    Two files changed by *something else* are separate events, and nothing in the
+    filesystem says they were meant as one. So foreign changes are coalesced: the Store
+    waits for the burst to settle — 250ms by default, set with `WithSettleInterval` —
+    before reloading once.
 
-    Each snapshot is still internally coherent — a real read of the files at a moment in
-    time, never a mixture of two reads. But a logical change spanning several files is
-    only atomic if whoever makes it makes it atomically. Keep settings that change
-    together in **one file**, which is always read atomically, or swap the whole directory
-    at once as a Kubernetes ConfigMap update does. This is measured and pinned in
-    [`observer_contract_test.go`](https://gitlab.com/phpboyscout/go/config/-/blob/main/observer_contract_test.go)
-    so the behaviour is known rather than discovered.
+    **That reduces the problem rather than removing it.** Writes spaced further apart than
+    the window look exactly like two separate changes, so observers run twice and the
+    first run sees a combination nobody intended. Each snapshot is still internally
+    coherent — a real read of the files at a moment, never a mixture of two reads — so no
+    value is ever torn; what you can see is a real state nobody meant to exist.
+
+    A change spanning several files is atomic only if whoever makes it makes it atomically.
+    Keep settings that change together in **one file**, which is always read atomically, or
+    swap the whole directory at once as a Kubernetes ConfigMap update does. Both the
+    coalescing and the residual case are asserted in the suite, so neither is folklore.
 
 Change detection itself is hybrid and per-path: native OS notification where it genuinely
 works, and polling where it does not — an in-memory filesystem, a network mount, a
