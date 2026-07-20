@@ -1,24 +1,93 @@
 # config
 
-**Layered configuration for Go that can write back.**
+**Layered configuration for Go that can tell you where a value came from — and write one
+back without wrecking the file.**
 
 Assemble settings from embedded defaults, files, the environment and CLI flags with a
-precedence you can read off the call site. Ask of any key where it came from and what
-shadows it. Save a change to the layer that owns it — without destroying the file its
-author wrote.
+precedence you can read off the call site. Read them through immutable snapshots, so a
+reload can never hand you half of one configuration and half of another. Ask of any key
+which layer supplied it and what shadows it. And when your program saves a change, save it
+to the layer that owns it — leaving every comment its author wrote exactly where it was.
 
 ```bash
 go get gitlab.com/phpboyscout/go/config
 ```
 
-## The problem this exists to solve
+## Reading: answers, not just values
 
-Reading configuration is a solved problem. Every library does it well, and if reading is
-all you need, you do not need this one.
+Any library can hand you a value. Three things are harder, and all three are things you
+have wanted at two in the morning.
 
-It stops being solved the moment your program **writes** configuration back — a settings
-screen, a `--set` flag, a first-run wizard, an `auth login` that stores a token. Here is a
-file with one setting changed. The user changed `server.port`, and nothing else:
+**"Why is this value 9090?"** Provenance is recorded *during* the merge, not reconstructed
+afterwards, so the question has a real answer:
+
+```go
+fmt.Println(view.Explain("server.port"))
+// server.port = 9090 (from /home/me/.mytool/config.yaml); also defined in embedded:defaults.yaml
+```
+
+`Origin` names the layer that supplied a value, `Shadowed` lists every layer defining it,
+and `Keys` enumerates the lot. "Which file do I edit?" and "why is my edit not taking
+effect?" are the same question from two directions, and both are answerable.
+→ [Provenance](explanation/provenance.md)
+
+**"Do these two values agree with each other?"** A `View` is pinned to one immutable
+snapshot, so a sequence of reads cannot land either side of a reload and return a
+configuration that never existed. That is not a claim about care taken; it is structural,
+and it is measured — two related keys read while the file changes underneath, hammered for
+a second:
+
+| | reads | mismatched pairs |
+|---|---|---|
+| a library reading live mutable state | 6,764,880 | **1,759** |
+| `config` | 11,639,791 | **0** |
+
+A mismatched pair here means `host` from before a reload and `port` from after — a host
+and port that were never configured together, about to be dialled. The test that produces
+the second row is
+[in the suite](https://gitlab.com/phpboyscout/go/config/-/blob/main/coherence_test.go) and
+fails the build if it ever stops being true.
+
+**"What happens when the new config is broken?"** Reloading is fail-closed. A candidate
+that will not parse, or violates your schema, is rejected — the last-known-good
+configuration stays live, and you never read a mixture of before and after. A watcher that
+cannot function returns an error rather than silently doing nothing.
+→ [Hot-reload safety](explanation/hot-reload-safety.md)
+
+Beyond that, the ordinary things done deliberately:
+
+- **Precedence is the order you added the sources**, readable off the call site, rather
+  than a fixed ranking baked into the library that you have to look up and cannot change.
+- **Read any type, including your own.** `Value[T]` reads whatever `T` is — durations, IP
+  addresses, URLs, timezones, and anything implementing `encoding.TextUnmarshaler`, so
+  your own enums and domain types decode without this module having heard of them.
+  → [Read configuration values](how-to/read-values.md)
+- **Typed sections that stay current.** `ObserveSection[T]` decodes a subtree onto your
+  struct and republishes it across reloads, delivering only when the struct actually
+  changed. Each snapshot decodes in one operation, so it can never hold some fields from
+  before a reload and some from after. A package consuming those settings declares a
+  one-method interface over its own struct and **never imports this module at all**.
+  → [Typed sections](how-to/typed-sections.md)
+- **No global singleton, and tests that do not fight each other.** There is no package-level
+  instance to configure; stores are values. Read the environment from a function instead of
+  the process, the filesystem from `afero`, and use the published mocks — so config-dependent
+  tests run in parallel without touching global state. → [Test with the mocks](how-to/test-with-mocks.md)
+- **The environment prefix is required**, and it is a security control rather than
+  tidiness. Without one, any variable matching a configuration key could reconfigure your
+  tool — on a shared CI runner or multi-tenant host, an unrelated process setting
+  `LOG_LEVEL` would reach every program running there. Ambiguous variable names are
+  reported rather than resolved in map-iteration order.
+
+## Writing: where it gets genuinely hard
+
+Everything above is a better answer to a problem other libraries also address. This next
+part is one most of them cannot address at all, because it is foreclosed by their
+architecture.
+
+The moment your program **writes** configuration back — a settings screen, a `--set` flag,
+a first-run wizard, an `auth login` that stores a token — the file stops being an input and
+becomes something you are responsible for. Here is a file with one setting changed. The
+user changed `server.port`, and nothing else:
 
 === "Before"
 
@@ -85,11 +154,10 @@ never in any file, is now sitting in one — very probably one that is in git.
     cannot leave the environment's contribution out, because it can no longer tell which
     contribution came from the environment.
 
-## What follows from keeping the record
+## What a write does instead
 
-This module never folds its layers away. A `Store` owns every read, write and watch, and
-records provenance **during** the merge rather than trying to reconstruct it afterwards.
-The rest is downstream of that one decision:
+This module never folds its layers away, so a writer still knows which layer contributed
+what — and can therefore change one key in one file and leave everything else alone:
 
 - **Writes preserve what a human wrote.** `Apply` edits the target document in place, so
   comments stay attached to their keys, and order, quoting and block style survive.
@@ -100,34 +168,16 @@ The rest is downstream of that one decision:
 - **A write lands in the layer that owns the key** — so the value you set is the value you
   read back, rather than being immediately shadowed by an overlay above it. Nothing from
   another layer comes along for the ride. → [Write configuration](how-to/write-config.md)
-- **"Why is this value 9090?" has an answer.** `Origin` names the layer that supplied it,
-  `Shadowed` lists every layer defining it, `Explain` renders the whole chain. "Which file
-  do I edit?" and "why is my edit not taking effect?" are the same question from two
-  directions. → [Provenance](explanation/provenance.md)
 - **A write that cannot take effect says so** instead of appearing to succeed. If an
   environment variable still outranks the file you just wrote, you are told — which is the
-  single most common way a settings screen appears broken.
+  single most common way a settings screen appears broken to its user.
 - **`Plan` is a dry run that cannot drift**, because it *is* the routing pass `Apply`
-  runs, not a second implementation of it.
-
-And the parts that are simply table stakes done carefully:
-
-- **Hot-reload that fails closed.** A candidate that will not parse, or violates your
-  schema, is rejected and the last-known-good configuration stays live — never a mixture
-  of before and after. A watcher that cannot function returns an error rather than
-  silently doing nothing. Writing from inside an observer is refused outright, so the
-  cascade it would cause is unrepresentable rather than something you must remember to
-  break. → [Hot-reload safety](explanation/hot-reload-safety.md)
-- **Typed sections that stay current.** `ObserveSection[T]` decodes a subtree onto your
-  struct and republishes it across reloads, delivering only when the struct actually
-  changed. Each snapshot decodes in one operation, so it can never hold some fields from
-  before a reload and some from after. → [Typed sections](how-to/typed-sections.md)
-- **Read any type, including your own.** `Value[T]` reads whatever `T` is; durations, IP
-  addresses, URLs, timezones and anything implementing `encoding.TextUnmarshaler` decode
-  from their ordinary written form. → [Read configuration values](how-to/read-values.md)
+  runs, not a second implementation of it that has to be kept in step.
+- **Writing from inside an observer is refused outright**, so the write-notify-write
+  cascade is unrepresentable rather than something you must remember to break.
 - **Everything is a layer** — a file, one document within a multi-document file, embedded
   defaults, the environment, the flag set, something computed at runtime. All ordered by
-  precedence, with no special case to remember.
+  precedence, with no special case to remember, whether you are reading it or writing it.
 
 ## At a glance
 
@@ -163,18 +213,25 @@ tool — on a shared CI runner or a multi-tenant host, an unrelated process sett
 
 ## Should you use this?
 
-**Probably not, if** your program only ever reads configuration and never writes it, or a
-single file and some environment variables cover you. Viper does that job well, is
-battle-tested by an enormous number of programs, and has an ecosystem this module does not
-have. Reach for the smaller tool when the smaller tool fits — see
-[History](about/history.md) for how much this module owes to viper's lineage.
+**Yes, if any of these describe you** — and note that only the first is about writing:
 
-**Yes, if** any of these describe you:
-
-- your program writes configuration back, and users have to live in the file afterwards;
 - you have more than two sources and have lost an afternoon to "which one set this?";
-- a long-running service reloads config and you need reload to be safe rather than eager;
-- config lands in files that are committed, reviewed, or shared between people.
+- a long-running service reloads configuration, and reads that straddle a reload, or a
+  broken file taking the service down with it, are not acceptable;
+- your program writes configuration back, and users have to live in the file afterwards;
+- configuration lands in files that get committed, reviewed, or shared between people;
+- you want configuration-dependent tests that run in parallel and do not reach for process
+  globals;
+- your settings have real types — enums, addresses, URLs — and you are tired of decoding
+  them by hand.
+
+**Probably not, if** one file and a couple of environment variables cover you, nothing is
+ever written back, and nothing reloads. That is a large share of programs, and it is a
+genuinely well-served case: [viper](https://github.com/spf13/viper) is battle-tested by an
+enormous number of them, has an ecosystem this module does not, and will be a smaller
+dependency in your graph. Reach for the smaller tool when the smaller tool fits — see
+[History](about/history.md) for how much of what is here was learned from years of using
+it.
 
 ## Where next
 
