@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.3.1](https://gitlab.com/phpboyscout/go/config/-/releases/v0.3.1)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.3.0...v0.3.1)
+
+### Bug Fixes
+
+- stop config.Dir leaking a descriptor per call ([a5fc5b3](https://gitlab.com/phpboyscout/go/config/-/commit/a5fc5b3a84b33756486962db4d9557ffb0088f73))
+
 ## [v0.3.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.3.0)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.2.0...v0.3.0)
