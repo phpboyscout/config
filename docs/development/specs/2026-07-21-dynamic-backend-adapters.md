@@ -2,7 +2,8 @@
 title: Dynamic backend adapters — remote configuration systems as sibling modules
 date: 2026-07-21
 author: matt.cockayne
-status: draft
+status: approved
+approved: 2026-07-21
 issue: phpboyscout/go/config#4
 ---
 
@@ -43,12 +44,20 @@ reason is sharper here: each adapter carries its system's **SDK**, and the cloud
 consumer configuring from AWS SSM must not acquire the Azure or GCP SDK to do it. One system per
 module keeps each consumer's graph to the one integration they use.
 
+**Naming (OQ5, resolved): cloud-qualified.** A cloud service carries its cloud —
+`config-aws-ssm`, `config-aws-secrets`, `config-azure-appconfig`, `config-azure-keyvault`,
+`config-gcp-parameter`, `config-gcp-secret` — because the same purpose exists under three vendors
+and the service name is what people search for. A vendor-neutral system stays bare —
+`config-consul`, `config-vault`, `config-etcd`, `config-k8s`.
+
 ### D2 — Every adapter has its own approved spec before implementation
 
 This is the load-bearing rule. This umbrella spec settles what is common; **no `config-<system>`
-adapter is implemented until it has its own `status: approved` spec** under
-`docs/development/specs/` in its own repository (or here, if we keep specs central — see OQ6),
-citing this one and settling the decisions this one cannot:
+adapter is implemented until it has its own `status: approved` spec** — kept **centrally, here in
+the config repo** under `docs/development/specs/` alongside this umbrella (OQ6, resolved), so the
+family's specs stay discoverable and cross-linkable and this one can point at each. The adapter's
+own repo carries only its README, as the format adapters do. Each per-adapter spec cites this one
+and settles the decisions this one cannot:
 
 1. **Data model** — how the system's keys, paths, namespaces, versions and value types map onto a
    config layer's nested tree, with worked examples.
@@ -95,15 +104,22 @@ that cannot persist does not implement `Prepare`; one that cannot notice change 
 `Watch`. Routing, `Plan` and the watch set then follow the type system rather than a runtime flag
 that can disagree with the code.
 
-### D5 — `Sensitive` becomes load-bearing here
+### D5 — `Sensitive` becomes load-bearing, and the core enforces it
 
 `Capabilities.Sensitive` was forward-declared for the file work and consumed by nothing (non-YAML
-format adapters D8: "it becomes load-bearing the moment anything dumps or exports resolved
-configuration"). The secrets backends are that moment. A backend over Vault, AWS Secrets Manager,
-Azure Key Vault or GCP Secret Manager declares `Sensitive: true`, and the rule it guards — **a
-value sourced from a Sensitive backend must never be written into a layer that is not** — moves
-from a comment to a checked invariant. Whether the *core* enforces that now, or it stays a declared
-property each adapter honours, is OQ2.
+format adapters D8). The secrets backends are the moment it becomes real. A backend over Vault,
+AWS Secrets Manager, Azure Key Vault or GCP Secret Manager declares `Sensitive: true`, and the
+rule it guards — **a value sourced from a Sensitive backend must never be written into a layer
+that is not** — becomes a **checked invariant in the core write path** (OQ2, resolved: enforce).
+
+The leak this prevents is specific and made *more* likely, not less, by D7. Because secrets
+backends are read-only, a write to a key a Sensitive layer defines cannot route to that layer —
+so routing falls through to the next writable layer, which is typically a plain file. A consumer
+calling `Set("db.password", …)` on a key Vault provides would, without a guard, have that value
+written into `config.yaml`. So the enforcement is at routing: **a write that would land in a
+non-Sensitive layer while a Sensitive layer defines the key is refused**, with a named error,
+rather than leaking the value into a non-secret store. This is a core write-path change (Public
+API), and it is what makes read-only secrets backends safe to combine with writable files.
 
 ### D6 — Watch is native where the system offers it, polled where it does not
 
@@ -161,14 +177,14 @@ The codec `conformance` suite does not apply here — there is no file and no co
 a contract every remote backend must meet, and one trap every *writable* one must avoid: the
 conflict fingerprint, or version, must be captured at **Load**, not at **Prepare** — the exact D3
 trap of the file seam, in a remote costume (the custom-backend guide's `remoteBackend` gets this
-right, comparing the version recorded at Load). So this spec proposes a
-`config/backendconformance` suite, stdlib `testing` only (as the codec one is, D17 there), that an
+right, comparing the version recorded at Load). So this spec **builds** a
+`config/backendconformance` suite (OQ3, resolved: yes), stdlib `testing` only (as the codec one is, D17 there), that an
 adapter runs against its backend to assert: it participates as an ordinary layer with per-key
 merge and provenance; an absent or empty source is tolerated; for a `WritableBackend`, a write
 round-trips and a change landing between Load and Commit is refused with `ErrConflict`; for a
-`WatchableBackend`, a foreign change reaches observers. Whether to build this now or let each
-adapter test the contract itself is OQ3 — but the version-at-Load trap is a strong argument for
-making it shared, so the mistake is made impossible once rather than risked per adapter.
+`WatchableBackend`, a foreign change reaches observers. Making it shared makes the version-at-Load
+trap impossible once rather than risked per adapter — the same value the codec conformance suite
+delivered.
 
 ## Rejected alternatives
 
@@ -194,15 +210,18 @@ them. See D2.
 
 ## Public API
 
-**Net-new exported names in the core: none expected.** The backend seam — `Backend`,
-`WritableBackend`, `WatchableBackend`, `Capabilities`, `Layer`, `Source`, `Pending`, `Change`,
-`NewWatcher` — already exists and is sufficient, verified by the custom-backend guide building a
-full remote backend against only the public API. Two possible additions, each its own decision:
+The backend seam — `Backend`, `WritableBackend`, `WatchableBackend`, `Capabilities`, `Layer`,
+`Source`, `Pending`, `Change`, `NewWatcher` — already exists and is sufficient for an adapter,
+verified by the custom-backend guide building a full remote backend against only the public API.
+Two core additions were confirmed in review:
 
-- If D5's `Sensitive` invariant is enforced in the core (OQ2), that is a behaviour change to the
-  write path, specified there.
-- If D11's `config/backendconformance` suite is built (OQ3), that is one new package, stdlib
-  `testing` only, mirroring `config/conformance`.
+- **`Sensitive` enforcement (D5, OQ2 resolved: enforce).** A write-path change refusing a write
+  that would land in a non-Sensitive layer while a Sensitive layer defines the key, with a new
+  named error sentinel. This is a behaviour change to routing/`Plan`, and a per-adapter spec is
+  not needed for it — it is core, specified by D5 and implemented as a precursor to the first
+  secrets backend.
+- **`config/backendconformance` (D11, OQ3 resolved: build).** One new package, stdlib `testing`
+  only, mirroring `config/conformance`.
 
 ## Testing strategy
 
@@ -213,50 +232,60 @@ passing that shared contract.
 
 ## Migration & compatibility
 
-Purely additive. No consumer change; no core change unless OQ2 or OQ3 resolves to one. A consumer
-adds a module and a `WithBackend` call, exactly as for a format adapter.
+Additive for consumers: a consumer adds a module and a `WithBackend` call, exactly as for a format
+adapter. Two core additions land (Public API): the `Sensitive` enforcement (D5) is a write-path
+behaviour change — it can only *newly refuse* a write that would have leaked a secret, so no
+existing correct usage breaks — and `config/backendconformance` (D11) is a new test-only package.
 
 ## Open questions
 
-1. **Scope and order.** The proposed set is Consul (the reference the how-to already models),
-   then the parameter-store trio (AWS SSM, Azure App Configuration, GCP Parameter Manager), then
-   the secrets managers (Vault, AWS Secrets Manager, Azure Key Vault, GCP Secret Manager), then
-   the cloud-native KV pair (etcd, Kubernetes ConfigMaps/Secrets). Is that the right list, and is
-   anything in it not worth doing — or missing?
-2. **`Sensitive` enforcement.** Does the core enforce "a Sensitive value never lands in a
-   non-Sensitive layer" now (a write-path change), or does it stay a declared property each
-   secrets adapter honours until something exports resolved configuration?
-3. **Backend conformance suite.** Build `config/backendconformance` now (D11), or let each adapter
-   assert the contract itself?
-4. **Secrets writing.** Confirm the default: secrets backends ship read-only unless their spec
-   justifies write (D7).
-5. **Naming.** `config-ssm` vs `config-aws-ssm` vs `config-aws-parameters`; `config-k8s` vs
-   `config-kubernetes`. Settle one convention for the whole family before the first adapter.
-6. **Where the per-adapter specs live.** In each adapter's own repo, or centrally here alongside
-   this umbrella? Central keeps them discoverable and cross-linkable; per-repo keeps a module
-   self-contained.
-7. **Feature-flag systems (LaunchDarkly, Unleash, ConfigCat, …).** In scope as backend adapters,
-   or explicitly out — a distinct concern (flags, not general configuration) deserving its own
-   umbrella if pursued at all?
+All resolved in review, **2026-07-21**.
+
+1. ~~**Scope and order.**~~ **Resolved: the proposed list stands** — Phase A (Consul, then AWS
+   SSM / Azure App Configuration / GCP Parameter Manager), Phase B (the four secrets managers),
+   Phase C (etcd, Kubernetes). Ten adapters; nothing trimmed or added.
+2. ~~**`Sensitive` enforcement.**~~ **Resolved: enforce in the core** (D5). Because secrets
+   backends are read-only (D7), a write to a secret-provided key routes *down* to the next
+   writable layer — a plain file — so without a guard it would leak the secret there. The core
+   refuses such a write. See D5, Public API.
+3. ~~**Backend conformance suite.**~~ **Resolved: build `config/backendconformance` now** (D11).
+4. ~~**Secrets writing.**~~ **Resolved: read-only by default** (D7); write needs a per-adapter
+   spec that justifies it and specifies the guard.
+5. ~~**Naming.**~~ **Resolved: cloud-qualified** — `config-aws-ssm`, `config-azure-appconfig`,
+   `config-gcp-parameter`, and bare for vendor-neutral systems (`config-consul`, `config-vault`,
+   `config-etcd`, `config-k8s`). See D1.
+6. ~~**Where the per-adapter specs live.**~~ **Resolved: centrally, in the config repo** alongside
+   this umbrella; the adapter repo carries only its README. See D2.
+7. ~~**Feature-flag systems.**~~ **Resolved: out of scope.** Feature flags are a distinct concern
+   (flags, targeting, rollout), not general configuration retrieval. If pursued, they get their
+   own umbrella spec — not this one.
 
 ## Implementation phases
 
-**Phase 0 — this umbrella spec, approved.** Nothing is built against it until its open questions
-are resolved and it is `approved`.
+**Phase 0 — this umbrella spec.** Approved 2026-07-21; open questions resolved above.
 
-Every phase below is gated on D2: **the named adapter's own spec is written and approved before it
-is implemented.** The grouping is a suggested order, not a licence to skip a spec.
+**Phase 1 — the core precursors, in the config repo.** Two changes the adapters depend on, each
+its own MR: the **`config/backendconformance`** suite (D11), and the **`Sensitive` write-path
+enforcement** with its error sentinel (D5). Both are additive; the conformance suite is proven
+against the custom-backend guide's `remoteBackend` (a known-good writable backend), the way the
+codec suite was proven against the trivial in-repo codec.
+
+Every adapter phase below is gated on D2: **the named adapter's own approved spec — written here,
+centrally — precedes its implementation.** The grouping is a suggested order, not a licence to
+skip a spec.
 
 **Phase A — the reference and the parameter stores.** `config-consul` first, because the how-to
 already models it, so it validates this umbrella the way `config-json` validated the codec seam.
-Then AWS SSM, Azure App Configuration, GCP Parameter Manager — the symmetric parameter-store trio.
+Then `config-aws-ssm`, `config-azure-appconfig`, `config-gcp-parameter` — the symmetric
+parameter-store trio.
 
-**Phase B — the secrets managers.** Vault, AWS Secrets Manager, Azure Key Vault, GCP Secret
-Manager. The `Sensitive` family (D5), read-only by default (D7).
+**Phase B — the secrets managers.** `config-vault`, `config-aws-secrets`, `config-azure-keyvault`,
+`config-gcp-secret`. The `Sensitive` family (D5), read-only by default (D7).
 
-**Phase C — cloud-native key-value.** etcd and Kubernetes ConfigMaps/Secrets. Native watch (D6),
-the second of them typically read-only.
+**Phase C — cloud-native key-value.** `config-etcd` and `config-k8s`. Native watch (D6), the
+second typically read-only.
 
-**Phase D — revisit.** Feature-flag systems if OQ7 says so, write support for any read-only
-secrets backend a consumer needs, and anything the earlier adapters showed this umbrella got wrong
-— corrected here by dated revision, never silently.
+**Phase D — revisit.** Write support for any read-only secrets backend a consumer needs, and
+anything the earlier adapters showed this umbrella got wrong — corrected here by dated revision,
+never silently. Feature-flag systems are out of scope (OQ7) and, if ever pursued, get their own
+umbrella.
