@@ -1,5 +1,18 @@
 # Changelog
 
+## [v0.6.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.6.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.5.0...v0.6.0)
+
+### Features
+
+- **backendconformance**: add the shared backend-conformance suite ([828bdca](https://gitlab.com/phpboyscout/go/config/-/commit/828bdca6f4c03a164057efc1504e530640467a9c))
+- **plan**: enforce Sensitive at the write path with ErrSensitiveLeak ([547ca9d](https://gitlab.com/phpboyscout/go/config/-/commit/547ca9d33dc4635aee6342ad5e761995acb30b37))
+
+### Bug Fixes
+
+- **deps**: bump golang.org/x/text to v0.40.0 ([94466bf](https://gitlab.com/phpboyscout/go/config/-/commit/94466bf43d157ab80c7e92ca1f27570f7bf27880))
+
 ## [v0.5.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.5.0)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.4.0...v0.5.0)
