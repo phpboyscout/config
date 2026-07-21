@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.5.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.5.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.4.0...v0.5.0)
+
+### Features
+
+- **conformance**: add the exported conformance suite for codec adapters ([92e94e2](https://gitlab.com/phpboyscout/go/config/-/commit/92e94e263b73d0472270c1a83328fee559a97ddc))
+
 ## [v0.4.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.4.0)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.3.1...v0.4.0)
