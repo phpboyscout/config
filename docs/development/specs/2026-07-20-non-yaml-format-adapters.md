@@ -665,6 +665,40 @@ POMs all avoid it. The decision is reversible if evidence says otherwise.
 XML stays **read-only**. No Go library round-trips it preserving formatting and comments, so
 writing is in the same position as TOML but with materially less demand.
 
+### D22 — The conformance suite is `conformance.Run(t, Suite)`, adapting to the codec's capability
+
+The suite an adapter runs against its own codec is one exported function and one struct:
+
+```go
+func Run(t *testing.T, s Suite)
+
+type Suite struct {
+    Codec   config.Codec
+    Sample  []byte
+    Defines map[string]string
+    WriteKey, WriteValue string   // required for an EditingCodec
+}
+```
+
+An adapter supplies its codec, one valid sample source, and the keys that source exposes.
+`Run` executes one named subtest per contract, and adapts to capability the same way the seam
+does: an `EditingCodec` gets the write, no-op-round-trip and **`ErrConflict`** (D3) assertions;
+a read-only codec gets the routing-skip assertion instead. The filesystem is
+`config.Dir(t.TempDir())`, so it exercises real file semantics with no afero dependency.
+
+It takes `*testing.T` and uses stdlib `testing` only (D17) — no testify, verified by
+`go list -deps ./conformance`.
+
+**What it deliberately does not assert.** Multi-document provenance (only YAML and JSONL have
+documents) and exact scalar-type fidelity (`8080` → int vs string) are format-specific, and
+belong in each adapter's own fidelity tests — which the testing strategy already lists
+separately. Folding them into the generic suite would make it assert things most formats cannot
+express. The suite is the shared floor; the per-format ceiling is the adapter's.
+
+The suite's own teeth are checked against a deliberately-broken codec during development — a
+codec whose `Apply` ignores its edits makes `write_round_trips` fail — and proven for real by
+`config-json`, the first adapter to run it (Phase 3).
+
 ## Rejected alternatives
 
 **Add decoders to the core, switching on file extension.** The obvious approach, and what
@@ -714,7 +748,8 @@ func NestKey(path string, value any) map[string]any
 func ResolveFlatKey(name string, below []Layer) (string, error)
 ```
 
-Plus one new package, `config/conformance` (D17), importing only stdlib `testing`.
+Plus one new package, `config/conformance` (D17, D22) — `conformance.Run(t, Suite)` and the
+`Suite` struct — importing only stdlib `testing`.
 
 Unchanged: `NewFileBackend`, `WithFiles`, `Backend`, `WritableBackend`, `WatchableBackend`,
 `Pending`, `Edit`, `Layer`, `Source`, `Capabilities`, `NewWatcher`. Everything an adapter

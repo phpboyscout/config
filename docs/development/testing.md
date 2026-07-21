@@ -113,6 +113,34 @@ outcome. Here the invariant is "a caller told its layer was added must find it
 contributing" — true whichever order things happen in. Where practical, add a deterministic
 sibling test that fails every time rather than occasionally.
 
+## Conformance suite for codec adapters
+
+A format adapter — `config-json`, `config-toml`, one you write — proves it behaves like a
+first-class backend by running the exported conformance suite against its codec, in one test:
+
+```go
+func TestConformance(t *testing.T) {
+    conformance.Run(t, conformance.Suite{
+        Codec:      jsonfile.Codec{},
+        Sample:     []byte(`{"server":{"port":"9090"}}`),
+        Defines:    map[string]string{"server.port": "9090"},
+        WriteKey:   "server.host", WriteValue: "localhost",
+    })
+}
+```
+
+`Run` executes one named subtest per contract — decode-and-merge, provenance, absent-source
+tolerance, and for an `EditingCodec` the write round-trip and the **`ErrConflict`** the seam
+exists to make unmissable — so a failing adapter sees exactly which one it breaks. It uses
+stdlib `testing` only, so running it costs an adapter no assertion-library dependency.
+
+The suite lives in `conformance/` and is itself tested in `conformance/conformance_test.go`
+against trivial in-package codecs, which is also where its teeth are confirmed: break a codec's
+`Apply` and the relevant subtest fails. The core's own seam coverage stays independent of it in
+`codec_test.go`, so a suite that ever passed wrongly would not take the core's checks down with
+it. What the suite does *not* assert — multi-document provenance, exact scalar types — is
+format-specific and lives in each adapter's own fidelity tests.
+
 ## Testing the documentation
 
 Documentation claims are tested, because they are the claims a user actually relies on.
