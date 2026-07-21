@@ -13,6 +13,7 @@ nav = [
     { "Validate configuration" = "how-to/validate-config.md" },
     { "Bind CLI flags" = "how-to/bind-cli-flags.md" },
     { "Write a custom backend" = "how-to/custom-backend.md" },
+    { "Support a new file format" = "how-to/format-adapter.md" },
     { "Test with the config mocks" = "how-to/test-with-mocks.md" },
   ] },
   { Explanation = [

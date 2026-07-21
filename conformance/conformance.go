@@ -60,6 +60,14 @@ type Suite struct {
 
 // Run executes the whole suite against s, one named subtest per contract, so a
 // failing adapter sees exactly which one it breaks.
+//
+// Every codec is checked for the capability split, per-key merge with another
+// format, tolerance of an absent source, and provenance naming the source. A
+// read-only codec additionally has its layer confirmed skipped by write routing.
+// An [config.EditingCodec] instead has its write round-trip, its no-edit no-op,
+// and — the trap the seam exists to make unmissable — its refusal of a change
+// that landed between load and write with [config.ErrConflict] checked, using
+// WriteKey and WriteValue.
 func Run(t *testing.T, s Suite) {
 	t.Helper()
 
