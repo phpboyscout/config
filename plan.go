@@ -21,6 +21,13 @@ var (
 	// asked of it: a decode target that cannot hold values, a layer with no
 	// name, or a pinned write target naming no writable source.
 	ErrInvalidTarget = errors.New("config: invalid target")
+
+	// ErrSensitiveLeak is returned when a write would land a key a sensitive
+	// source defines into a layer that is not sensitive — writing secret-category
+	// material into a plain store. Because secrets backends are read-only, a
+	// write to a key they own routes down to the next writable layer, typically a
+	// file; refusing it is what keeps that safe.
+	ErrSensitiveLeak = errors.New("config: refusing to write a sensitive key into a non-sensitive layer")
 )
 
 // Change is a single edit to persist.
@@ -153,7 +160,7 @@ func (p *Plan) String() string {
 // value set is the value read back. Writing to the base instead would leave
 // the edit immediately shadowed by an overlay, which looks to the user like
 // the write silently failed.
-func route(snap *Snapshot, targets, order []Source, changes []Change) (*Plan, error) {
+func route(snap *Snapshot, targets, order []Source, sensitive map[Source]bool, changes []Change) (*Plan, error) {
 	if len(changes) == 0 {
 		return nil, ErrNoChanges
 	}
@@ -170,7 +177,7 @@ func route(snap *Snapshot, targets, order []Source, changes []Change) (*Plan, er
 	values := indexLayers(snap)
 
 	for _, change := range changes {
-		op, err := routeOne(snap, targets, order, values, change)
+		op, err := routeOne(snap, targets, order, values, sensitive, change)
 		if err != nil {
 			return nil, err
 		}
@@ -181,7 +188,7 @@ func route(snap *Snapshot, targets, order []Source, changes []Change) (*Plan, er
 	return plan, nil
 }
 
-func routeOne(snap *Snapshot, targets, order []Source, values map[Source]map[string]any, change Change) (Operation, error) {
+func routeOne(snap *Snapshot, targets, order []Source, values map[Source]map[string]any, sensitive map[Source]bool, change Change) (Operation, error) {
 	segs := splitPath(change.Path)
 	if segs == nil {
 		return Operation{}, fmt.Errorf("%w: %q", ErrInvalidPath, change.Path)
@@ -206,6 +213,19 @@ func routeOne(snap *Snapshot, targets, order []Source, values map[Source]map[str
 		}
 
 		target, defines = found, alreadyThere
+	}
+
+	// The sensitive-leak guard. A Set to a key a sensitive source owns must not
+	// land in a layer that is not itself sensitive: secrets backends are
+	// read-only, so such a write routes down to a plain file, materialising
+	// secret-category material where it does not belong. A removal writes no
+	// value, so it cannot leak one. Pinning the target does not opt out — this is
+	// a safety invariant, not a routing preference.
+	if !change.Remove && !sensitive[target] {
+		if leaker, ok := sensitiveDefiner(values, order, sensitive, segs); ok {
+			return Operation{}, fmt.Errorf("%w: %q is defined by the sensitive source %q, so it "+
+				"cannot be written to %q", ErrSensitiveLeak, change.Path, leaker, target)
+		}
 	}
 
 	// Built once, so the pinned and routed paths cannot drift on how an
@@ -314,6 +334,24 @@ func shadowedAbove(values map[Source]map[string]any, order []Source, target Sour
 	}
 
 	return found
+}
+
+// sensitiveDefiner returns the first sensitive source in the precedence order
+// that defines the path, if any. It is what the leak guard consults: a key any
+// sensitive source owns must not be written into a non-sensitive layer,
+// regardless of where that sensitive source sits in precedence.
+func sensitiveDefiner(values map[Source]map[string]any, order []Source, sensitive map[Source]bool, segs []string) (Source, bool) {
+	for _, src := range order {
+		if !sensitive[src] {
+			continue
+		}
+
+		if _, ok := lookup(values[src], segs); ok {
+			return src, true
+		}
+	}
+
+	return Source{}, false
 }
 
 // indexLayers maps each source to the values it contributed, so shadow

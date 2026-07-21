@@ -102,13 +102,17 @@ several backends of different kinds are in play:
 | `NativeWatch` | Whether the backend can report foreign changes itself, or has to be polled. |
 | `Sensitive` | Whether it holds secret material. |
 
-Only one backend ships today, so nothing reads these yet. They are declared
-anyway, because each carries a consequence that is much cheaper to record now
+`Sensitive` is enforced; the rest are declared ahead of the backend that will
+read them, because each carries a consequence that is much cheaper to record now
 than to discover later:
 
 - **A value from a `Sensitive` backend must never be written into a layer that
   is not.** This is a security property. Configuration written back from a
   secret store into a plain file is how credentials end up in version control.
+  The write path enforces it: because secrets backends are read-only, a write to
+  a key one owns routes down to the next writable layer — a plain file — so the
+  core refuses that write with `ErrSensitiveLeak` rather than let the secret land
+  there.
 - **The comment guarantee is document-backend-only.** Everything this module
   says about preserving comments applies to YAML files. A key-value backend
   cannot honour it, so the promise has to be scoped rather than implied.

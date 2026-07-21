@@ -607,10 +607,11 @@ func (s *Store) Plan(changes ...Change) (*Plan, error) {
 	s.mu.Lock()
 	order := s.sourceOrder()
 	targets := writableOnly(order)
+	sensitive := s.sensitiveSources()
 	snap := s.current.Load()
 	s.mu.Unlock()
 
-	return route(snap, targets, order, changes)
+	return route(snap, targets, order, sensitive, changes)
 }
 
 // Apply routes changes, writes them, and publishes the resulting snapshot.
@@ -662,7 +663,7 @@ func (s *Store) apply(ctx context.Context, changes []Change) (*Snapshot, bool, e
 
 	sources := s.sourceOrder()
 
-	plan, err := route(current, writableOnly(sources), sources, changes)
+	plan, err := route(current, writableOnly(sources), sources, s.sensitiveSources(), changes)
 	if err != nil {
 		return nil, false, err
 	}
@@ -935,6 +936,35 @@ func (s *Store) sourceOrder() []Source {
 				Name:     bl.backend.ID(),
 				Writable: true,
 			})
+		}
+	}
+
+	return out
+}
+
+// sensitiveSources reports which sources came from a backend that declares
+// itself sensitive, keyed the same way routing sees them, so the leak guard can
+// ask "is this source sensitive?" without re-consulting capabilities per change.
+//
+// Only sources that actually contributed a layer are marked. A sensitive
+// backend that defines nothing owns no key to leak, and the sensitive backends
+// this guards are read-only (secrets are provisioned elsewhere), so none is ever
+// a write target — the case a synthesised entry would cover cannot arise until a
+// writable secrets backend is specified, which will bring its own routing rules.
+func (s *Store) sensitiveSources() map[Source]bool {
+	var out map[Source]bool
+
+	for _, bl := range s.loaded {
+		if !bl.backend.Capabilities().Sensitive {
+			continue
+		}
+
+		for _, l := range bl.layers {
+			if out == nil {
+				out = map[Source]bool{}
+			}
+
+			out[l.Source] = true
 		}
 	}
 

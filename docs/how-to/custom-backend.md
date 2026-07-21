@@ -188,7 +188,9 @@ backends can coexist without the weakest one setting the contract for everybody.
 material, and a value from a sensitive source must never be written into a layer that is
 not. That is the [environment-secret leak](../about/features.md#writing-where-it-gets-genuinely-hard)
 wearing a different costume: a secrets-manager value flattened into a config file is the
-same incident by another route.
+same incident by another route. Declaring `Sensitive: true` makes the core enforce it — a
+write that would land a key your backend owns into a non-sensitive layer beneath is refused
+with `config.ErrSensitiveLeak`, rather than silently written to the plain file.
 
 Note what is *not* here: nothing says whether you can be written to or watched. Those are
 answered by implementing the interfaces below, so the compiler checks them once instead of

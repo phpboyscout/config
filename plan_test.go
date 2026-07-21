@@ -39,7 +39,7 @@ func sourcesOf(snap *Snapshot) []Source {
 func planFor(t *testing.T, snap *Snapshot, changes ...Change) *Plan {
 	t.Helper()
 
-	p, err := route(snap, writableOf(snap), sourcesOf(snap), changes)
+	p, err := route(snap, writableOf(snap), sourcesOf(snap), nil, changes)
 	if err != nil {
 		t.Fatalf("route: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestRoute_NoWritableLayer(t *testing.T) {
 			Values: map[string]any{"a": 1}},
 	})
 
-	if _, err := route(snap, writableOf(snap), sourcesOf(snap), []Change{Set("a", 2)}); !errors.Is(err, ErrNoWritableLayer) {
+	if _, err := route(snap, writableOf(snap), sourcesOf(snap), nil, []Change{Set("a", 2)}); !errors.Is(err, ErrNoWritableLayer) {
 		t.Errorf("err = %v, want ErrNoWritableLayer", err)
 	}
 }
@@ -180,7 +180,7 @@ func TestRoute_Rejects(t *testing.T) {
 	t.Run("no changes", func(t *testing.T) {
 		t.Parallel()
 
-		if _, err := route(snap, writableOf(snap), sourcesOf(snap), nil); !errors.Is(err, ErrNoChanges) {
+		if _, err := route(snap, writableOf(snap), sourcesOf(snap), nil, nil); !errors.Is(err, ErrNoChanges) {
 			t.Errorf("err = %v, want ErrNoChanges", err)
 		}
 	})
@@ -189,7 +189,7 @@ func TestRoute_Rejects(t *testing.T) {
 		t.Parallel()
 
 		for _, path := range []string{"", "a..b", ".", "a."} {
-			if _, err := route(snap, writableOf(snap), sourcesOf(snap), []Change{Set(path, 1)}); !errors.Is(err, ErrInvalidPath) {
+			if _, err := route(snap, writableOf(snap), sourcesOf(snap), nil, []Change{Set(path, 1)}); !errors.Is(err, ErrInvalidPath) {
 				t.Errorf("route(%q) err = %v, want ErrInvalidPath", path, err)
 			}
 		}

@@ -90,17 +90,18 @@ type WatchableBackend interface {
 // type system checks them once instead of every caller checking a flag at
 // runtime — and so a backend cannot claim one thing and do another.
 //
-// The fields below are declared ahead of the backend that will need them,
-// because each carries a consequence worth recording before it is discovered:
-// a value from a Sensitive source must never be written into a layer that is
-// not (the environment-secret leak in a new costume), the comment guarantee is
-// document-backend-only and must be scoped rather than implied, cross-backend
-// atomicity is impossible and must be refused or declared, and foreign-change
-// latency differs per backend and must be stated.
+// Each field carries a consequence worth recording: a value from a Sensitive
+// source must never be written into a layer that is not (the environment-secret
+// leak in a new costume), the comment guarantee is document-backend-only and
+// must be scoped rather than implied, cross-backend atomicity is impossible and
+// must be refused or declared, and foreign-change latency differs per backend
+// and must be stated.
 //
-// These fields are forward-declared: nothing consumes them yet. They are
-// stated where the reasoning is fresh so the consumer that eventually reads
-// them inherits the intent rather than re-deriving it.
+// Sensitive is enforced: the write path refuses a change that would land a key a
+// Sensitive source defines into a layer that is not sensitive, returning
+// [ErrSensitiveLeak]. The remaining fields are still forward-declared — stated
+// where the reasoning is fresh so the consumer that eventually reads them
+// inherits the intent rather than re-deriving it.
 type Capabilities struct {
 	// PreservesComments reports whether an edit retains comments and
 	// formatting. True for document-like sources; meaningless for key-value
@@ -113,7 +114,8 @@ type Capabilities struct {
 	// as opposed to needing to be polled.
 	NativeWatch bool
 	// Sensitive marks a backend as holding secret material. A value sourced
-	// from one must never be written into a layer that is not also sensitive.
+	// from one must never be written into a layer that is not also sensitive;
+	// the write path enforces this, refusing such a write with [ErrSensitiveLeak].
 	Sensitive bool
 }
 
