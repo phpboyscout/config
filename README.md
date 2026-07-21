@@ -201,6 +201,13 @@ forces a source to pretend it can do something it cannot — which is what makes
 fat interface with stubbed methods so unpleasant to live with.
 See **[Write a custom backend](https://config.go.phpboyscout.uk/how-to/custom-backend/)**.
 
+A file in **another format** is smaller still: the file machinery is written once, so you
+supply only a `Codec` — `Decode` for reading, and `EditingCodec` (`Check`/`Apply`/`Empty`)
+if the format can be edited in place — and pass it to `NewCodecBackend`. The same capability
+split, one level down: a read-only codec is skipped by write routing, an editing one is a
+write target, decided by the type system. YAML is the built-in codec; other formats ship as
+sibling `config-<format>` modules, so a consumer who needs JSON never acquires a TOML parser.
+
 ## Validation on both sides, and repairable when it fails
 
 A `Schema` from `config:` struct tags is checked against the **resolved** configuration

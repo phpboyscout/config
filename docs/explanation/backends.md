@@ -44,6 +44,51 @@ different ways — so a backend could be excluded as a write target while its fi
 was missing and routed the moment it existed. The same source was writable or
 not depending on whether it happened to exist yet.
 
+## A file's format is a codec, by the same reasoning
+
+Everything a *file* backend does — reading bytes, translating a missing file,
+fingerprinting content for conflict detection, staging to a temporary path,
+committing by atomic rename, preserving mode, resolving symlinks, rolling back,
+watching — is identical whatever format the file holds. Only two things depend
+on the format: turning bytes into values, and editing bytes in place. Those two
+are a `Codec`:
+
+```go
+type Codec interface {                       // every file format
+	Decode(path string, src []byte) ([]map[string]any, error)
+}
+
+type EditingCodec interface {                // optional
+	Codec
+	Check(path string, src []byte) error
+	Apply(path string, src []byte, edits []Edit) ([]byte, error)
+	Empty() []byte
+}
+```
+
+This is the same capability split as `Backend`/`WritableBackend`, one level down.
+A format that cannot be round-tripped safely implements only `Decode`, and
+`NewCodecBackend` returns a backend that is *not* a write target — routing skips
+it and a write lands in the next writable layer down, reported as shadowed rather
+than failing. A format that can be edited implements `EditingCodec`, and the
+backend it produces is writable. The type system decides, not a flag, exactly as
+above.
+
+```go
+config.WithBackend(config.NewCodecBackend(fsys, "/app.json", jsonCodec{}))
+```
+
+YAML is the one codec the core ships, because it is the default and its
+comment-preserving editor is the module's headline feature. Every other file
+format is a sibling `config-<format>` module supplying its own codec, so a
+consumer who needs JSON does not acquire a TOML parser in their dependency graph.
+Writing a codec is how a new file format is added without touching this module:
+the file machinery — including the conflict-detection subtlety that is easy to
+get wrong, where the fingerprint must be taken at load rather than at write — is
+written once and shared, rather than reimplemented and mis-implemented per format.
+→ [Write a custom backend](../how-to/custom-backend.md) · the
+[non-YAML format adapters spec](../development/specs/2026-07-20-non-yaml-format-adapters.md)
+
 ## What `Capabilities` is for, and what it is not
 
 `Capabilities` does not describe what a backend *can do*. It describes

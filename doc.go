@@ -43,6 +43,14 @@
 //		return err
 //	}
 //
+// # Other file formats
+//
+// The core reads and writes YAML. Any other file format plugs in through a
+// [Codec] — [Codec.Decode] turns a source's bytes into values, and an
+// [EditingCodec] adds in-place editing — passed to [NewCodecBackend]. The file
+// machinery is shared, so a format is a codec rather than a whole backend, and
+// each ships as its own module so no consumer inherits a parser they do not use.
+//
 // # Provenance
 //
 // [View.Origin] reports which source supplied a value, [View.Shadowed] lists

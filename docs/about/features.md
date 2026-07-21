@@ -275,6 +275,14 @@ forces a source to pretend it can do something it cannot — which is the failur
 makes a single `Backend` interface with stub methods so unpleasant to live with.
 → **[Write a custom backend](../how-to/custom-backend.md)** · [Backends & capabilities](../explanation/backends.md)
 
+A file in **another format** needs less again. The file machinery — reading, conflict
+detection, atomic writes, symlink handling, watching — is format-agnostic and written once,
+so a new format is a `Codec`, not a whole `Backend`: `Decode` to read, and `EditingCodec`
+(`Check`/`Apply`/`Empty`) if it can be edited in place. `NewCodecBackend` turns a codec into
+a backend, writable exactly when the codec can edit — the same capability split the type
+system settles, one level down. YAML is the codec the core ships; every other format is a
+sibling `config-<format>` module, so needing JSON never pulls a TOML parser into your graph.
+
 ## Validation on both sides, and repairable when it fails
 
 A `Schema` built from `config:` struct tags is checked against the **resolved**
