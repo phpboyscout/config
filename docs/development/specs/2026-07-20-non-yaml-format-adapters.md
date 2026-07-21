@@ -56,6 +56,28 @@ Everything else in D11/D12/D19/OQ6/OQ7 stands: external parameterisation (`var.*
 function calls and non-self-contained input are still refused at load; HCL-as-configuration is
 served and Terraform is not.
 
+### R3 — 2026-07-21: the core exports no flat-key helpers; D15 is withdrawn
+
+**D15 said the core would export `NestKey` and `ResolveFlatKey` for the flat adapters. Building
+the first flat adapter showed it needs neither, so the core stays free of flat-file helpers.**
+
+`NestKey` was to turn one dotted key into one nested map. But a flat file has many keys, often
+sharing a prefix (`server.host`, `server.port`), so the adapter has to build **one shared tree**
+and merge into it — which `NestKey` does not do. The adapter writes an eight-line
+insert-into-shared-map loop regardless, and `NestKey` would sit unused beside it.
+
+`ResolveFlatKey` — the environment backend's below-layer ambiguity resolution — had at most one
+consumer (`config-dotenv`), and does not earn even that. Below-layer resolution is the env
+*backend's* behaviour because OS variables override arbitrary configuration; a dotenv *file* whose
+author wrote the keys uses a deterministic rule instead — underscore becomes a dotted separator —
+and is never ambiguous. `ErrAmbiguousEnvKey` remains an exported sentinel if a future adapter ever
+wants it.
+
+So the "Public API" section's two flat-key functions are withdrawn: nothing new is exported for
+the flat formats. Every adapter — JSON, TOML, XML, HCL, and now the flat ones — is self-contained,
+which is the shape the whole design is for. The record keeps this reversal deliberately: D15 was a
+written decision, and it was wrong.
+
 ## Problem
 
 The module reads and writes YAML and nothing else, so "we only do YAML" is a real reason to
@@ -441,6 +463,9 @@ This needs verifying against whichever Go HOCON implementation is chosen — if 
 env fallback internally and cannot be configured not to, that disqualifies it.
 
 ### D15 — The core exports the key helpers a flat-format adapter needs
+
+> **Withdrawn by [R3](#r3--2026-07-21-the-core-exports-no-flat-key-helpers-d15-is-withdrawn):
+> the flat adapters need neither helper and are self-contained. Nothing is exported for them.**
 
 INI, Java properties and dotenv all produce flat keys that must become a nested tree, and
 dotenv's names are ambiguous in exactly the way environment variables are. The core already
