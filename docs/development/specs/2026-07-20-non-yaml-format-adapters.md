@@ -34,6 +34,28 @@ Nothing else in D5 changes: it still returns a concrete type implementing `Writa
 exactly when the codec implements `EditingCodec`, and `WatchableBackend` always. This is a
 correction to a type name the spec predates, not a change of design.
 
+### R2 — 2026-07-21: `config-hcl` ships read **and** write in one pass
+
+**D11 said "ship read-only first"; building the adapter showed that deferral buys nothing for
+HCL, so `config-hcl` v0.1.0 reads and writes.**
+
+The read-only-first default (D11) and the writer-shaped hole (D16) exist to unblock reading when
+the writer is a module-sized build — as `tomldoc` genuinely is (D16). HCL is the opposite case,
+and D19 already said so: `hclwrite` performs structure-preserving edits to this module's fidelity
+standard, so the writer is a thin delegation, not a build. Verified while building:
+`hclwrite.SetAttributeValue` preserved leading comments, an inline comment, block order and
+indentation, changing only the value asked for.
+
+So there was nothing to defer. Shipping read-only would have meant writing the codec, the
+conformance run and the fidelity tests, then adding a few lines of `hclwrite` and a promotion
+release (D18) — ceremony with no reader served in between. `config-hcl` ships both, and the
+`als`-derived path traversal (D19) was reworked frameworkless into the adapter — one path,
+labels respected — rather than deferred.
+
+Everything else in D11/D12/D19/OQ6/OQ7 stands: external parameterisation (`var.*`, `${local.x}`),
+function calls and non-self-contained input are still refused at load; HCL-as-configuration is
+served and Terraform is not.
+
 ## Problem
 
 The module reads and writes YAML and nothing else, so "we only do YAML" is a real reason to
@@ -276,6 +298,10 @@ worse than no writer at all — the whole argument on the landing page. Write su
 per format when someone needs it and the format can support it honestly.
 
 ### D11 — Language formats are read, never written; substitution is resolved only when it is self-contained
+
+> **Amended by [R2](#r2--2026-07-21-config-hcl-ships-read-and-write-in-one-pass): `config-hcl`
+> ships read+write in one pass, since `hclwrite` makes the writer a thin delegation (D19). The
+> refusals below are unchanged.**
 
 HCL and HOCON are declarative and readable, and both get read support. Neither gets an
 `EditingCodec`: routing skips them, and a write lands in the next writable layer down,
