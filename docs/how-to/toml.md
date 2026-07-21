@@ -65,5 +65,5 @@ asserted by an allowlist test in the module. No filesystem library: you supply t
 ## Related
 
 - [Support a new file format](format-adapter.md) — how an adapter like this is built and tested
-- [Backends & capabilities](../explanation/backends.md) — why a read-only layer is skipped by
-  write routing rather than failing
+- [What survives a write](../explanation/write-fidelity.md) — the preservation contract TOML is
+  held to, the same as YAML
