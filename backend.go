@@ -1,17 +1,9 @@
 package config
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
 	"errors"
-	"fmt"
-	"io"
-	"io/fs"
 	"time"
-
-	"gitlab.com/phpboyscout/go/yamldoc"
-	yaml "go.yaml.in/yaml/v3"
 )
 
 // Backend errors. Callers should branch on these with errors.Is.
@@ -105,6 +97,10 @@ type WatchableBackend interface {
 // document-backend-only and must be scoped rather than implied, cross-backend
 // atomicity is impossible and must be refused or declared, and foreign-change
 // latency differs per backend and must be stated.
+//
+// These fields are forward-declared: nothing consumes them yet. They are
+// stated where the reasoning is fresh so the consumer that eventually reads
+// them inherits the intent rather than re-deriving it.
 type Capabilities struct {
 	// PreservesComments reports whether an edit retains comments and
 	// formatting. True for document-like sources; meaningless for key-value
@@ -121,163 +117,12 @@ type Capabilities struct {
 	Sensitive bool
 }
 
-// fileBackend reads YAML configuration from a single file.
-//
-// It reads the file twice, deliberately. Values are decoded by the YAML value
-// parser, while document structure — comments, positions, and whether the file
-// can be edited safely at all — comes from yamldoc. The two disagree about
-// scalar types (`8080` decodes as int in one and uint64 in the other, and large
-// integers survive in one and are destroyed in the other), so the boundary
-// between documents and values must not be crossed. Values never come from
-// yamldoc; documents never come from the value parser.
-type fileBackend struct {
-	// onWatchError, when set, is told when watching this file degrades and the
-	// fallback cannot be established either.
-	onWatchError func(error)
-
-	fs   FS
-	path string
-
-	// loaded is a hash of the content this backend last read, and whether it
-	// read anything at all.
-	//
-	// Conflict detection compares against what was read at load, not at the
-	// start of the write. Routing decisions were made against the loaded
-	// content, so a change that landed since then invalidates them — taking
-	// the fingerprint at write time would compare the intruder's file with
-	// itself and find nothing wrong.
-	//
-	// Access is serialised by the Store, which is the only caller.
-	loaded      [32]byte
-	loadedExist bool
-}
-
-// NewFileBackend returns a backend reading YAML from a path on the given
-// filesystem.
-func NewFileBackend(filesystem FS, path string) Backend {
-	return &fileBackend{fs: filesystem, path: path}
-}
-
-func (b *fileBackend) ID() string { return b.path }
-
-func (b *fileBackend) Capabilities() Capabilities {
-	return Capabilities{
-		PreservesComments: true,
-		AtomicMultiKey:    true, // a file is replaced in one rename
-		NativeWatch:       false,
-		Sensitive:         false,
-	}
-}
-
-func (b *fileBackend) Load(ctx context.Context, _ []Layer) ([]Layer, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	src, err := b.fs.ReadFile(b.path)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			// The record of what this file held has to go with the file. A
-			// source deleted while the process runs is a legitimate state — the
-			// Store tolerates it for an optional source — but leaving the write
-			// fingerprint describing content that is no longer there makes
-			// every later write to that path fail as a conflict with a change
-			// nobody made, permanently, including the write that would recreate
-			// it.
-			b.loaded = [32]byte{}
-			b.loadedExist = false
-
-			return nil, fmt.Errorf("%s: %w", b.path, fs.ErrNotExist)
-		}
-
-		return nil, fmt.Errorf("config: reading %s: %w", b.path, err)
-	}
-
-	// Refuse a document that cannot be safely round-tripped, at load rather
-	// than at write. Discovering it at write means the user has already made
-	// their edits, and the failure then looks arbitrary.
-	if err := checkEditable(b.path, src); err != nil {
-		return nil, err
-	}
-
-	layers, err := decodeDocuments(b.path, src)
-	if err != nil {
-		return nil, err
-	}
-
-	b.loaded = sha256.Sum256(src)
-	b.loadedExist = true
-
-	return layers, nil
-}
-
-// checkEditable reports whether a source can be edited without risking
-// corruption.
-//
-// The judgement is this module's; the detection is yamldoc's. It reports what
-// it cannot round-trip safely, and refusing is the policy applied to that
-// report.
-func checkEditable(path string, src []byte) error {
-	doc, err := yamldoc.Parse(src)
-	if err != nil {
-		return fmt.Errorf("%w: %s: %w", ErrBackendParse, path, err)
-	}
-
-	if unsupported := doc.Unsupported(); len(unsupported) > 0 {
-		return fmt.Errorf("%w: %s: %s", ErrBackendUnsafe, path, unsupported[0])
-	}
-
-	return nil
-}
-
-// decodeDocuments decodes every YAML document in a file into its own layer.
-//
-// A document is a layer. That is what lets routing, precedence and provenance
-// treat documents and files uniformly rather than needing a second dimension —
-// and it fixes a defect in the incumbent, which reads the first document of a
-// multi-document file and silently discards the rest.
-func decodeDocuments(path string, src []byte) ([]Layer, error) {
-	dec := yaml.NewDecoder(bytes.NewReader(src))
-
-	var layers []Layer
-
-	for index := 0; ; index++ {
-		var values map[string]any
-
-		err := dec.Decode(&values)
-		if errors.Is(err, io.EOF) {
-			break
-		}
-
-		if err != nil {
-			return nil, fmt.Errorf("%w: %s document %d: %w", ErrBackendParse, path, index, err)
-		}
-
-		if values == nil {
-			// An empty document contributes nothing, but still occupies an
-			// index so later documents keep their identity.
-			continue
-		}
-
-		layers = append(layers, Layer{
-			Source: Source{
-				Kind:     SourceFile,
-				Name:     path,
-				Document: index,
-				Writable: true,
-			},
-			Values: values,
-		})
-	}
-
-	return layers, nil
-}
-
 // readerBackend contributes configuration from an in-memory source.
 //
 // This is how compiled-in defaults reach the configuration: an embedded asset
 // is read once at startup and contributes a layer like any other, so it takes
-// part in precedence and provenance rather than being a special case.
+// part in precedence and provenance rather than being a special case. Its
+// content is YAML, decoded through the same codec as a YAML file.
 type readerBackend struct {
 	name    string
 	content []byte
@@ -315,34 +160,31 @@ func (b *readerBackend) Load(ctx context.Context, _ []Layer) ([]Layer, error) {
 		return nil, err
 	}
 
-	layers, err := decodeDocuments(b.name, b.content)
+	docs, err := yamlCodec{}.Decode(b.name, b.content)
 	if err != nil {
 		return nil, err
 	}
 
-	// An in-memory source cannot be written back to, so its layers must say so
-	// or routing would offer it as a target.
-	for i := range layers {
-		layers[i].Source.Writable = false
-		layers[i].Source.Kind = b.kind
+	// An in-memory source cannot be written back to, so its layers say so or
+	// routing would offer it as a target. An empty document contributes no
+	// layer but still spends its index.
+	var layers []Layer
+
+	for index, values := range docs {
+		if values == nil {
+			continue
+		}
+
+		layers = append(layers, Layer{
+			Source: Source{
+				Kind:     b.kind,
+				Name:     b.name,
+				Document: index,
+				Writable: false,
+			},
+			Values: values,
+		})
 	}
 
 	return layers, nil
-}
-
-// Watch reports changes to this backend's file.
-//
-// The backend owns the knowledge that its source is a path on a filesystem,
-// which is what keeps that knowledge out of the Store.
-func (b *fileBackend) Watch(
-	ctx context.Context,
-	interval time.Duration,
-	onChange func(),
-) (func(), error) {
-	w := NewWatcher(b.fs, interval)
-	if fs, ok := w.(*fsnotifyWatcher); ok {
-		fs.onError = b.onWatchError
-	}
-
-	return w.Watch(ctx, []string{b.path}, onChange)
 }

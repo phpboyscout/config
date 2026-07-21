@@ -1014,11 +1014,12 @@ func (s *Store) Watch(ctx context.Context, opts ...WatchOption) (stop func(), er
 	var stops []func()
 
 	for _, b := range watchable {
-		if fb, ok := b.(*fileBackend); ok {
+		if h, ok := b.(watchErrorReporter); ok {
 			// A watch that degrades and cannot fall back is a failure of the
 			// hot-reload contract, so it travels on the channel already meant
-			// for one.
-			fb.onWatchError = s.notifier.notifyError
+			// for one. Asked by interface rather than concrete type, so a
+			// consumer's own backend can route its watch errors the same way.
+			h.setWatchErrorHandler(s.notifier.notifyError)
 		}
 
 		stop, err := b.Watch(ctx, cfg.interval, onChange)
@@ -1047,8 +1048,10 @@ func (s *Store) watchedPaths() []string {
 	var out []string
 
 	for _, b := range s.backends {
-		if fb, ok := b.(*fileBackend); ok {
-			out = append(out, fb.path)
+		if p, ok := b.(watchPathReporter); ok {
+			if path, exists := p.watchPath(); exists {
+				out = append(out, path)
+			}
 		}
 	}
 
