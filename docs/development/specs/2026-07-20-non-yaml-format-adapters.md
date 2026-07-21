@@ -78,6 +78,27 @@ the flat formats. Every adapter — JSON, TOML, XML, HCL, and now the flat ones 
 which is the shape the whole design is for. The record keeps this reversal deliberately: D15 was a
 written decision, and it was wrong.
 
+### R4 — 2026-07-21: `tomldoc` is not built; TOML write support is inline
+
+**D16 planned a `tomldoc` module for TOML writing, on the premise that no Go library does
+structure-preserving TOML editing. Building the write path showed the premise was wrong.**
+
+`go-toml/v2/unstable` — a subpackage of the module config-toml already reads with — exposes every
+node's source byte range (`Node.Raw`, `Parser.Raw`). So a TOML edit is a **targeted byte
+replacement** located by those ranges, exactly as JSON edits through `sjson` and HCL through
+`hclwrite`: replace a value's bytes, insert a key, drop a line, and leave comments, table headers
+and key order untouched. Verified while building — `port = 8080` → `port = 9090` changed one span
+and nothing else.
+
+So there is no `tomldoc` to build. TOML write support is a ~200-line layer **inline in
+config-toml**, filling the writer-shaped hole D16 left. This is the same conclusion R2 reached for
+HCL, and the same reasoning that kept `hcldoc` out: the parser is the reusable primitive, the
+editor is thin, and there is one consumer. `config-toml` is promoted read-only → read+write as a
+minor version (v0.2.0) per D18.
+
+**D16 is amended**: the writer-shaped hole did its job, but the module it anticipated is not
+needed. **D10's "TOML write is a fast follow" note** is fulfilled — by promotion, not a new module.
+
 ## Problem
 
 The module reads and writes YAML and nothing else, so "we only do YAML" is a real reason to
@@ -489,6 +510,10 @@ environment backend used. That the argument was there and sufficient is evidence
 cut in the right place.
 
 ### D16 — `config-toml` ships read-only with a writer-shaped hole
+
+> **Amended by [R4](#r4--2026-07-21-tomldoc-is-not-built-toml-write-support-is-inline): no `tomldoc`
+> module — `go-toml/v2/unstable`'s source ranges make the writer an inline targeted-edit layer, and
+> config-toml is promoted read+write.**
 
 TOML gets a structure-preserving writer via a `tomldoc` module, as a **fast follow** rather
 than a prerequisite. `config-toml` ships read-only first so TOML reading is not blocked behind

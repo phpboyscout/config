@@ -1,4 +1,4 @@
-# Read TOML
+# Read and write TOML
 
 The core reads and writes only YAML. TOML comes from a sibling module,
 [`config-toml`](https://gitlab.com/phpboyscout/go/config-toml), so a consumer who needs TOML
@@ -34,18 +34,28 @@ host := store.View().GetString("server.host") // "localhost"
 port := store.View().GetInt("server.port")    // 8080
 ```
 
-## Read-only, for now
+## Writing preserves the file
 
-`config-toml` reads TOML and does not yet write it. No existing Go library round-trips TOML
-without destroying the file — comments gone, sections alphabetised, indentation injected — which
-is the merged-view write [structure-preserving writes](../explanation/write-fidelity.md) exist to
-avoid. Structure-preserving TOML writing needs a document editor of its own, and it is a
-committed fast follow rather than a prerequisite: reading is most of the value.
+Re-serialising a decoded TOML document destroys it — comments gone, sections alphabetised,
+indentation injected — the merged-view write [structure-preserving writes](../explanation/write-fidelity.md)
+exist to avoid. So a write edits the document in place. `Set("server.port", 9090)` on
 
-So a write to a key a TOML layer defines is **not** applied to it. Routing skips the read-only
-layer and the write lands in the next writable layer down, reported as shadowed rather than
-failing — the same treatment any read-only backend gets. When write support lands it will be a
-minor version, and `configtoml.New` will not change.
+```toml
+# app config
+[server]
+host = "localhost"  # dev
+port = 8080
+```
+
+changes `port` to `9090` and leaves the comments, the `[server]` header and the key order exactly
+as they were. It works by locating the value's bytes through `go-toml/v2`'s own source ranges and
+replacing just those — the same targeted-edit approach JSON uses through `sjson` and HCL through
+`hclwrite`.
+
+Setting or removing a key, and adding a key to an existing section, the top level, or as a
+top-level dotted key, are supported. Writing into a sub-path of an inline-table value (`x = {a=1}`
+then `x.a`), or into an empty section, is refused with `config.ErrInvalidTarget` rather than
+guessed.
 
 ## What it costs
 
