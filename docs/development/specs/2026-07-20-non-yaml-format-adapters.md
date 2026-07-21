@@ -4,10 +4,35 @@ date: 2026-07-20
 author: matt.cockayne
 status: approved
 approved: 2026-07-20
+revised: 2026-07-21
 issue: phpboyscout/go/config#2
 ---
 
 # Non-YAML format adapters
+
+## Revisions
+
+### R1 — 2026-07-21: `NewCodecBackend` takes `config.FS`, not `afero.Fs`
+
+**D5 and the Public API section give the constructor as
+`NewCodecBackend(filesystem afero.Fs, path string, codec Codec)`. That signature was already
+stale when this spec was approved, and building Phase 1 made it concrete.**
+
+Phase 0 — the filesystem abstraction, specified separately and delivered with the core — replaced
+`afero.Fs` throughout the public API with the module's own `config.FS` interface. The core no
+longer references afero in library code at all (only in comments and its own test suite). Every
+existing constructor already takes `config.FS`: `NewFileBackend(filesystem FS, path string)`,
+`WithFiles(filesystem FS, ...)`. `NewCodecBackend` is the same seam and takes the same type.
+
+The signature as built is:
+
+```go
+func NewCodecBackend(filesystem FS, path string, codec Codec) Backend
+```
+
+Nothing else in D5 changes: it still returns a concrete type implementing `WritableBackend`
+exactly when the codec implements `EditingCodec`, and `WatchableBackend` always. This is a
+correction to a type name the spec predates, not a change of design.
 
 ## Problem
 
@@ -161,6 +186,9 @@ checks the capability once instead of every caller checking a flag, and a codec 
 a capability it does not have.
 
 ### D5 — `NewCodecBackend` returns a concrete type matching the codec's capability
+
+> **Amended by [R1](#r1--2026-07-21-newcodecbackend-takes-configfs-not-aferofs): the parameter
+> is `config.FS`, not `afero.Fs`.**
 
 ```go
 func NewCodecBackend(filesystem afero.Fs, path string, codec Codec) Backend
@@ -679,7 +707,7 @@ Net new exported names in the core:
 ```go
 type Codec interface{ ... }        // D4
 type EditingCodec interface{ ... } // D4
-func NewCodecBackend(filesystem afero.Fs, path string, codec Codec) Backend  // D5
+func NewCodecBackend(filesystem FS, path string, codec Codec) Backend  // D5, amended by R1
 
 // D15 — what a flat-format adapter needs and would otherwise reimplement.
 func NestKey(path string, value any) map[string]any

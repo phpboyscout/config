@@ -7,6 +7,16 @@ like every other layer: precedence, provenance, shadowing, hot-reload, the lot.
 That is what `Backend` is for. This guide builds one end to end: reading first, then
 watching, then writing. Each stage works on its own, so stop wherever your source stops.
 
+!!! note "Reading a file in another format? You need a `Codec`, not a whole `Backend`."
+    If your source is a *file* in a format the core does not know — JSON, TOML, INI — the file
+    machinery is already written: reading, conflict detection, atomic writes, symlink handling
+    and watching are all format-agnostic and live in the core. You supply only the
+    format-specific part, a `Codec`, and pass it to `config.NewCodecBackend(fsys, path, codec)`.
+    A codec that also implements `EditingCodec` yields a writable backend automatically. This
+    is how the sibling `config-<format>` modules are built; see the
+    [non-YAML format adapters spec](../development/specs/2026-07-20-non-yaml-format-adapters.md).
+    Reach for a full `Backend`, below, when your source is *not* a file on a filesystem.
+
 !!! tip "The code here is compiled"
     Every snippet is taken from
     [`custombackend_test.go`](https://gitlab.com/phpboyscout/go/config/-/blob/main/custombackend_test.go)
