@@ -16,6 +16,7 @@ nav = [
     { "Support a new file format" = "how-to/format-adapter.md" },
     { "Read & write JSON" = "how-to/json.md" },
     { "Read TOML" = "how-to/toml.md" },
+    { "Read XML" = "how-to/xml.md" },
     { "Use an afero filesystem" = "how-to/afero.md" },
     { "Test with the config mocks" = "how-to/test-with-mocks.md" },
   ] },
