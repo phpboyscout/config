@@ -14,6 +14,8 @@ nav = [
     { "Bind CLI flags" = "how-to/bind-cli-flags.md" },
     { "Write a custom backend" = "how-to/custom-backend.md" },
     { "Support a new file format" = "how-to/format-adapter.md" },
+    { "Read & write JSON" = "how-to/json.md" },
+    { "Use an afero filesystem" = "how-to/afero.md" },
     { "Test with the config mocks" = "how-to/test-with-mocks.md" },
   ] },
   { Explanation = [
