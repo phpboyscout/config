@@ -289,3 +289,23 @@ second typically read-only.
 anything the earlier adapters showed this umbrella got wrong — corrected here by dated revision,
 never silently. Feature-flag systems are out of scope (OQ7) and, if ever pursued, get their own
 umbrella.
+
+## Revisions
+
+### R1 (2026-07-22) — structured values decode through an injected `config.Codec` (amends D8)
+
+D8 said keys are paths and a prefix maps flat path segments into the nested tree — implicitly
+treating every value as a scalar. The first adapter, [config-consul](2026-07-22-config-consul.md)
+(D3), surfaced the other common shape of a byte-valued store: a single key holding a whole JSON or
+YAML document, not a scalar. Rather than let each adapter invent its own value parser, the family
+convention is set here:
+
+**A backend over a byte-valued store may accept an injected `config.Codec` that decodes structured
+values — a value decoding to a mapping becomes a subtree, anything else stays a scalar string —
+defaulting to scalar strings when no codec is given.**
+
+This reuses the existing codec seam (no new core surface — the same reason D15 was withdrawn for
+the flat file adapters, non-YAML R3), keeps the format choice with the consumer so the adapter
+takes no codec dependency of its own, and applies uniformly to etcd, the parameter stores and any
+other byte-valued backend. Each adapter's own spec states whether it offers the option and which
+formats it is tested against; config-consul D3 is the worked example.

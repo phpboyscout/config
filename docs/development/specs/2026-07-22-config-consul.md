@@ -2,7 +2,8 @@
 title: config-consul — the HashiCorp Consul KV backend adapter
 date: 2026-07-22
 author: matt.cockayne
-status: draft
+status: approved
+approved: 2026-07-22
 ---
 
 # config-consul
@@ -78,20 +79,40 @@ few lines each flat file adapter already writes; there is still no shared core
 helper for it (umbrella D8 / non-YAML R3). Consul "directory" markers — keys
 ending in `/` with an empty value — are skipped, since they carry no leaf.
 
-### D3 — Values are scalar strings; structured blobs are not decoded (v0.1.0)
+### D3 — Values are scalar strings by default; structured values decode through an injected codec
 
-Consul stores bytes, not typed values. The adapter reads each value as a UTF-8
-string and puts it in the tree as a `string`. The View's typed accessors then
-coerce as they do for every flat source — `GetInt("server.port")` parses `"8080"`,
-exactly as it does for an environment variable or a dotenv value. This is the
-honest model for a byte store and keeps `config-consul` consistent with the flat
-file adapters.
+Consul stores bytes, not typed values, and its data comes in two common shapes.
+The **flat-key** shape spreads configuration across many small keys
+(`app/server/port = "8080"`); the **blob** shape stores a whole document under one
+key (`app/config = '{"server":{"port":8080}}'`). The adapter reads both.
 
-A value that is *itself* a JSON or YAML document — the common "one key holds a
-blob" Consul pattern — is **not** parsed in v0.1.0; it is a single string leaf. A
-per-key or whole-backend "decode structured values" mode is a plausible later
-addition (see Open Questions), but v0.1.0 does the simple, predictable thing and
-does not guess a value's format.
+By default — the flat-key shape — each value is a UTF-8 **string leaf**, and the
+View's typed accessors coerce as they do for every flat source:
+`GetInt("server.port")` parses `"8080"`, exactly as for an environment variable or
+a dotenv value. This is the honest model for a byte store and needs no
+configuration.
+
+For the blob shape, the constructor accepts an optional **value codec** — a
+`config.Codec`, the very interface `config-json` and `config-toml` already
+implement — that the consumer injects with `WithValueCodec`. When set, each Consul
+value is passed to the codec: a value that decodes to a **mapping** (an object
+document) is grafted into the tree as the subtree at that key's path; a value the
+codec **rejects** — a bare scalar like `"8080"`, or bytes that are not a document —
+falls back to a scalar string leaf. So a prefix that *mixes* flat scalar keys and
+object-blob keys reads correctly under one codec, and a prefix with no blobs needs
+no codec at all. That fallback is the edge case that keeps mixed content safe:
+enabling a codec never turns a scalar key into a load error, it just leaves it a
+string.
+
+Reusing `config.Codec` is deliberate on three counts. The decoding machinery
+already exists, so nothing new is invented. The **consumer** injects the one
+format their Consul actually holds, so `config-consul` takes no codec dependency of
+its own (a JSON-blob user wires `configjson.Codec{}`; `config-consul` never imports
+`config-json`). And the same byte-value question faces every backend over a
+byte-valued store — etcd, the parameter stores — so this is **established as the
+family convention** (umbrella **R1**): a backend over a byte-valued store decodes
+structured values through an injected `config.Codec`, defaulting to scalar strings.
+No new core surface is added for it — the seam is the one that already ships.
 
 ### D4 — Capability: read, write, and native watch; not sensitive
 
@@ -162,9 +183,10 @@ type Op struct {
 `Wrap(client *capi.Client) KV` adapts the real SDK — `List` → `client.KV().List`,
 `Watch` → a blocking `List` with `QueryOptions{WaitIndex, WaitTime}`, `Commit` →
 `client.KV().Txn` with `KVCAS`/`KVDeleteCAS` verbs. The common path is one call,
-`FromClient(client, prefix)` = `New(Wrap(client), prefix)`, so a consumer writes
-`configconsul.FromClient(client, "app/")` and never sees the narrow interface
-unless testing.
+`FromClient(client, prefix, opts...)` = `New(Wrap(client), prefix, opts...)`, so a
+consumer writes `configconsul.FromClient(client, "app/")` and never sees the narrow
+interface unless testing. Both constructors take variadic `Option`s; the only one
+in v0.1.0 is `WithValueCodec(config.Codec)` (D3).
 
 ### D7 — Watch is a Consul blocking query
 
@@ -274,12 +296,19 @@ so the commit itself is the guard (D8) — matching what the reference
 `remoteBackend` does with its versioned `Put`. The weaker model is rejected for a
 race the stronger one closes at no extra cost.
 
-**Decode every value as JSON/YAML.** Tempting, because Consul values are often
-JSON blobs. Rejected for v0.1.0: it guesses a format the store does not declare,
-turns a malformed blob into a load error for a key the consumer may not even use,
-and disagrees with how every other flat source treats values. Structured-value
-decoding, if wanted, is an opt-in a later minor adds deliberately (Open
-Questions), not a default that surprises.
+**Auto-sniff each value's format with no opt-in.** Tempting, because Consul values
+are often JSON blobs — try to parse everything and use whatever comes out.
+Rejected: it guesses a format the store does not declare, and the ambiguity is
+real (`"123"` and `"true"` are valid JSON scalars, a malformed blob becomes a load
+error for a key the consumer may not even use). The injected value codec (D3) is
+explicit — the consumer names the format their store holds — while still handling
+mixed content through the decode-or-string fallback, so it gets the capability
+without the guessing.
+
+**A bespoke value-decoder interface on the adapter.** `config-consul` could define
+its own `ValueDecoder` type. Rejected: `config.Codec` already *is* that interface,
+implemented by every format adapter, so a new one would fragment the seam and make
+`config-json`'s decoder unusable here. Reuse the codec (D3, umbrella R1).
 
 **Poll instead of blocking-query watch.** Consul has a real change feed; polling
 it would be slower and busier for no benefit. Blocking queries are the native
@@ -289,14 +318,16 @@ mechanism and `NativeWatch: true` says so (umbrella D6).
 
 The module's exported surface:
 
-- `func New(kv KV, prefix string) config.Backend` — the injection seam; `kv` is a
-  fake in tests, a `Wrap`ped client in production.
-- `func FromClient(client *capi.Client, prefix string) config.Backend` — the
-  convenience path, `New(Wrap(client), prefix)`.
+- `func New(kv KV, prefix string, opts ...Option) config.Backend` — the injection
+  seam; `kv` is a fake in tests, a `Wrap`ped client in production.
+- `func FromClient(client *capi.Client, prefix string, opts ...Option) config.Backend`
+  — the convenience path, `New(Wrap(client), prefix, opts...)`.
 - `func Wrap(client *capi.Client) KV` — adapts the real Consul SDK client to the
   narrow interface.
-- `type KV interface { … }`, `type Pair struct { … }`, `type Op struct { … }` —
-  the narrow client seam (D6).
+- `func WithValueCodec(codec config.Codec) Option` — decode structured values
+  through `codec` (D3); omitted, values are scalar strings.
+- `type KV interface { … }`, `type Pair struct { … }`, `type Op struct { … }`,
+  `type Option func(…)` — the narrow client seam (D6) and the option type.
 
 The returned backend satisfies `config.WritableBackend` and
 `config.WatchableBackend`; the Store discovers that by type assertion, so no
@@ -323,23 +354,26 @@ change, no breaking change anywhere. The module ships at v0.1.0 as a full
 read+write+watch backend, so there is no later read→write promotion to
 communicate (unlike the read-first file adapters).
 
+## Resolved (2026-07-22)
+
+1. **Structured-value decoding.** Support **both** shapes: scalar strings by
+   default, and an injected `config.Codec` for object blobs, with a
+   decode-or-string fallback for mixed content (D3). Rather than an
+   adapter-specific mechanism, this is established as the **family convention**
+   (umbrella R1) so etcd and the parameter stores inherit it. Not deferred — the
+   pattern is worth setting now, on the first adapter.
+3. **Consul namespaces / Enterprise.** Namespace-agnostic: the consumer sets
+   namespace/datacenter on the `*capi.Client` they build, and the adapter uses the
+   client it is given (D6). No constructor parameter.
+4. **Default `WaitTime`.** Pass Consul's own default through (no `WaitTime` set)
+   rather than invent one; `WithPollInterval` still overrides it (D7).
+
 ## Open questions
 
-To resolve with the human before this moves to `approved`:
-
-1. **Structured-value decoding.** Confirm v0.1.0 treats every Consul value as a
-   scalar string (D3), with JSON/YAML-blob decoding deferred to a later opt-in.
-   Recommended: yes — keep v0.1.0 predictable.
 2. **The go-test v0.26.0 DIND input.** The exact component input name that enables
-   Docker-in-Docker (D12) — needed for the implementation MR's `.gitlab-ci.yml`.
-3. **Consul namespaces / Enterprise.** v0.1.0 assumes the consumer sets namespace
-   (Consul Enterprise) on the `*capi.Client` and the adapter is namespace-agnostic
-   (it just uses the client it is given). Confirm that is sufficient, i.e. no
-   first-class namespace parameter on the constructor.
-4. **Default `WaitTime`.** The blocking-query bound when `WithPollInterval` is
-   unset (D7). Consul's own default is five minutes and its max ten; proposed
-   default is to pass Consul's default through (no `WaitTime` set) rather than
-   invent one.
+   Docker-in-Docker (D12). Not decision-bearing — a CI-config value filled into the
+   implementation MR's `.gitlab-ci.yml` from the v0.26.0 component's own
+   documentation; it does not gate approval of the design.
 
 ## Implementation phases
 

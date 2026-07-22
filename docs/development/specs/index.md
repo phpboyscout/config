@@ -209,7 +209,7 @@ not need; it cannot infer one it was never given.
 
 | Spec | Status |
 |---|---|
-| [config-consul adapter](2026-07-22-config-consul.md) | draft |
+| [config-consul adapter](2026-07-22-config-consul.md) | approved |
 | [Dynamic backend adapters](2026-07-21-dynamic-backend-adapters.md) | approved |
 | [Filesystem abstraction](2026-07-20-filesystem-abstraction.md) | approved |
 | [Non-YAML format adapters](2026-07-20-non-yaml-format-adapters.md) | approved |
