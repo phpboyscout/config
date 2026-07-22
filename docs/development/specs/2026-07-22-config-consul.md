@@ -262,22 +262,38 @@ Three layers, from the umbrella's D10 and the shared `backendconformance` suite:
 3. **testcontainers integration** — the same behaviours against a *real* Consul,
    started by `github.com/testcontainers/testcontainers-go/modules/consul`
    (`consul.Run(ctx, "hashicorp/consul:1.15")` → `ApiEndpoint`), whose endpoint
-   builds a real `*capi.Client` passed through `Wrap`. These are **env-gated**
-   (`testing.Short()` skips them; a `CONFIG_CONSUL_INTEGRATION` gate is the
-   explicit opt-in), so they stay compiled and IDE-discoverable but do not run in
-   the ordinary unit job.
+   builds a real `*capi.Client` passed through `Wrap`. These live under
+   `./test/integration/` (the go-test component's default `integration_paths`) and
+   are **env-gated** on `INT_TEST_INTEGRATION` — the component's convention, set to
+   `1` only in the DIND job — so `if os.Getenv("INT_TEST_INTEGRATION") != "1" {
+   t.Skip() }` keeps them compiled and IDE-discoverable but out of the ordinary
+   unit job.
 
-### D12 — Integration runs in CI on the go-test component's DIND support
+### D12 — Integration runs in CI on the go-test component's DIND job
 
 The env-gated integration tests (D11) run in CI through the **`go-test`
-component's Docker-in-Docker support, added in phpboyscout/cicd v0.26.0** — not a
-hand-rolled `docker:dind` job. This is a deliberate infrastructure opt-in: the
-runners are self-hosted, and DIND requires the component's job to be granted the
-privileged Docker service. Enabling it is the point of moving to v0.26.0. The
-ordinary merge gate stays Docker-free and fast — the fake and `backendconformance`
-suites carry it — and the DIND job runs the real-Consul proof. (The exact
-component input that turns DIND on is v0.26.0's; the implementation MR sets it per
-that component's documentation.)
+component's opt-in DIND job, added in phpboyscout/cicd v0.26.0** — not a
+hand-rolled `docker:dind` job. `config-consul`'s `.gitlab-ci.yml` sets, on its
+`go-test@v0.26.0` include:
+
+```yaml
+inputs:
+  enable_integration: true                       # adds the go-test-integration job
+  integration_paths: "./test/integration/..."    # the testcontainers suite (also the default)
+```
+
+The component's job supplies the rest: a `docker:dind` service, `DOCKER_HOST`,
+`FF_NETWORK_PER_BUILD` and `TESTCONTAINERS_RYUK_DISABLED=true` (the ephemeral
+daemon makes Ryuk redundant), and `INT_TEST_INTEGRATION=1` in the job's
+environment — the gate D11's tests read. `integration_timeout` defaults to `10m`
+(image pull + container startup) and `dind_image` to `docker:27-dind`; both are
+left at their defaults.
+
+This is a deliberate infrastructure opt-in: the runners are self-hosted and the
+DIND job **requires a privileged runner** (the phpboyscout runner already is).
+Enabling it is the point of moving to v0.26.0. The ordinary merge gate stays
+Docker-free and fast — the fake and `backendconformance` suites carry it — and the
+DIND job runs the real-Consul proof.
 
 ## Rejected alternatives
 
@@ -339,8 +355,8 @@ required — v0.6.0 already carries everything this adapter needs.
 Per D11: a fake-`KV` unit suite (reads, merge, provenance, writes, conflict,
 watch); a `backendconformance.Run` against a `configconsul` backend over the fake,
 including the `Control` that mutates the fake out of band for the conflict and
-watch subtests; testcontainers integration behind `testing.Short()` /
-`CONFIG_CONSUL_INTEGRATION`, run in CI on the v0.26.0 DIND job (D12); and a
+watch subtests; testcontainers integration under `./test/integration/` gated on
+`INT_TEST_INTEGRATION`, run in CI on the v0.26.0 DIND job (D12); and a
 `depfootprint_test.go` allowlist (D10). What would falsely pass: a conflict test
 whose fake never advances its index — the `backendconformance` suite guards that
 by requiring the `Control.Mutate` to move the version, and it was itself watched
@@ -362,18 +378,18 @@ communicate (unlike the read-first file adapters).
    adapter-specific mechanism, this is established as the **family convention**
    (umbrella R1) so etcd and the parameter stores inherit it. Not deferred — the
    pattern is worth setting now, on the first adapter.
+2. **The go-test v0.26.0 DIND inputs.** `enable_integration: true` adds the
+   `docker:dind` job; `integration_paths: "./test/integration/..."` points it at
+   the testcontainers suite; the gate is the component's `INT_TEST_INTEGRATION`
+   env var, and `DOCKER_HOST`/Ryuk-disable are wired by the job. `integration_timeout`
+   (`10m`) and `dind_image` (`docker:27-dind`) stay at their defaults (D12).
 3. **Consul namespaces / Enterprise.** Namespace-agnostic: the consumer sets
    namespace/datacenter on the `*capi.Client` they build, and the adapter uses the
    client it is given (D6). No constructor parameter.
 4. **Default `WaitTime`.** Pass Consul's own default through (no `WaitTime` set)
    rather than invent one; `WithPollInterval` still overrides it (D7).
 
-## Open questions
-
-2. **The go-test v0.26.0 DIND input.** The exact component input name that enables
-   Docker-in-Docker (D12). Not decision-bearing — a CI-config value filled into the
-   implementation MR's `.gitlab-ci.yml` from the v0.26.0 component's own
-   documentation; it does not gate approval of the design.
+All open questions resolved.
 
 ## Implementation phases
 
