@@ -162,7 +162,7 @@ func (b *readerBackend) Load(ctx context.Context, _ []Layer) ([]Layer, error) {
 		return nil, err
 	}
 
-	docs, err := yamlCodec{}.Decode(b.name, b.content)
+	docs, err := YAMLCodec{}.Decode(b.name, b.content)
 	if err != nil {
 		return nil, err
 	}

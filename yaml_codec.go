@@ -19,10 +19,15 @@ import (
 // yamldoc. Every other format ships as a sibling module supplying its own codec
 // to [NewCodecBackend]; this is that call with the YAML codec.
 func NewFileBackend(filesystem FS, path string) Backend {
-	return NewCodecBackend(filesystem, path, yamlCodec{})
+	return NewCodecBackend(filesystem, path, YAMLCodec{})
 }
 
-// yamlCodec reads and edits YAML configuration.
+// YAMLCodec reads and edits YAML configuration. It is what [NewFileBackend] and
+// [WithFiles] use, and it is exported so a backend adapter can reuse it as a
+// value decoder — a Consul or etcd key whose value is a YAML document, decoded
+// into a subtree via that adapter's WithValueCodec option. It is a [Codec] (and
+// an [EditingCodec]); the sibling format adapters export theirs as `Codec`, but
+// the plain name is the interface here, so this one carries the format.
 //
 // It reads the file twice, deliberately. Values are decoded by the YAML value
 // parser, while document structure — comments, positions, and whether the file
@@ -31,11 +36,11 @@ func NewFileBackend(filesystem FS, path string) Backend {
 // integers survive in one and are destroyed in the other), so the boundary
 // between documents and values must not be crossed. Values never come from
 // yamldoc; documents never come from the value parser.
-type yamlCodec struct{}
+type YAMLCodec struct{}
 
 // preservesComments reports that YAML edits retain comments and formatting,
 // which is what backs the file backend's PreservesComments capability.
-func (yamlCodec) preservesComments() bool { return true }
+func (YAMLCodec) preservesComments() bool { return true }
 
 // Decode decodes every YAML document in a source into its own map.
 //
@@ -44,7 +49,7 @@ func (yamlCodec) preservesComments() bool { return true }
 // provenance treat documents and files uniformly, and it fixes a defect in the
 // incumbent, which reads the first document of a multi-document file and
 // silently discards the rest.
-func (yamlCodec) Decode(path string, src []byte) ([]map[string]any, error) {
+func (YAMLCodec) Decode(path string, src []byte) ([]map[string]any, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(src))
 
 	var docs []map[string]any
@@ -72,7 +77,7 @@ func (yamlCodec) Decode(path string, src []byte) ([]map[string]any, error) {
 // The judgement is this module's; the detection is yamldoc's. It reports what
 // it cannot round-trip safely, and refusing is the policy applied to that
 // report.
-func (yamlCodec) Check(path string, src []byte) error {
+func (YAMLCodec) Check(path string, src []byte) error {
 	doc, err := yamldoc.Parse(src)
 	if err != nil {
 		return fmt.Errorf("%w: %s: %w", ErrBackendParse, path, err)
@@ -90,7 +95,7 @@ func (yamlCodec) Check(path string, src []byte) error {
 // A YAML file created from nothing needs no preamble — an empty file is a valid
 // empty document. The create-a-file path seeds a mapping to edit into from
 // within Apply, so nothing here has to.
-func (yamlCodec) Empty() []byte { return nil }
+func (YAMLCodec) Empty() []byte { return nil }
 
 // Apply edits the document tree and re-emits it.
 //
@@ -98,7 +103,7 @@ func (yamlCodec) Empty() []byte { return nil }
 // styles survive. Nothing here decodes values from that tree: the
 // documents-versus-values boundary is what keeps the two YAML parsers from
 // disagreeing about types.
-func (yamlCodec) Apply(path string, src []byte, edits []Edit) ([]byte, error) {
+func (YAMLCodec) Apply(path string, src []byte, edits []Edit) ([]byte, error) {
 	source := src
 
 	if needsSeed(source) {
