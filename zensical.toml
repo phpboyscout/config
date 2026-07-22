@@ -37,6 +37,7 @@ nav = [
     { Testing = "development/testing.md" },
     { "Feature specifications" = [
       { Overview = "development/specs/index.md" },
+      { "config-consul adapter" = "development/specs/2026-07-22-config-consul.md" },
       { "Dynamic backend adapters" = "development/specs/2026-07-21-dynamic-backend-adapters.md" },
       { "Filesystem abstraction" = "development/specs/2026-07-20-filesystem-abstraction.md" },
       { "Non-YAML format adapters" = "development/specs/2026-07-20-non-yaml-format-adapters.md" },
