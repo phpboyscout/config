@@ -126,6 +126,10 @@
   text-transform: uppercase;
   color: var(--md-default-fg-color--light);
 }
+
+/* Second and later tier labels sit under the previous tier's pills, so they
+   want a little air above to read as a fresh group rather than a caption. */
+.md-typeset .cfg-eco__label:not(:first-child) { margin-top: .8rem; }
 .md-typeset .cfg-pill {
   display: inline-flex;
   align-items: center;

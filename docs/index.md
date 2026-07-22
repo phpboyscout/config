@@ -23,7 +23,7 @@ hide:
 </div>
 
 <div class="cfg-eco">
-  <span class="cfg-eco__label">One store, every source</span>
+  <span class="cfg-eco__label">Formats</span>
   <a class="cfg-pill" href="getting-started/">YAML</a>
   <a class="cfg-pill" href="how-to/json/">JSON</a>
   <a class="cfg-pill" href="how-to/toml/">TOML</a>
@@ -32,8 +32,20 @@ hide:
   <a class="cfg-pill" href="how-to/dotenv/">dotenv</a>
   <a class="cfg-pill" href="how-to/ini/">INI</a>
   <a class="cfg-pill" href="how-to/properties/">properties</a>
+
+  <span class="cfg-eco__label">Filesystems</span>
+  <a class="cfg-pill" href="how-to/afero/">afero</a>
+  <a class="cfg-pill" href="how-to/iofs/">io/fs</a>
+  <a class="cfg-pill" href="how-to/billy/">go-billy</a>
+  <a class="cfg-pill" href="how-to/sftp/">SFTP</a>
+  <a class="cfg-pill cfg-pill--more" href="explanation/adapters/#cloud-object-stores">+ cloud object stores →</a>
+
+  <span class="cfg-eco__label">Backends</span>
   <a class="cfg-pill" href="how-to/consul/">Consul</a>
-  <a class="cfg-pill cfg-pill--more" href="explanation/adapters/">+ dynamic backends →</a>
+  <a class="cfg-pill" href="how-to/aws-ssm/">AWS SSM</a>
+  <a class="cfg-pill" href="how-to/azure-appconfig/">Azure App Config</a>
+  <a class="cfg-pill" href="how-to/gcp-parameter/">GCP Parameter</a>
+  <a class="cfg-pill cfg-pill--more" href="explanation/adapters/#roadmap">+ roadmap →</a>
 </div>
 
 ## The thirty-second version
