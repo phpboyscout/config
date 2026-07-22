@@ -4,6 +4,7 @@ date: 2026-07-22
 author: matt.cockayne
 status: approved
 approved: 2026-07-22
+revised: 2026-07-22
 ---
 
 # Filesystem adapters
@@ -116,6 +117,8 @@ recommends a much longer default and documents the cost. (An `embed.FS` never ch
 it is pointless but harmless.) The shared convention is therefore: rely on the core's poll watcher,
 tuned per adapter — not a new per-adapter watch API.
 
+> **Revised — see R1 below.** "Recommends a default in its spec" left the interval as prose an adapter could only honour by asking the consumer to pass `WithPollInterval`. R1 adds a small optional core interface, `config.PollIntervalHinter`, so an adapter *declares* its cadence and the watcher adopts it — the mechanism D5 said was unnecessary turned out to be one narrow interface, matching `RealPather`/`LinkReader`.
+
 ### D6 — Object stores are not POSIX: the rename is a copy, and that is fine
 
 S3, GCS and Azure Blob are object stores, and the `config.FS` contract meets them honestly rather
@@ -125,7 +128,8 @@ than pretending they are disks:
   and rename's copy maps to `CopyObject`, both of which are **atomic per object** — so the *target*
   is still replaced atomically and a reader never sees a half-written object. The only imperfection
   is that a crash between the copy and the delete leaves the staged object behind: garbage to be
-  cleaned up, never corruption of the target.
+  cleaned up, never corruption of the target. *(Revised — see R2 below: a store with a native
+  atomic move uses it instead of copy-then-delete.)*
 - **`MkdirAll` is a no-op** — object stores have no directories, only key prefixes.
 - **`Stat` synthesizes** a `fs.FileInfo` from object metadata (size, last-modified); mode bits are
   nominal.
@@ -190,11 +194,13 @@ configsftp.Wrap(sftpClient)                  // *sftp.Client → config.FS
 ```
 
 The result is passed to `WithFiles`/`NewFileBackend` exactly as `config.OS()` is. The core needs
-**one** small addition — the exported sentinel `config.ErrReadOnlyFS` (D4) that the read-only
-adapters return from their write methods. Everything else the adapters need — `config.FS`,
-`RealPather`, `LinkReader`, and the poll watcher that reloads a non-real-path filesystem (D5) —
-already exists and is sufficient, proven by `config-afero` implementing the interfaces against the
-public API.
+**two** small additions: the exported sentinel `config.ErrReadOnlyFS` (D4) that the read-only
+adapters return from their write methods, and the optional interface `config.PollIntervalHinter`
+(R1) that a polled adapter implements to declare its own reload cadence. Everything else the
+adapters need —
+`config.FS`, `RealPather`, `LinkReader`, and the poll watcher that reloads a non-real-path
+filesystem (D5) — already exists and is sufficient, proven by `config-afero` implementing the
+interfaces against the public API.
 
 ## Testing strategy
 
@@ -244,3 +250,58 @@ Azurite; D8). The object-store atomicity model (D6) is proven here.
 
 **Phase 4 — remote and revisit.** `config-sftp`. Anything the earlier adapters showed this umbrella
 got wrong is corrected here by dated revision, never silently.
+
+## Revisions
+
+### R1 (2026-07-22) — a filesystem declares its poll cadence via an optional interface
+
+**Revises D5.** D5 said the remote adapters get polled reload "for free" and owe only "a sensible
+interval, not a mechanism", to be recommended in each adapter's spec. Finalising the per-adapter
+specs exposed the gap: a recommendation in prose is not a cadence the adapter can actually apply.
+The store hands every backend's `Watch` the resolved interval — `DefaultPollInterval` (2s) unless
+the consumer set `WithPollInterval` — so a cloud adapter that "wants" 5 minutes has no way to say
+so; it can only hope the consumer passes `WithPollInterval`, and a consumer who forgets silently
+gets 2-second billed polling. That is the eager default D5 set out to avoid, reintroduced.
+
+The fix is one narrow, optional interface in the core — the same shape as `RealPather` and
+`LinkReader`, which is precisely the extensibility pattern the `config.FS` contract was designed
+around (filesystem-abstraction spec D1):
+
+```go
+// PollIntervalHinter optionally reports how often a polled filesystem should be
+// checked for changes.
+type PollIntervalHinter interface {
+	PollInterval() time.Duration
+}
+```
+
+`NewWatcher` consults the hint **only where the caller left the default**: an explicit
+`WithPollInterval` still wins, a filesystem that does not implement the interface keeps the
+responsive 2-second default, and a remote adapter that does implement it gets its own sensible
+cadence without the consumer having to know the number. This touches nothing in the store or the
+remote-backend watch path, so it cannot alter any shipped backend's polling, and the existing
+watch-conformance timing is unaffected. `config.PollIntervalHinter` joins `config.ErrReadOnlyFS`
+(D4) as the second and final small core addition this family needs; each read+write cloud and
+`config-sftp` adapter implements it to declare a minutes-scale default, and each per-adapter spec
+states the value it picks.
+
+### R2 (2026-07-22) — rename uses each store's native move where it has one
+
+**Revises D6.** D6 modelled every object store's `Rename` as copy-then-delete on the grounds that
+"there is no atomic rename". That is true of S3 and Azure Blob, but not universally: **GCS has a
+native `Move`** (a server-side rename within a bucket) and **SFTP has `PosixRename`** (an atomic
+rename extension). Copy-then-delete leaves a staged object behind on a crash between the two calls
+(D6's stated imperfection); a native move has no such window and is a single round-trip. So the
+decision is refined: **an adapter uses its store's native atomic move where the store has one, and
+falls back to copy-then-delete only where it does not.**
+
+- `config-gcp-gcs` — `Object.Move` (server-side, atomic).
+- `config-sftp` — `PosixRename` (atomic rename extension), falling back to plain `Rename`.
+- `config-aws-s3`, `config-azure-blob` — copy-then-delete, exactly as D6 describes, because these
+  stores genuinely have no atomic rename. The orphaned-staging-object caveat applies to these two,
+  and each states it.
+
+The `config.FS` contract is unchanged — `Rename` is still the atomic commit — and so is the
+conflict-detection story (SHA-256 at load, D6). Only the *implementation* of the commit differs per
+store, which is exactly what a per-adapter spec is for (D2). Each adapter's spec names the primitive
+it uses.
