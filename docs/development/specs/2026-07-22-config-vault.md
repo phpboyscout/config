@@ -2,7 +2,8 @@
 title: config-vault — the HashiCorp Vault KV v2 secrets backend adapter
 date: 2026-07-22
 author: matt.cockayne
-status: draft
+status: approved
+approved: 2026-07-22
 ---
 
 # config-vault
