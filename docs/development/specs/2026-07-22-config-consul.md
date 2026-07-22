@@ -2,7 +2,7 @@
 title: config-consul — the HashiCorp Consul KV backend adapter
 date: 2026-07-22
 author: matt.cockayne
-status: approved
+status: implemented
 approved: 2026-07-22
 ---
 
