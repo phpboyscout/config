@@ -1,5 +1,14 @@
 # Changelog
 
+## [v0.7.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.7.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.6.0...v0.7.0)
+
+### Features
+
+- **backendconformance**: a sensitive read-only backend refuses the routed-beneath write ([0f98f10](https://gitlab.com/phpboyscout/go/config/-/commit/0f98f10e86d23954edce3b0b9256239c10e35a10))
+- export the core YAML codec as YAMLCodec ([3cbe793](https://gitlab.com/phpboyscout/go/config/-/commit/3cbe793ba2d25074a71e7e19d6179ec6364da1d3))
+
 ## [v0.6.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.6.0)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.5.0...v0.6.0)
