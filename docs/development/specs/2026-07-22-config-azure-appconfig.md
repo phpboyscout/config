@@ -2,7 +2,8 @@
 title: config-azure-appconfig — the Azure App Configuration backend adapter
 date: 2026-07-22
 author: matt.cockayne
-status: draft
+status: approved
+approved: 2026-07-22
 issue: phpboyscout/go/config#4
 ---
 
@@ -109,16 +110,20 @@ exact setting it came from, label included (umbrella D8). The flat-to-nested ste
 is the few lines each flat adapter writes; there is still no shared core helper
 for it (umbrella D8 / non-YAML R3).
 
-The **label axis is what distinguishes this adapter from Consul**, and the exact
-scoping control it deserves is left open (Open questions §1): whether the label
-is a constructor argument beside the prefix, an `Option`, defaulted to the
-no-label setting, and whether a read pins one label or composes several. This
-decision records only that the data model *has* the axis and that provenance
-records it; the control surface is the human's call.
+The **label axis is what distinguishes this adapter from Consul**. The scoping
+control is a `WithLabel(label)` functional `Option` (Resolved §1), mirroring
+`WithValueCodec`'s style: **one label per backend instance**, which both scopes
+the read (list only that label) and pins the write (new settings are created
+under it). Omitted, the backend uses the store's **no-label default** (the null
+`\0` label). Composing several labels in one backend is out of scope for v0.1.0
+— a consumer needing a no-label base overlaid by `prod` stacks two backends as
+two layers, which is exactly what the Store's precedence and per-key merge are
+for, so the adapter does not reinvent it internally.
 
-The default key separator is `/`, matching Consul; a store that uses `:` is a
-recognised convention App Configuration supports, and whether the separator is
-configurable is a minor open question (§5).
+The default key separator is `/`, matching Consul, and it is **not configurable**
+in v0.1.0 (Resolved §5): a store that uses `:` is a recognised App Configuration
+convention, but adding a knob for it widens the surface for a case a consumer can
+handle by choosing their key layout; it can be revisited if asked for.
 
 ### D3 — Values are scalar strings by default; structured values decode through an injected codec
 
@@ -147,12 +152,16 @@ of its own (a JSON-blob user wires `configjson.Codec{}`; this module never impor
 `config-json`).
 
 App Configuration adds one thing Consul does not have: the setting **already
-declares a content type**. Whether the adapter should *honour that content type
-automatically* — decode a setting whose content type is `application/json`
-without the consumer opting in — or keep the Consul model where the consumer
-injects one codec explicitly, is a genuine design fork left open (Open questions
-§3). This decision records only the default (scalar strings) and the
-explicit-codec floor; the content-type-driven behaviour is the human's call.
+declares a content type**. It is tempting to have the adapter *honour that
+content type automatically* — decode a `application/json` setting without an
+opt-in. Resolved §3 rejects that: the adapter uses **`WithValueCodec` only**,
+exactly the Consul model and umbrella R1, so the consumer names the one format
+their store holds and the adapter takes no codec dependency of its own. The
+content type is not used to pick a codec — it may be surfaced (e.g. in the
+`Setting` the narrow interface carries) but it does not drive decoding. This
+keeps the family's value-decode seam identical across every byte-valued backend
+and avoids the adapter having to map content types to codecs (which would force
+it to import `config-json`, contradicting "no codec dependency of its own").
 
 ### D4 — Capability: read, write, and polled watch; not sensitive
 
@@ -180,8 +189,16 @@ application configuration lives, and Azure's secrets home is Key Vault, the
 secret in a plain App Configuration setting has made that choice upstream — a
 Key Vault **reference** setting is the sanctioned pattern, and it is a pointer,
 not the secret — so the adapter does not claim a sensitivity the store does not
-enforce, keeping the `ErrSensitiveLeak` guard meaningful (Open questions §4 notes
-Key Vault references and feature flags as content-type edge cases).
+enforce, keeping the `ErrSensitiveLeak` guard meaningful.
+
+Two special content-type kinds are handled at Load (Resolved §4): **feature-flag
+settings** (content type `application/vnd.microsoft.appconfig.ff+json`, key
+prefix `.appconfig.featureflag/`) are **filtered out** — feature flags are out of
+scope for this family (umbrella OQ7); and a **Key Vault reference**
+(`...keyvaultref+json`) is passed through as its **opaque string value** and
+**not resolved** — resolving a reference into its secret is the job of
+`config-azure-keyvault` (umbrella Phase B), not this adapter, and the reference
+string itself is a pointer, not the secret, so `Sensitive: false` stays honest.
 
 ### D5 — Full read + write + polled watch at v0.1.0
 
@@ -254,9 +271,9 @@ OnlyIfUnchanged: etag})`; `Delete` → `client.DeleteSetting(...,
 path is one call, `FromClient(client, prefix, opts...)` =
 `New(Wrap(client), prefix, opts...)`, so a consumer writes
 `configazureappconfig.FromClient(client, "app/")` and never sees the narrow
-interface unless testing. Both constructors take variadic `Option`s; the option
-set is D3's `WithValueCodec` plus whatever the label control (§1) and watch
-control resolve to.
+interface unless testing. Both constructors take variadic `Option`s:
+`WithValueCodec` (D3), `WithLabel` (D2), `WithSentinelKey` (D7), and the Store's
+`WithPollInterval` supplies the watch cadence (D7).
 
 ### D7 — Watch is polling, over a sentinel key by default
 
@@ -280,14 +297,18 @@ possible, and the store's own idiom picks the first:
   full listing per interval and cannot use a single ETag to short-circuit, so it
   is heavier. It is the right answer only when no sentinel key can be established.
 
-The latency is the poll interval, not push — stated plainly, as umbrella D6
-requires. The `interval` argument (`Watch`'s parameter, from the Store's
-`WithPollInterval`) is the poll period, with a sane default if zero. The stop
+The adapter **ships `WatchableBackend`** (Resolved §5), with the **sentinel-key
+conditional GET as the default** mechanism: the sentinel key is named with a
+`WithSentinelKey(key)` option. When no sentinel is configured, `Watch` falls back
+to the conditional re-list so a consumer gets change detection out of the box,
+just heavier. The latency is the poll interval, not push — stated plainly, as
+umbrella D6 requires. The `interval` argument (`Watch`'s parameter, from the
+Store's `WithPollInterval`) is the poll period; when it is zero the adapter uses
+a **default of 30 s** (Resolved §5) — a sane cadence for cloud configuration that
+matches Azure's own recommended refresh interval, and cheap because the sentinel
+GET is a single conditional request. `WithPollInterval` overrides it. The stop
 function is `sync.Once`-guarded and ends the poll goroutine when called or when
-the context is done, exactly as `config-consul`'s watch is. Whether to ship
-`Watch` at all, versus omitting `WatchableBackend` and letting the consumer poll
-the Store (umbrella D6 offers both), and which strategy is the default, are noted
-open (Open questions §5) — this decision records the mechanism and its latency.
+the context is done, exactly as `config-consul`'s watch is.
 
 ### D8 — Conflict is ETag If-Match, captured at Load
 
@@ -311,17 +332,20 @@ This is the `remoteBackend` guide's model — version from Load, compared at com
 — in App Configuration's own primitive, and it is what makes
 `backendconformance`'s conflict subtest pass honestly rather than by luck.
 
-Two granularity questions this decision deliberately leaves to §2:
+Two granularity points resolved (Resolved §2):
 
 1. **There is no prefix-level version.** Consul's `Verify` compares one prefix
    `LastIndex`; App Configuration has no equivalent single fingerprint for a
-   listing. `Verify` can only re-list and compare per-key ETags (or check the
-   sentinel), which is closer to the real commit-time check than Consul's cheap
-   early guard. Whether `Verify` does a full re-list, checks a sentinel ETag, or
-   is a near-no-op that defers entirely to the per-key CAS at `Commit` is open.
-2. **Per-key vs per-listing.** Because the conflict is per-setting ETag, a batch
-   touching ten settings can have nine unchanged and one moved. This is the
-   direct consequence of no transaction (D9) and is where partial failure lives.
+   listing. `Verify` therefore **re-reads the ETags of the touched keys** (a
+   cheap, best-effort early check) and reports `config.ErrConflict` if any moved;
+   the **per-key `If-Match` at `Commit` is the real guard**, so a change landing
+   between `Verify` and `Commit` is still caught. This is stronger than Consul's
+   early prefix-index check, not weaker.
+2. **Per-key, not per-listing.** Because the conflict is per-setting ETag, a batch
+   touching ten settings can have nine unchanged and one moved. A batch larger
+   than one key is **not refused** (Resolved §2) — it is applied per-key, each
+   guarded by its ETag, with partial failure handled by D9. This is the direct
+   consequence of no transaction (D9) and is where partial failure lives.
 
 ### D9 — Writes are per-key compare-and-swap; there is no transaction
 
@@ -421,12 +445,16 @@ or scheduled CI job that reads an App Configuration connection string from a
 protected CI variable (and is skipped on forks and untrusted pipelines, since it
 touches a real Azure resource and costs money), or they run **locally only**
 against a developer's own store, with the fake + `backendconformance` suites
-carrying the ordinary merge gate. The exact CI shape — a protected scheduled job
-vs local-only — is an infrastructure decision noted open (Open questions §6),
-because unlike Consul's self-contained DIND job it depends on provisioning and
-paying for a cloud resource and on how secrets reach CI. What is **not** open:
-the ordinary merge gate stays cloud-free and fast (fake + conformance), and the
-integration suite never runs without an explicit credential and gate.
+carrying the ordinary merge gate. The CI shape is resolved (Resolved §6): a
+**protected, scheduled real-service job** that reads an App Configuration
+connection string from a protected CI variable, `INT_TEST_INTEGRATION=1` set only
+in that job, and it is **skipped on forks and merge-request pipelines** (it
+touches a real, billable Azure resource), while remaining fully runnable locally.
+Unlike Consul's self-contained DIND job it depends on provisioning a cloud
+resource and on a protected secret, which is why it is scheduled rather than
+per-pipeline. What is **not** negotiable: the ordinary merge gate stays cloud-free
+and fast (fake + conformance), and the integration suite never runs without an
+explicit credential and the gate.
 
 ## Rejected alternatives
 
@@ -450,17 +478,20 @@ exists to allow.
 consistent, immutable point-in-time copy of a filtered set of settings. Tempting
 as an atomicity primitive, but a snapshot is a **read** construct — a frozen view
 for consistent retrieval — not a multi-key write, and it cannot make a batch of
-edits land indivisibly. Rejected as a mismatch for the write path; it may later
-earn a role in consistent *reads* (Open questions §5), but not here.
+edits land indivisibly. Rejected as a mismatch for the write path; it is not used
+to back consistent reads in v0.1.0 either (Resolved §5), and may earn that role
+later if asked for.
 
 **Auto-sniff each value's format with no opt-in.** As with Consul, tempting
 because values are often JSON, but it guesses a format and turns a malformed blob
 into a load error for a key the consumer may not use. The injected value codec
 (D3) is explicit. Note the twist unique to this store: App Configuration settings
 *carry a declared content type*, so "honour the content type" is **not** blind
-sniffing — it is reading a label the store itself provides. That makes it a
-legitimate design fork rather than a rejected one, and it is surfaced as an open
-question (§3), not decided here.
+sniffing — it is reading a label the store itself provides. That made it a
+genuine design fork rather than an obvious reject; it was weighed and **decided
+against** (Resolved §3) — `WithValueCodec` only, so the value-decode seam stays
+identical across every byte-valued backend and the adapter takes no codec
+dependency of its own.
 
 **Poll by re-listing the whole prefix every interval.** Correct, but heavier than
 it needs to be: it costs a full listing per tick and cannot short-circuit on a
@@ -476,8 +507,7 @@ credentials. The client — and therefore the credential — is the consumer's.
 
 ## Public API
 
-The module's exported surface (subject to the label-control open question §1,
-which may add one option or constructor parameter):
+The module's exported surface:
 
 - `func New(store Store, prefix string, opts ...Option) config.Backend` — the
   injection seam; `store` is a fake in tests, a `Wrap`-ped client in production.
@@ -487,6 +517,10 @@ which may add one option or constructor parameter):
   Configuration SDK client to the narrow interface.
 - `func WithValueCodec(codec config.Codec) Option` — decode structured values
   through `codec` (D3); omitted, values are scalar strings.
+- `func WithLabel(label string) Option` — scope reads and pin writes to `label`
+  (D2); omitted, the store's no-label default.
+- `func WithSentinelKey(key string) Option` — watch by conditional GET on `key`'s
+  ETag (D7); omitted, `Watch` falls back to conditional re-list.
 - `type Store interface { … }`, `type Setting struct { … }`,
   `type Option func(…)` — the narrow client seam (D6) and the option type.
 
@@ -496,10 +530,6 @@ capability flag is exported (umbrella D4). **No change to the `config` core is
 required** — v0.6.0 already carries `backendconformance` and the `Sensitive`
 enforcement this adapter needs, and this adapter declares `Sensitive: false` so
 it does not exercise the leak guard.
-
-The label control (§1), any content-type option (§3), and any watch/sentinel
-option (§5) will add to this surface once resolved; they are called out rather
-than invented here.
 
 ## Testing strategy
 
@@ -526,10 +556,11 @@ What would falsely pass, and how it is guarded:
   The suite must include a batch whose second-of-three op conflicts and assert
   both the `ErrConflict` and the rollback of the first.
 - **A watch test that re-lists instead of using the sentinel** — would pass while
-  proving the wrong mechanism. The sentinel test must assert the conditional GET
-  path fires exactly on a sentinel ETag change and *not* on an unrelated
-  setting's change (or state plainly that the chosen semantics are re-list, per
-  §5).
+  proving the wrong mechanism (D7's default is the sentinel conditional GET, with
+  re-list only the no-sentinel fallback). The sentinel test must assert the
+  conditional GET path fires exactly on a sentinel ETag change and *not* on an
+  unrelated setting's change; a separate test covers the no-sentinel re-list
+  fallback.
 
 ## Migration & compatibility
 
@@ -542,84 +573,68 @@ consumer must understand up front — and which the README states — is
 `AtomicMultiKey: false` (D9): a multi-key write is not indivisible on this store,
 because the store offers no transaction.
 
-## Open questions
+## Resolved (2026-07-22)
 
-Raised for the human to resolve before this spec moves to `approved`. These are
-the decision-bearing forks the store's semantics create; the decisions above
-record the mechanism and defaults, these choose the policy.
+The decision-bearing forks the store's semantics create, settled with the human
+before approval. The numbered decisions above are amended in place to record
+each; this section is the change-of-mind trail.
 
-1. **The label dimension — the big one.** App Configuration's identity is
-   `(key, label)`, an axis Consul lacks entirely (D2). What is the control?
-   Options, not resolved here:
-   - **A constructor argument beside the prefix** — `New(store, prefix, label,
-     opts...)` — making label as first-class as prefix.
-   - **An `Option`** — `WithLabel("prod")` — defaulting to the no-label setting
-     (the store's null label) when omitted.
-   - **Read scope vs write pin.** Does the label scope only the *read* (list one
-     label), only the *write* (pin new settings to a label), or both? Does a read
-     compose several labels (e.g. no-label base overlaid by `prod`), which is a
-     common App Configuration usage but multiplies the listing and the merge?
-   - **The default.** No-label only? All labels flattened (and if so, how is the
-     `(key, label)` collision between two labels resolved in one tree)?
-   This choice shapes the constructor signature, provenance, the write path and
-   the data model, so it is the first thing to settle.
+1. **Labels — the big one.** A `WithLabel(label)` functional `Option` (mirroring
+   `WithValueCodec`'s style), **one label per backend instance**, scoping the read
+   *and* pinning the write; default is the store's **no-label (`\0`) default
+   label**. Composing several labels is **not** done internally — a consumer stacks
+   two backends as two layers and lets the Store's precedence and per-key merge
+   compose them, which is what they are for. Amends **D2**; adds `WithLabel` to the
+   Public API.
 
-2. **Conflict / CAS granularity.** D8 establishes ETag `If-Match` as the
-   conflict primitive, captured at Load — confirmed to work. Open: (a) what does
-   `Verify` do, given there is **no prefix-level version** to compare (full
-   re-list? a sentinel ETag check? a near-no-op deferring to per-key CAS at
-   Commit)? and (b) is the per-key granularity (with the partial-failure window of
-   D9) acceptable, or should a batch larger than one key be refused rather than
-   applied non-atomically?
+2. **Conflict / CAS granularity.** Per-key ETag `If-Match`, each setting's ETag
+   captured at **Load**; a 412 is `config.ErrConflict`. `AtomicMultiKey: false`
+   (no transaction). A multi-key batch is applied per-key, each guarded by its
+   ETag; a mid-batch failure is a **partial commit** handled by the Store's
+   `Rollback` (best-effort), exactly as `config-consul` handles its partial-commit
+   case — **>1-key batches are not refused**. `Verify` re-reads the touched keys'
+   ETags as a cheap best-effort early check; the per-key `If-Match` at `Commit` is
+   the real guard. Amends **D8**/**D9**.
 
-3. **Content type vs explicit codec (D3).** App Configuration settings carry a
-   declared **content type**. Should the adapter **honour it automatically** —
-   decode a `application/json` setting through a codec without the consumer opting
-   in per value — or keep the Consul model where the consumer injects one
-   `WithValueCodec` explicitly and it applies to every value? Automatic honouring
-   is not blind sniffing (the store declares the type), but it means the adapter
-   must decide *which* codec a content type maps to (does it import `config-json`,
-   contradicting D3's "no codec dependency of its own"? or take a
-   `map[contentType]config.Codec`?). Present both; do not choose.
+3. **Value format — explicit codec only.** `WithValueCodec` only (umbrella R1),
+   consistent with Consul; the adapter does **not** auto-decode from a setting's
+   content type. Content type may be surfaced on the narrow `Setting` but is never
+   used to pick a codec. Amends **D3**; confirms the Rejected "auto-sniff" entry.
 
-4. **Feature flags and Key Vault references.** App Configuration stores two
-   special setting kinds by content type: **feature flags**
-   (`application/vnd.microsoft.appconfig.ff+json`, key prefix
-   `.appconfig.featureflag/`) and **Key Vault references**
-   (`...keyvaultref+json`, whose value is a *pointer* to a secret, not the
-   secret). The umbrella put feature-flag systems **out of scope** for this family
-   (OQ7). So: does this adapter **filter these out** of a prefix read (skip any
-   setting whose content type is a feature flag or Key Vault reference), **pass
-   them through** as opaque string values, or **refuse** a prefix that contains
-   them? Feature flags almost certainly should be ignored (umbrella OQ7); Key
-   Vault references are murkier — passing the reference string through is harmless
-   (it is not the secret), but a consumer might expect resolution the adapter will
-   not do.
+4. **Feature flags + Key Vault references.** **Feature-flag** settings are
+   **filtered out** at Load (identified by the `...ff+json` content type / the
+   `.appconfig.featureflag/` key prefix) — feature flags are out of scope for this
+   family (umbrella OQ7). A **Key Vault reference** value is treated as an **opaque
+   string** and is **not resolved** — resolution is `config-azure-keyvault`'s job
+   (umbrella Phase B), and the reference is a pointer, not the secret, so
+   `Sensitive: false` stays honest. Amends **D4**.
 
-5. **Watch: ship it, and how (D7).** (a) Ship `WatchableBackend` at all, or omit
-   it and let the consumer poll the Store (umbrella D6 permits either for a
-   pollable store)? (b) If shipped, is the default the **sentinel-key** conditional
-   GET (needing the consumer to name a sentinel key — a new option,
-   `WithSentinelKey`?) or **conditional re-list** (no configuration, heavier)? (c)
-   The default poll interval when `interval` is zero. (d) Minor: is the key
-   **separator** configurable (`/` vs `:`), and should **snapshots** back a
-   consistent read? These are lower-stakes than §1–§4.
+5. **Watch.** Ship `WatchableBackend` by **polling**: conditional `GetSetting` on a
+   **sentinel key**'s ETag (`If-None-Match` → 304 = no change), named with
+   `WithSentinelKey`; with no sentinel, fall back to conditional re-list.
+   `NativeWatch: false`. Default poll interval **30 s** when `interval` is zero
+   (matching Azure's recommended refresh cadence); `WithPollInterval` overrides.
+   The key **separator** stays `/` and is **not configurable** in v0.1.0, and
+   **snapshots** are not used to back reads — both minor surface a consumer does
+   not need yet (sensible default, consistent with Consul's minimal surface).
+   Amends **D2**/**D7**; adds `WithSentinelKey` to the Public API.
 
-6. **Integration CI shape (D12).** Given there is no emulator and no DIND path
-   (D11), do the env-gated integration tests run in a **protected, scheduled CI
-   job** against a real App Configuration store (connection string in a protected
-   variable, skipped on forks), or **local-only** against a developer's store with
-   CI carrying just the fake + conformance suites? This is an infrastructure and
-   cost decision, not a code one, but it needs an owner.
+6. **Integration CI shape.** A **protected, scheduled real-service job** reading an
+   App Configuration connection string from a protected CI variable, with
+   `INT_TEST_INTEGRATION=1` set only there and the job **skipped on forks and
+   merge-request pipelines** (it touches a real, billable Azure resource); fully
+   runnable locally. **Not** a DIND job — there is no emulator (Azurite is
+   storage-only) and no testcontainers module. The ordinary merge gate stays
+   cloud-free: fake `Store` unit suite + `backendconformance`. Amends **D12**.
+
+All open questions resolved.
 
 ## Implementation phases
 
 Gated on D2 of the umbrella: this spec is `approved`, with the open questions
-above resolved, **before** any code.
+resolved above, **before** any code.
 
-**Phase 0 — this spec.** Approve it, resolving the open questions — especially the
-label control (§1), the content-type fork (§3), and the feature-flag policy (§4),
-each of which shapes the public API.
+**Phase 0 — this spec.** Approved 2026-07-22; open questions resolved above.
 
 **Phase 1 — the module, read path.** Scaffold `config-azure-appconfig`
 (README-only, no microsite; umbrella D2), the narrow `Store` interface, `Wrap`,

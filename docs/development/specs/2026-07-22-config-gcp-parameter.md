@@ -2,7 +2,8 @@
 title: config-gcp-parameter — the GCP Parameter Manager backend adapter
 date: 2026-07-22
 author: matt.cockayne
-status: draft
+status: approved
+approved: 2026-07-22
 ---
 
 # config-gcp-parameter
@@ -47,13 +48,12 @@ that is not a trivial question. GCP's configuration-service history is littered:
 So before deciding how a parameter maps to a config tree, this spec had to verify
 that Parameter Manager is Generally Available, is genuinely the configuration
 service (not the secrets one), and has a supported Go SDK. It is, it is, and it
-does (D2). What remains genuinely unsettled — and is left to the human as open
-questions rather than guessed — is the **data-model shape** the service's design
-pushes toward, how the declared **format field** interacts with the family's
-value-codec convention, how the **conflict trap** is satisfied in a store that has
-*no* compare-and-swap primitive, and whether **Secret Manager references** reopen
-the `Sensitive` question. These are decision-bearing and are the point of the
-per-adapter spec (umbrella D2).
+does (D2). The genuinely decision-bearing questions the service raised — the
+**data-model shape**, how the declared **format field** interacts with the family's
+value-codec convention, how a **conflict trap** could work in a store with *no*
+compare-and-swap primitive, and whether **Secret Manager references** reopen the
+`Sensitive` question — were put to the human and resolved (see [Resolved](#resolved-2026-07-22));
+the decisions below record the outcomes.
 
 ## Decisions
 
@@ -95,7 +95,14 @@ umbrella's D2 intends. None failed, so the adapter is viable; the remaining
 uncertainty is about *semantics*, not *existence*, and is carried in the open
 questions.
 
-### D3 — Data model: a parameter is a versioned document, not a flat KV prefix
+### D3 — Data model: single-document (default) and prefix mode (opt-in)
+
+> **Amended 2026-07-22 (R-resolution).** This decision originally adopted the
+> single-document model only and left the multi-parameter, prefix-scanning shape
+> as an open question (then OQ7). The human resolved OQ7 by **supporting both**:
+> single-document is the default, prefix mode is opt-in via its own constructor
+> (D6). The body below is amended to describe both; the reasoning for the
+> single-document default is unchanged.
 
 This is where Parameter Manager diverges hardest from Consul, and the divergence
 is forced by the service's resource design, so it is stated plainly rather than
@@ -113,17 +120,15 @@ policy). A **parameter version** is immutable and holds the actual value as a
 `Payload.Data []byte` (up to 1 MiB). Every write creates a **new version** (D9);
 versions can be individually `Disabled`.
 
-Consul's model — a flat prefix of many small scalar keys nesting into a tree
-(umbrella D8) — does **not** fit this. A Parameter Manager parameter is a
-heavyweight resource (its own IAM, format, versions, CMEK); it is designed to hold
-a **whole configuration document**, typically JSON or YAML, not a single scalar
-leaf. The natural, idiomatic unit is therefore:
+A Parameter Manager parameter is a heavyweight resource (its own IAM, format,
+versions, CMEK); it is designed to hold a **whole configuration document**,
+typically JSON or YAML, not a single scalar leaf. So the natural, idiomatic unit
+is a whole parameter, and the adapter supports two ways to read one or many:
 
-> **The adapter targets one named parameter. Its current version's payload is the
-> layer's source document, decoded into the layer's nested tree.**
-
-Worked example — parameter `app-config` in `global`, holding a version whose
-payload is:
+**(a) Single-document mode (default).** The adapter targets **one named
+parameter**; its current version's payload is the whole layer's source document,
+decoded into the nested tree (via an injected codec — D4). Worked example —
+parameter `app-config` in `global`, holding a version whose payload is:
 
 ```yaml
 server:
@@ -137,25 +142,44 @@ becomes exactly that layer. Provenance names the parameter version resource
 (`gcpparameter:projects/p/locations/global/parameters/app-config/versions/3`), so
 a value is traceable to the version it came from.
 
+**(b) Prefix mode (opt-in).** For consumers who keep many small parameters rather
+than one document, the adapter scans every parameter whose id begins with a given
+**prefix** under the location, and nests each one as a leaf — the Consul-shaped
+model (umbrella D8), adapted to Parameter Manager. Each matching parameter's id,
+with the prefix stripped and any `-`/`/` separators split into path segments,
+becomes a key path; its current version's payload is that leaf's value (a scalar
+string by default, decoded through the injected codec if one is given — D4).
+Example — prefix `app-`, with parameters `app-server-host`, `app-server-port`,
+`app-features-beta` — nests into the same `server`/`features` tree as (a).
+Provenance names each parameter's version resource. Prefix mode costs one
+`GetParameterVersion` RPC per matching parameter (a `ListParameters` filtered by
+id prefix, then a payload fetch each), which is the honest price of the fan-out and
+the reason single-document is the default.
+
+Both modes feed the **same read/merge pipeline**: each produces one `config.Layer`
+whose `Values` tree is merged, provenance-tracked and hot-reloaded like any file
+layer. The mode is chosen by the constructor (D6), not a runtime flag.
+
 **"Current version" resolution.** Unlike Secret Manager, a *parameter* version has
 **no `latest` alias**. The adapter resolves the current value by
 `ListParameterVersions` and choosing the most-recently-created **enabled**
 version (skipping `Disabled` ones), recording that version's resource name as the
-conflict fingerprint (D9). A consumer that wants a pinned version names it
-explicitly.
+**change fingerprint** the watch poll compares against (D7). A consumer that wants
+a pinned version names it explicitly.
 
-The multi-parameter alternative — treat many parameters under a location as flat
-keys with a name prefix, mirroring Consul — is possible but fights the resource
-design and costs one `GetParameterVersion` RPC per parameter. It is surfaced as an
-open question (OQ7), not adopted here, because the single-document model is the one
-the service is built for.
+### D4 — Decoding the payload: an explicitly injected codec, exactly like Consul (R1)
 
-### D4 — Decoding the payload: the declared format, or the injected codec (proposed; mechanism is OQ2)
+> **Resolved 2026-07-22.** This decision originally *proposed* letting the
+> parameter's declared `Format` field select whether to decode, and left auto-
+> decoding as OQ2. The human resolved OQ2 **against** using the format field to
+> pick a codec: decoding is driven by an **explicitly injected `config.Codec`
+> only** (umbrella R1), consistent with `config-consul`. The body below records
+> the resolved rule; the format field is surfaced but not used to choose a codec.
 
 Consul stores opaque bytes and cannot tell you a value's format, so `config-consul`
 requires the consumer to inject a `config.Codec` (umbrella R1, config-consul D3).
-Parameter Manager is **different in a way that matters**: a parameter carries an
-immutable **`Format`** field, set at creation, with verified enum values:
+Parameter Manager *does* carry an immutable **`Format`** field, set at creation,
+with verified enum values:
 
 ```
 PARAMETER_FORMAT_UNSPECIFIED = 0
@@ -164,54 +188,69 @@ YAML                         = 2
 JSON                         = 3
 ```
 
-So the store *declares* whether its payload is JSON, YAML, or unstructured. This
-reopens umbrella R1's assumption that the consumer must name the format:
+So the store *declares* whether its payload is JSON, YAML, or unstructured — but
+the adapter deliberately **does not use that declaration to pick a decoder**. Two
+reasons, both from the family conventions:
 
-- **A `YAML`/`JSON` parameter** should decode into a subtree; an `UNFORMATTED`
-  one is a scalar string leaf. The service already knows which.
-- But the adapter still must not take a codec dependency of its own (umbrella R1,
-  D1): it does not import `config-json` or embed a YAML parser gratuitously.
+- **No own codec dependency (umbrella R1, D1).** Auto-decoding by format would
+  force the adapter to bundle a JSON and a YAML parser so it had something to
+  select — precisely the dependency R1 keeps out of the adapter. The consumer,
+  who already depends on the format adapter for their data, injects the one
+  `config.Codec` their parameter holds.
+- **Uniformity with Consul.** The value-decoding seam is identical across the
+  family: `WithValueCodec(codec)` (D6), with the same decode-or-string fallback —
+  a payload the codec rejects stays a scalar string, so enabling a codec never
+  turns a value into a load error. A JSON-document consumer wires
+  `configjson.Codec{}`; `config-gcp-parameter` never imports `config-json`.
 
-The **proposed** decision, pending OQ2: the adapter reads `Parameter.Format`, and
-for a structured parameter decodes the payload through **an injected
-`config.Codec` the consumer supplies** — the format field selects *whether* to
-decode and validates *which* codec is expected, but the decoding machinery is
-still the injected `config.Codec`, keeping the family's no-own-codec-dependency
-rule (R1). An `UNFORMATTED` parameter, or a structured parameter with no matching
-codec injected, is a scalar string leaf (the same decode-or-string fallback
-config-consul uses). Whether the format field should instead drive **automatic**
-decoding (the adapter selecting a bundled codec by format, taking the dependency)
-is the sharp call left to OQ2 — it is a genuine departure from R1 and the human's
-to make.
+The rule therefore matches Consul's D3 exactly:
 
-### D5 — Capability: read-only and not sensitive at v0.1.0
+- **Single-document mode (D3a):** without a codec, the whole payload is a single
+  scalar string leaf; with a codec, a payload decoding to a mapping becomes the
+  layer's subtree, and anything the codec rejects falls back to a string.
+- **Prefix mode (D3b):** each parameter's payload is a scalar string leaf by
+  default; a codec, if injected, decodes each leaf the same way (a blob-per-
+  parameter store), falling back to a string per leaf.
+
+The `Format` field **may be surfaced** — exposed on the narrow interface's
+`Parameter.Format` (D6) for diagnostics and provenance — but it never selects a
+codec. Whether a future version uses it as a *validation* signal (warn when a
+`JSON` parameter is read with no codec) is a possible enhancement, not a v0.1.0
+behaviour.
+
+### D5 — Capability: read-only and not sensitive
+
+> **Resolved 2026-07-22.** The human confirmed the module is **read-only** — not
+> "read-only at v0.1.0 pending a write phase". Parameter Manager has no compare-
+> and-swap (D9), so the write path cannot honour the family's conflict trap;
+> read-only is a first-class outcome (umbrella D7). A future investigation into
+> GCP write support is tracked separately (D9, "Follow-on tasks").
 
 `config-gcp-parameter` implements `Backend` (read) and, per D7, a polling
-`WatchableBackend`. It does **not** implement `WritableBackend` at v0.1.0 (umbrella
-D4 — capability by the type system, never a flag; umbrella D7 — read-only is a
+`WatchableBackend`. It does **not** implement `WritableBackend` (umbrella D4 —
+capability by the type system, never a flag; umbrella D7 — read-only is a
 first-class outcome). Its `Capabilities`:
 
 | Field | Value | Why |
 |---|---|---|
 | `PreservesComments` | `false` | a parameter payload is data, not a formatted document the adapter round-trips |
-| `AtomicMultiKey` | `true` | a single parameter version is written whole and indivisibly (when write lands — D9) |
+| `AtomicMultiKey` | `false` | the module does not write, so it makes no multi-key atomicity promise |
 | `NativeWatch` | `false` | Parameter Manager has no change feed; watch is polling (D7) |
 | `Sensitive` | `false` | Parameter Manager is configuration; secrets live in Secret Manager (`config-gcp-secret`, Phase B) |
 
 `Sensitive` is `false` **only because the read path returns the raw, unrendered
 payload** (D8). A parameter payload *can* embed Secret Manager references, and
 rendering them resolves real secret values — which would make the resolved layer
-sensitive. The adapter does not render by default, so no secret ever enters a
-layer, and `Sensitive` stays honestly `false`. If rendering is ever offered
-(OQ5), that variant must declare `Sensitive: true`.
+sensitive. The adapter does not render, so no secret ever enters a layer, and
+`Sensitive` stays honestly `false`. A rendering variant (which would declare
+`Sensitive: true`) is deferred to a tracked follow-on task (D9).
 
-Read-first is the right default here, unlike Consul: Consul had clean CAS and the
-guide already modelled its write path, so shipping write was cheap and proven.
-Parameter Manager has **no compare-and-swap primitive** (D9), so its write story
-carries an unresolved conflict-semantics question — exactly the kind of thing that
-should not be rushed into v0.1.0. Reading a configuration document is the whole of
-the value for a config-*consuming* tool; write is deferred behind its own decision
-(OQ3, phase 3).
+Read-only is the right and final shape here, unlike Consul: Consul had clean CAS
+and the guide already modelled its write path, so shipping write was cheap and
+proven. Parameter Manager has **no compare-and-swap primitive** (D9), so a writable
+adapter could not satisfy `backendconformance`'s conflict subtest honestly.
+Reading a configuration document is the whole of the value for a config-*consuming*
+tool.
 
 ### D6 — The constructor injects a narrow client; auth, project, location and endpoint stay with the consumer
 
@@ -222,25 +261,28 @@ choice of **regional vs global endpoint** lives (a `ClientOption`, D8) — and h
 it in along with the resource coordinates:
 
 ```go
-// PM is the slice of Parameter Manager this adapter uses. A fake satisfying it
-// drives the whole unit suite (D11); the real client is adapted by Wrap.
+// PM is the slice of Parameter Manager this adapter uses, behind an interface it
+// owns so a fake drives the unit suite (D11) and the real client is adapted by
+// Wrap. Read-only (D5): there is no write method.
 type PM interface {
-	// Get returns the parameter's declared format and the current (latest
-	// enabled) version: its resource name and raw payload bytes. A parameter or
-	// version that does not exist returns fs.ErrNotExist.
+	// Get returns one parameter's declared format and current (latest enabled)
+	// version — its resource name and raw payload bytes. A parameter or version
+	// that does not exist returns fs.ErrNotExist. Drives single-document mode (D3a).
 	Get(ctx context.Context, parameter string) (Parameter, error)
 
-	// Create writes payload as a new immutable version of the parameter and
-	// returns the new version's resource name. versionID is the caller-chosen id
-	// for the new version. (Write path only — D9.)
-	Create(ctx context.Context, parameter, versionID string, payload []byte) (versionName string, err error)
+	// List returns every parameter whose id begins with prefix, each resolved to
+	// its current version — id, format, version name and raw payload. An empty
+	// result is not an error. Drives prefix mode (D3b); it is the fan-out whose
+	// per-parameter payload fetch is the honest cost of that mode (D3).
+	List(ctx context.Context, prefix string) ([]Parameter, error)
 }
 
-// Parameter is a resolved read: the format the parameter declares and its
-// current version.
+// Parameter is one resolved read: the parameter's id, the format it declares
+// (surfaced but not used to pick a codec — D4), and its current version.
 type Parameter struct {
-	Format      Format // Unformatted, YAML, or JSON (D4)
-	VersionName string // full version resource name — the conflict fingerprint (D9)
+	ID          string // parameter id (the last path segment), for prefix-mode nesting
+	Format      Format // Unformatted, YAML, or JSON — informational (D4)
+	VersionName string // full version resource name — the watch change fingerprint (D7)
 	Payload     []byte
 }
 
@@ -257,28 +299,49 @@ const (
 
 `Wrap(client *parametermanager.Client, project, location string) PM` adapts the
 real SDK: `Get` → `GetParameter` + `ListParameterVersions` (pick latest enabled) +
-`GetParameterVersion`; `Create` → `CreateParameterVersion`. `project` and
-`location` compose the resource path
-(`projects/{project}/locations/{location}/parameters/{parameter}`); `location` is
-`global` by default and any region the consumer's client endpoint targets
-otherwise (D8). The common path is `FromClient(client, project, location,
-parameter, opts...)` = `New(Wrap(client, project, location), parameter,
-opts...)`, so a consumer writes `configgcpparameter.FromClient(client, "my-proj",
-"global", "app-config")` and never sees the narrow interface unless testing.
+`GetParameterVersion`; `List` → `ListParameters` (filtered by id prefix) + the same
+per-parameter version resolution. `project` and `location` compose the resource
+path (`projects/{project}/locations/{location}/parameters/{parameter}`); `location`
+is `global` by default and any region the consumer's client endpoint targets
+otherwise (D8).
+
+Two constructor pairs select the data-model mode (D3), one narrow-seam and one
+convenience each:
+
+- **Single-document (default):** `New(pm, parameter, opts...)` and
+  `FromClient(client, project, location, parameter, opts...)` =
+  `New(Wrap(client, project, location), parameter, opts...)`. A consumer writes
+  `configgcpparameter.FromClient(client, "my-proj", "global", "app-config")`.
+- **Prefix mode (opt-in):** `NewPrefix(pm, prefix, opts...)` and
+  `FromClientPrefix(client, project, location, prefix, opts...)`. A consumer writes
+  `configgcpparameter.FromClientPrefix(client, "my-proj", "global", "app-")`.
+
+The narrow `PM` is only seen when testing; the `FromClient*` pair is the common
+path. Both constructors take the same variadic `Option`s (`WithValueCodec`,
+`WithPollInterval`).
 
 ### D7 — Watch is a poll, and it says so
 
 Parameter Manager has no native change feed (no blocking query, no informer). Per
 umbrella **D6**, a store with no change signal either polls in a `Watch` it owns,
 or omits `Watch` and lets the Store poll via reload. This adapter **implements
-`Watch` by polling** on the `interval` from `WithPollInterval`: each tick it
-re-resolves the current version name (a `ListParameterVersions`, cheap — no
-payload fetch) and calls `onChange` when the current version name differs from the
-one last seen. `NativeWatch: false`, and the latency is the poll interval — stated
-plainly, not disguised as push. The Store's hybrid watch coalesces and settles the
-resulting reload for free (umbrella D6). A Pub/Sub notification path is **out of
-scope**: Parameter Manager exposes no first-class change topic, and wiring one
-would move change-detection outside the Store, which owns it.
+`Watch` by polling**. Each tick it re-resolves the change fingerprint — in
+single-document mode the one parameter's current version name, in prefix mode the
+set of `(parameter id → version name)` pairs — without fetching payloads (a
+`ListParameterVersions`, or a `ListParameters`, is enough), and calls `onChange`
+when the fingerprint differs from the one last seen (a new version, an added or
+removed parameter). `NativeWatch: false`, and the latency is the poll interval —
+stated plainly, not disguised as push.
+
+The interval comes from `WithPollInterval`; its **default is 60 seconds** when
+unset. The default is deliberately conservative because, unlike a Consul blocking
+query, every tick is a **billed API call** and there is no free long-poll — 60s
+keeps a hot-reloading consumer current within a minute without generating steady
+per-second request cost, and a consumer who needs faster reaction sets a shorter
+interval explicitly. The Store's hybrid watch coalesces and settles the resulting
+reload for free (umbrella D6). A Pub/Sub notification path is **out of scope**:
+Parameter Manager exposes no first-class change topic, and wiring one would move
+change-detection outside the Store, which owns it.
 
 ### D8 — Error & consistency semantics
 
@@ -294,26 +357,35 @@ would move change-detection outside the Store, which owns it.
   version, but "which version is latest" is a list that can race a concurrent
   writer; the adapter records the resolved version name at Load and treats a
   change to it as a foreign change (D7) or a conflict (D9).
-- **Regional vs global.** The `location` segment of the resource path selects
-  global (`global`, the default), multi-regional, or a specific region. A regional
-  parameter additionally requires the consumer's client to target the matching
-  **regional endpoint** (a `ClientOption`). The adapter takes the `location`
-  string (D6) and trusts the injected client's endpoint to match it — it does not
-  configure endpoints (umbrella D3). Whether the adapter should validate that the
-  two agree, or accept the location as purely the consumer's responsibility, is
-  OQ4.
+- **Regional vs global (OQ4 resolved 2026-07-22).** The `location` segment of the
+  resource path selects global (`global`, the default), multi-regional, or a
+  specific region. A regional parameter additionally requires the consumer's
+  client to target the matching **regional endpoint** (a `ClientOption`). The
+  adapter takes the `location` string (D6) and **trusts the injected client's
+  endpoint to match it** — it does **not** validate the agreement and does **not**
+  configure endpoints (umbrella D3: the adapter re-decides no client
+  configuration). A mismatched endpoint surfaces naturally as a `NotFound` or
+  transport error from the SDK, mapped like any other read failure above; forcing
+  the adapter to police the consumer's endpoint choice would duplicate a decision
+  D3 places entirely with the consumer.
 
-### D9 — Write semantics and the conflict trap without a CAS primitive (deferred to phase 3; OQ3)
+### D9 — No write path: Parameter Manager has no compare-and-swap (resolved 2026-07-22)
 
-This is the sharpest semantic problem and the reason write is not in v0.1.0 (D5).
+> **Resolved 2026-07-22.** The human resolved write scope (OQ3): **v0.1.0 is
+> read-only, and no write path is specified here.** The investigation of GCP write
+> support is a tracked follow-on task (below), tied to the umbrella's "Phase D —
+> revisit", not a phase of this adapter.
+
+This is the sharpest semantic problem, and the reason there is no write path.
 
 Parameter Manager versions are **immutable**, and there is **no compare-and-swap,
 no `etag`, and no generation number** on either a `Parameter` or a
 `ParameterVersion` — verified against v1.0.0. The `RequestId` field on
 `CreateParameterVersion` is **idempotency for retries** (dedupe a re-sent
 request), **not** a conflict guard. So Consul's clean `ModifyIndex` CAS has no
-equivalent, and the family's version-at-Load trap (umbrella D11) has no native
-mechanism to lean on. The options, laid out for the human (OQ3), not chosen:
+equivalent, and the family's version-at-Load conflict trap (umbrella D11) has no
+native mechanism to lean on. A writable adapter would have to pick among three
+unsatisfying options — none adopted, all recorded for the follow-on:
 
 1. **Version-id-as-guard (create-if-absent).** Derive the new version's id
    deterministically from the version seen at Load (e.g. a monotonic successor).
@@ -323,18 +395,35 @@ mechanism to lean on. The options, laid out for the human (OQ3), not chosen:
    ids have format constraints.
 2. **Read-before-write check.** At `Verify`/`Commit`, re-resolve the current
    version name and refuse with `config.ErrConflict` if it differs from the one
-   recorded at Load, then create a new version. Simple, but leaves a
-   TOCTOU window between the check and the create (no atomic guard closes it).
+   recorded at Load, then create a new version. Simple, but leaves a TOCTOU window
+   between the check and the create (no atomic guard closes it).
 3. **Last-write-wins.** Always create a new version; never refuse. Honest for an
    append-only, immutable-version store, but silently loses a concurrent writer's
    change and **fails `backendconformance`'s conflict subtest** (umbrella D11),
    which requires a change landing between Load and Commit to be refused.
 
 Because option 3 cannot pass the shared conformance suite and options 1–2 each
-carry a real trade-off, **write is deferred** to a phase gated on the human
-resolving OQ3. When it lands, a write replaces the whole parameter document as one
-new version (`AtomicMultiKey: true`, D5) — the adapter does not do partial-key
-edits, because the unit is the document (D3).
+carry a real trade-off, shipping write now would either lie about consistency or
+bolt on a bespoke conflict model the family has not agreed. Read-only is the honest
+outcome (umbrella D7); the module implements no `Prepare` and is not a
+`WritableBackend` (D5).
+
+**Follow-on tasks (tracked; tied to umbrella "Phase D — revisit").** These are
+recorded here so they are not lost, but are explicitly **out of scope** for this
+spec and each needs its own decision before implementation:
+
+- **GCP write support.** Decide between the version-id-as-guard and last-write-wins
+  models above, and — crucially — settle **how `backendconformance`'s conflict
+  subtest should treat a writable backend that has no true CAS** (does the suite
+  gain a "best-effort conflict" tier, or does a non-CAS store simply not qualify as
+  writable under the family contract?). That question is bigger than this adapter;
+  it is a family-level call the umbrella should record. Until it is answered, GCP
+  write stays unbuilt.
+- **Secret Manager rendering variant.** A read variant that calls
+  `RenderParameterVersion` to resolve `__REF__(//secretmanager...)` references,
+  returning the rendered payload and declaring `Sensitive: true` (umbrella D5).
+  Deferred (see D5/D8); it is arguably closer to `config-gcp-secret`'s remit and
+  should be weighed against that adapter rather than bolted onto this one.
 
 ### D10 — Dependency footprint: the GCP client stack, the largest in the family
 
@@ -379,14 +468,18 @@ Parameter Manager emulator. This is a material finding, because it means the
 Consul model's DIND-plus-testcontainers job (config-consul D11/D12) **does not
 apply**. The three layers become:
 
-1. **A hand-written fake `PM`** — in-memory, format-aware, version-tracking —
-   drives the unit suite: reads, format-driven decode (D4), provenance, the
-   absent-parameter case, and watch (poll detecting a new version name). No cloud,
-   no account, IDE-runnable, the primary suite.
+1. **A hand-written fake `PM`** — in-memory, format-aware, version-tracking,
+   implementing both `Get` and `List` — drives the unit suite: single-document and
+   prefix-mode reads (D3), codec decode and the decode-or-string fallback (D4),
+   provenance, the absent-parameter case, and watch (poll detecting a new version
+   name or a changed parameter set). No cloud, no account, IDE-runnable, the
+   primary suite.
 2. **The shared `backendconformance` suite** (`config/backendconformance`, shipped
-   in v0.6.0), run against a `configgcpparameter` backend over the fake — for the
-   read+watch subset at v0.1.0, and (once OQ3 is resolved and write ships) the
-   conflict subtest, which is the gate on whichever conflict option D9 adopts.
+   in v0.6.0), run against a `configgcpparameter` backend over the fake — the
+   **read+watch subset** only, since the backend is not a `WritableBackend` (D5);
+   the conflict subtest does not apply. It asserts the backend participates as an
+   ordinary layer with per-key merge and provenance, tolerates an absent source,
+   and reports a foreign change to observers.
 3. **Real-service integration**, env-gated on `INT_TEST_INTEGRATION`, hitting a
    **real GCP project** with a real `*parametermanager.Client` and
    application-default credentials. Because there is no container, these tests
@@ -404,35 +497,37 @@ deprecated; Secret Manager is the secrets service (Phase B, `config-gcp-secret`,
 `Sensitive: true`). Parameter Manager is the configuration service (D2). Picking
 either would be wrong on service identity.
 
-**Model the store as a flat prefix of many parameters (Consul-shaped).** Treat
-every parameter under a location as a scalar key with a name prefix, mirroring
-`config-consul`. Rejected as the default: a Parameter Manager parameter is a
-heavyweight versioned resource built to hold a whole document, listing gives only
-metadata so each leaf costs an extra `GetParameterVersion` RPC, and it throws away
-the `Format` field that makes the single-document model clean. Kept alive as OQ7
-because a consumer with genuinely many tiny parameters might want it, but it is not
-the shape the service is designed for (D3).
+**Prefix mode *only*, or single-document *only*.** An earlier draft made
+single-document the sole model and left the prefix scan as an open question.
+Resolved (2026-07-22) by supporting **both** (D3): single-document is the default —
+it is the shape the service is designed for and costs one read — and prefix mode is
+an opt-in constructor for consumers who keep many small parameters, at the honest
+cost of one payload fetch per matching parameter. Neither alone was rejected; the
+rejected option was *forcing* a consumer into whichever single model did not fit
+their store.
 
-**Require an injected codec, ignoring the format field (pure R1).** Do exactly
-what Consul does — make the consumer name the format via `WithValueCodec`,
-ignoring `Parameter.Format`. Rejected as under-using the service: the store
-*declares* the format, so at minimum the adapter should use that declaration to
-decide *whether* to decode. How far to take it — down to auto-selecting a bundled
-codec — is OQ2, but blindly ignoring the field would be a worse adapter than the
-service allows.
+**Auto-decode using the `Format` field (adapter bundles JSON/YAML codecs).** Read
+`Parameter.Format` and select a built-in decoder, so the consumer supplies no
+codec. Tempting, because the store *declares* its format — but rejected
+(2026-07-22, OQ2): it forces the adapter to bundle format parsers, taking exactly
+the codec dependency umbrella R1 keeps out of an adapter, and it fragments the
+family's decoding seam. `config-gcp-parameter` uses the same explicit
+`WithValueCodec` injection as `config-consul` (D4); the `Format` field is surfaced
+for diagnostics but never picks a codec.
 
 **Render Secret Manager references by default.** Call `RenderParameterVersion` so
 `__REF__(//secretmanager.googleapis.com/...)` placeholders resolve to real secret
 values on read. Rejected as the default: it pulls secret material into a
 `Sensitive: false` layer, defeating the whole point of the `Sensitive` guard
-(umbrella D5). Rendering, if offered at all, is opt-in and forces `Sensitive:
-true` (OQ5).
+(umbrella D5). Rendering is not offered in v0.1.0; if ever built it is opt-in and
+forces `Sensitive: true`, and is a tracked follow-on weighed against
+`config-gcp-secret` (D9).
 
-**Ship write in v0.1.0 like Consul did.** Rejected: Consul had native CAS and a
-proven write path; Parameter Manager has no CAS primitive at all (D9), so its
-write story carries an unresolved conflict-semantics decision (OQ3) that must not
-be rushed. Read-only is a first-class outcome (umbrella D7); write follows its own
-decision in phase 3.
+**Ship write like Consul did.** Rejected: Consul had native CAS and a proven write
+path; Parameter Manager has no CAS primitive at all (D9), so a writable adapter
+would either lie about consistency or invent a bespoke conflict model the family
+has not agreed. Read-only is a first-class outcome (umbrella D7); GCP write is a
+tracked follow-on tied to the umbrella's Phase D (D9), not a phase of this adapter.
 
 **Take `*parametermanager.Client` directly in the constructor.** Simpler to call,
 but couples the adapter to the SDK type, makes the unit suite need a real or
@@ -448,136 +543,140 @@ it belongs.
 
 ## Public API
 
-The module's proposed exported surface (v0.1.0, read + poll-watch):
+The module's exported surface (v0.1.0, read + poll-watch, both data-model modes):
 
-- `func New(pm PM, parameter string, opts ...Option) config.Backend` — the
-  injection seam; `pm` is a fake in tests, a `Wrap`ped client in production.
+- `func New(pm PM, parameter string, opts ...Option) config.Backend` —
+  single-document injection seam (D3a); `pm` is a fake in tests, a `Wrap`ped client
+  in production.
+- `func NewPrefix(pm PM, prefix string, opts ...Option) config.Backend` — prefix-
+  mode injection seam (D3b), scanning every parameter under `prefix`.
 - `func FromClient(client *parametermanager.Client, project, location, parameter string, opts ...Option) config.Backend`
-  — the convenience path, `New(Wrap(client, project, location), parameter,
-  opts...)`.
+  — single-document convenience path, `New(Wrap(client, project, location),
+  parameter, opts...)`.
+- `func FromClientPrefix(client *parametermanager.Client, project, location, prefix string, opts ...Option) config.Backend`
+  — prefix-mode convenience path, `NewPrefix(Wrap(client, project, location),
+  prefix, opts...)`.
 - `func Wrap(client *parametermanager.Client, project, location string) PM` —
   adapts the real Parameter Manager SDK client to the narrow interface.
-- `func WithValueCodec(codec config.Codec) Option` — decode a structured
-  parameter's payload through `codec`, selected by the parameter's declared
-  `Format` (D4); omitted, structured payloads that have no codec fall back to a
-  scalar string.
-- `func WithPollInterval(d time.Duration) Option` — the watch poll interval (D7).
+- `func WithValueCodec(codec config.Codec) Option` — decode a parameter's payload
+  through `codec` (a value decoding to a mapping becomes a subtree; anything the
+  codec rejects stays a scalar string — D4); omitted, payloads are scalar strings.
+- `func WithPollInterval(d time.Duration) Option` — the watch poll interval (D7);
+  omitted, the default is 60s.
 - `type PM interface { … }`, `type Parameter struct { … }`, `type Format int`
   (with `Unformatted`, `YAML`, `JSON`), `type Option func(…)` — the narrow client
   seam (D6) and the option type.
 
 The returned backend satisfies `config.WatchableBackend` (poll); it does **not**
-satisfy `config.WritableBackend` at v0.1.0 (D5). The Store discovers capability by
-type assertion, so no capability flag is exported (umbrella D4). No change to the
+satisfy `config.WritableBackend` (D5, D9). The Store discovers capability by type
+assertion, so no capability flag is exported (umbrella D4). No change to the
 `config` core is required — v0.6.0 already carries everything this adapter needs.
-When write ships (phase 3, OQ3), it adds `Prepare`/`Verify`/`Commit` and the
-`Create` half of `PM`; those are additive.
+There is no planned write surface; GCP write, if ever built, is a tracked follow-on
+(D9) that would be additive.
 
 ## Testing strategy
 
-Per D11: a fake-`PM` unit suite (reads, format-driven decode, the
-`UNFORMATTED`/no-codec fallback, provenance, absent-parameter → `fs.ErrNotExist`,
-and poll-watch detecting a new version name); a `backendconformance.Run` against a
-`configgcpparameter` backend over the fake, for the read+watch subset at v0.1.0;
-real-service integration under `./test/integration/` env-gated on
-`INT_TEST_INTEGRATION`, run only where GCP credentials exist (no DIND job — D11);
-and a `depfootprint_test.go` allowlist (D10). What would falsely pass: a
-poll-watch test whose fake never advances its current-version name — the watch
-subtest must drive the fake to publish a new version and be watched to fail when it
-does not; and, once write ships, a conflict test whose fake has no
-create-if-absent semantics would pass vacuously under the last-write-wins option
-(D9.3), so the conformance conflict subtest must be run against whichever guard
-OQ3 selects and watched to fail without it.
+Per D11: a fake-`PM` unit suite (single-document and prefix-mode reads, codec
+decode with the decode-or-string fallback, provenance, absent-parameter →
+`fs.ErrNotExist`, and poll-watch detecting a new version name or a changed
+parameter set); a `backendconformance.Run` against a `configgcpparameter` backend
+over the fake for the read+watch subset (the conflict subtest does not apply — the
+backend is not writable, D5); real-service integration under `./test/integration/`
+env-gated on `INT_TEST_INTEGRATION`, run only where GCP credentials exist (no DIND
+job — D11); and a `depfootprint_test.go` allowlist (D10). What would falsely pass:
+a poll-watch test whose fake never advances its current-version fingerprint — the
+watch subtest must drive the fake to publish a new version (single-document) or add
+a parameter (prefix mode) and be watched to fail when it does not; and a codec test
+whose fixture is already a scalar would not exercise the mapping-to-subtree path, so
+the decode test must feed a real document payload and assert a nested subtree, not
+just a non-error.
 
 ## Migration & compatibility
 
 Purely additive for consumers: add the module and a
 `WithBackend(configgcpparameter.FromClient(client, project, location, parameter))`
-call, exactly as for a file adapter. No `config` core change, no breaking change.
-The module ships at v0.1.0 as **read + poll-watch**; a later minor promotes it to
-read+write once OQ3 is resolved — a read→write promotion to communicate in the
-README and landing card, the same shape the read-first file adapters took.
+call — or `FromClientPrefix(...)` for prefix mode — exactly as for a file adapter.
+No `config` core change, no breaking change. The module ships at v0.1.0 as **read +
+poll-watch**, and that is its intended shape: unlike the read-first *file* adapters,
+there is **no planned read→write promotion**, because Parameter Manager has no CAS
+to write against safely (D9). If GCP write is ever built (a tracked follow-on),
+that is a separate, additive capability decided on its own merits, not a promotion
+this module's consumers should expect.
 
-## Open questions
+## Resolved (2026-07-22)
 
-These are decision-bearing and are the human's to resolve **before** this spec
-moves to `approved`. They are deliberately not answered here (umbrella D2).
+The open questions were resolved with the human, and the decisions above amended in
+place (never renumbered, per the specs convention). No open question remains.
 
-1. **Service viability — confirm the verdict.** D2 finds Parameter Manager GA,
-   correct, and Go-supported (SDK v1.0.0). Confirm this is acceptable as the GCP
-   Phase A target, and that Secret Manager is left to Phase B. *(If, against the
-   finding, the human judges the service too new to depend on, the outcome is to
-   defer — D2 is written to make that a clean choice.)*
+1. **Service viability.** **Confirmed — proceed.** Parameter Manager is GA, is the
+   right service (not Runtime Configurator, not Secret Manager), and has a Go SDK
+   (`cloud.google.com/go/parametermanager` v1.0.0). It is the GCP Phase A target;
+   Secret Manager stays in Phase B (`config-gcp-secret`). See D2.
 
-2. **Format field vs value-codec (the sharpest design call).** The parameter
-   declares its `Format` (JSON/YAML/UNFORMATTED). Two models: **(a)** the D4
-   proposal — the format field selects *whether* to decode, but decoding still
-   goes through a consumer-injected `config.Codec`, preserving umbrella R1's
-   no-own-codec-dependency rule; or **(b)** the adapter *auto-decodes* using the
-   declared format with a **bundled** JSON/YAML decoder, taking that dependency so
-   the consumer supplies nothing. (b) is more convenient and uses the service's
-   own signal fully, but is a real departure from R1 and gives the adapter a codec
-   dependency. Which?
+2. **Format field vs value-codec.** **Explicit injected codec only** (umbrella
+   R1), exactly as `config-consul`. The `Format` field is surfaced for diagnostics
+   but is **not** used to pick a codec; the adapter takes no codec dependency of
+   its own and does not auto-decode. See D4 (amended) and the flipped rejected
+   alternative.
 
-3. **Conflict semantics without CAS (gates write).** Given immutable versions and
-   no compare-and-swap (D9): adopt **(1)** version-id-as-guard (create-if-absent
-   via `AlreadyExists`), **(2)** read-before-write check with a TOCTOU window, or
-   **(3)** last-write-wins (which cannot pass `backendconformance`)? This gates
-   whether — and how — write ships in phase 3.
+3. **Conflict semantics / write.** **v0.1.0 is read-only; no write path is
+   specified.** Parameter Manager has no compare-and-swap (immutable versions, no
+   etag/generation), so the family conflict trap cannot be honoured; read-only is
+   first-class (umbrella D7). GCP write — and the family-level question of how
+   `backendconformance` should treat a non-CAS writable backend — is a **tracked
+   follow-on** tied to the umbrella's "Phase D — revisit". See D5, D9.
 
-4. **Global vs regional, and endpoint validation.** The adapter takes `project`
-   and `location`; a regional parameter also needs the consumer's client to target
-   the matching regional endpoint (D8). Should the adapter validate that the
-   injected client's endpoint agrees with `location`, or accept `location` as
-   purely the consumer's responsibility (consistent with umbrella D3's
-   "adapter touches no endpoint config")?
+4. **Global vs regional / endpoint validation.** The adapter takes a `location`;
+   the consumer's client must target the matching endpoint. **The adapter does not
+   validate the agreement and configures no endpoint** (umbrella D3); a mismatch
+   surfaces as a `NotFound`/transport error. See D8.
 
-5. **Secret Manager references and `Sensitive` (D5).** A payload may embed
-   `__REF__(//secretmanager.googleapis.com/...)` references that
-   `RenderParameterVersion` resolves to real secret values. v0.1.0 reads the raw,
-   unrendered payload, so `Sensitive: false` is honest. Should a rendering variant
-   ever be offered? If so it must declare `Sensitive: true` (umbrella D5) — a
-   different capability profile, and arguably closer to `config-gcp-secret`'s
-   remit. Offer it, or leave rendering entirely to Secret Manager's adapter?
+5. **Secret Manager references and `Sensitive`.** **v0.1.0 returns the raw,
+   unrendered payload and never calls `RenderParameterVersion`, so `Sensitive:
+   false` is honest.** A rendering variant (which would be `Sensitive: true`) is a
+   tracked follow-on, weighed against `config-gcp-secret` rather than bolted on
+   here. See D5, D9.
 
-6. **Watch: poll interval default and cost.** D7 polls `ListParameterVersions`
-   each tick. What is the default `WithPollInterval` (Parameter Manager has no
-   free blocking query, so every tick is a billed API call), and is polling the
-   right choice versus omitting `Watch` and letting the consumer reload on their
-   own schedule?
+6. **Watch poll default and cost.** **Poll for a new latest version;
+   `NativeWatch: false`; default interval 60s, overridable by `WithPollInterval`.**
+   60s is conservative because each tick is a billed API call (no free long-poll).
+   See D7.
 
-7. **Data-model shape — single document vs multi-parameter prefix.** D3 adopts the
-   single-named-parameter document model. Should the adapter *also* offer a
-   multi-parameter, name-prefix mode (Consul-shaped) for consumers with many small
-   parameters, accepting the extra RPC-per-leaf cost — or is the single-document
-   model the only one worth shipping?
+7. **Data-model shape.** **Support both.** Single-document is the default
+   (`New`/`FromClient`); prefix mode is opt-in (`NewPrefix`/`FromClientPrefix`),
+   scanning parameters under a prefix as Consul-style leaves, at one payload fetch
+   per parameter. Both feed the same read/merge pipeline. See D3 (amended), D6.
 
 ## Implementation phases
 
-Every phase is gated on this spec reaching `status: approved`, which requires the
-open questions above resolved (umbrella D2).
+This spec is `approved` (open questions resolved above). Implementation is
+test-first, phase by phase.
 
-**Phase 0 — this spec.** Resolve the open questions with the human; in particular
-OQ1 (viability sign-off), OQ2 (format vs codec), OQ3 (conflict semantics), and
-OQ5 (secret rendering / `Sensitive`).
+**Phase 0 — this spec.** Approved 2026-07-22; open questions resolved above.
 
-**Phase 1 — the module, read path.** Scaffold `config-gcp-parameter` (README-only,
-no microsite; umbrella D2 / adapter docs model), the narrow `PM` interface, `Wrap`,
-`New`/`FromClient`, `Load` resolving the current version and decoding per the OQ2
-decision (D3, D4), `Capabilities` (D5), error mapping (D8). Fake-`PM` read tests +
-provenance. `depfootprint` allowlist (D10).
+**Phase 1 — the module, single-document read path.** Scaffold
+`config-gcp-parameter` (README-only, no microsite; umbrella D2 / adapter docs
+model), the narrow `PM` interface, `Wrap`, `New`/`FromClient`, `Load` resolving the
+current version and decoding through the injected codec (D3a, D4), `Capabilities`
+(D5), gRPC error mapping (D8). Fake-`PM` read tests + provenance. `depfootprint`
+allowlist (D10).
 
-**Phase 2 — poll-watch and conformance.** `Watch` by polling the current-version
-name (D7). Run `backendconformance` against the backend over the fake for the
-read+watch subset (D11). Then publish v0.1.0: the module `main`, the `config` docs
-page (`how-to/gcp-parameter.md`) bundled into the parent site, and the landing card
-— the rollout every adapter takes.
+**Phase 2 — prefix mode.** `NewPrefix`/`FromClientPrefix` and the `List` half of
+`PM`, scanning parameters under a prefix and nesting each as a leaf (D3b). Fake-`PM`
+prefix-mode read tests, including mixed scalar/codec leaves and the extra-RPC
+fan-out.
 
-**Phase 3 — write (conditional on OQ3).** Once the conflict decision is made,
-implement `Prepare`/`Verify`/`Commit` creating a new parameter version under the
-chosen guard (D9), the `Create` half of `PM`, and run `backendconformance`'s
-conflict subtest against it. Promote to a read+write minor release.
+**Phase 3 — poll-watch and conformance.** `Watch` by polling the change
+fingerprint (single-document version name, prefix-mode parameter set), 60s default
+(D7). Run `backendconformance` against the backend over the fake for the read+watch
+subset (D11). Then publish v0.1.0: the module `main`, the `config` docs page
+(`how-to/gcp-parameter.md`) bundled into the parent site, and the landing card — the
+rollout every adapter takes.
 
-**Real-service integration** rides alongside phases 1–3, env-gated, run only where
-GCP credentials exist (D11) — never a DIND job, because there is no emulator to
-containerise.
+**Real-service integration** rides alongside phases 1–3, env-gated on
+`INT_TEST_INTEGRATION`, run only where GCP credentials exist (D11) — never a DIND
+job, because there is no emulator to containerise.
+
+**Follow-on (out of scope, tracked — umbrella Phase D).** GCP write support and its
+non-CAS conflict question, and a Secret-Manager-rendering `Sensitive: true` read
+variant (D9). Each needs its own decision before any implementation.
