@@ -291,18 +291,40 @@ own logic should never have to know about.
 ### D9 — Authentication *and token lifetime* stay with the consumer
 
 The adapter never authenticates (umbrella D3) — no auth method, no address, no
-token handling. It uses the client it is given. For Vault this needs saying more
-firmly than for the other adapters, because Vault tokens **expire**: a
-long-running process holding a client whose token has lapsed will see reloads
-start failing, and that is not a bug in this adapter.
+token handling, no credential of any kind in its API. The consumer builds and
+authenticates a `*vaultapi.Client` and hands it over; the adapter uses the client
+it is given. This is what makes the adapter testable against a fake (D8), keeps
+every Vault auth method usable without the adapter knowing any of them, and keeps
+credentials out of a configuration library's surface area.
 
-Token acquisition and renewal are the consumer's, using the SDK's own
-`LifetimeWatcher` (or Vault Agent, or whatever their platform provides). The
-adapter's contribution is to fail *legibly* — a failed reload surfaces the
-Vault error rather than being swallowed — and to say so in the README and
-how-to. Namespaces (Vault Enterprise) are likewise the consumer's: they are set
-on the `*vaultapi.Client`, so the adapter is namespace-agnostic and takes no
-parameter for it, exactly as `config-consul` is (config-consul, Resolved 3).
+For Vault this needs saying more firmly than for the other adapters, because
+Vault tokens **expire**. A long-running process holding a client whose token has
+lapsed will see reloads — and poll-watch cycles (D10) — start failing, and that
+is not a bug in this adapter. Token acquisition and renewal are the consumer's,
+using the SDK's own `LifetimeWatcher`, Vault Agent, or whatever their platform
+provides. The adapter's contribution is to fail *legibly*: a failed reload
+surfaces the underlying Vault error rather than swallowing it, so an expired
+token is diagnosable from the error alone.
+
+**This carries a documentation obligation** on the same footing as D5's, because
+"how do I authenticate?" is the first question every consumer of this module will
+have, and the honest answer — "you already did, before you called us" — is
+unsatisfying unless it is shown. The README and `how-to/vault.md` must therefore
+carry **runnable worked examples** for the common paths, each ending in the same
+one-line handover to `FromClient`:
+
+- **token** (the dev/CI path, and what the integration suite uses);
+- **AppRole** (the common service-to-service path);
+- **Kubernetes** auth (the common in-cluster path);
+
+plus an explicit **token renewal** example using `LifetimeWatcher`, stating that
+the adapter does not do this for you and what breaks if nobody does. The point of
+three examples rather than one is to make the pattern — *any* authenticated
+client works — obvious by induction rather than by assertion.
+
+Namespaces (Vault Enterprise) are likewise the consumer's: they are set on the
+`*vaultapi.Client`, so the adapter is namespace-agnostic and takes no parameter
+for it, exactly as `config-consul` is (config-consul, Resolved 3).
 
 ### D10 — Watch is polling, at a 60-second default
 
@@ -396,6 +418,99 @@ Ryuk-disable are wired by the component. This is the path `config-consul` proved
 end-to-end (its MR !2 pipeline ran the DIND job green), so it is adopted rather
 than re-derived.
 
+### D15 — Documentation is a deliverable of each phase, not a follow-on pass
+
+Every phase in this spec ships its documentation **with** its code, and a phase
+is not done until both are. This is a deliberate departure from how the last two
+families were run, and the reason for the departure matters.
+
+The param-store trio and the six filesystem adapters were built by **parallel
+agents**, so config-site docs were held back into a single centralised pass —
+three agents editing `explanation/adapters.md`, the homepage and the shared
+framing at once would have conflicted, and docs written ahead of a shipped API
+drift from it (the `configjson.Codec{}` episode, where four merged pages
+documented a symbol that was not exported, is the standing example). That
+sequencing decision was about **write contention between agents**, not about docs
+being second-class.
+
+`config-vault` is built **solo**, so the contention does not exist and the
+deferral buys nothing. Deferring instead costs something: the auth examples (D9)
+and the collision worked example (D5) are the two things most likely to be
+written thinly if they are written last, and they are precisely the two a
+consumer meets first. Both are load-bearing enough to be decisions in this spec.
+
+The documentation deliverables, in full:
+
+| Where | What | Phase |
+|---|---|---|
+| module `README.md` | what it is, footprint (D12), auth examples (D9), the collision section (D5), the read-only/`Sensitive` consequence | 1–2 |
+| `how-to/vault.md` | the task-shaped guide: authenticate, single-secret, prefix mode, watch cadence, the collision worked example | 3 |
+| `explanation/dynamic-backends.md` | extend the shared family page — why ambiguous merges are refused; why a secrets layer refuses writes beneath it | 3 |
+| `explanation/adapters.md` + `docs/index.md` | ecosystem matrix row and homepage pill | 3 |
+| `landing` card | the subcard under the config card | 3 |
+
+Reference documentation stays on **pkg.go.dev** — the family convention, no
+hand-maintained API dump (as settled for `config-consul`). Whether Vault also
+earns a Tutorial is deferred to the docs work itself: Consul got one because it
+was the family's first backend and the tutorial taught the *whole model*; Vault's
+distinct content is auth and the collision rule, which are how-to shaped. If the
+auth examples prove to want a guided run, it gets one.
+
+### D16 — Implementation is test-first, and BDD is assessed rather than assumed
+
+**Test-first is binding, not aspirational.** Each contract in this spec becomes a
+failing test before the code that satisfies it, and — the part that actually
+catches defects — **every new assertion is watched to fail** before it is made to
+pass. This is the practice that found the real bugs in this family: the
+`backendconformance` seed-mutation bug that had silently turned a watch assertion
+into a no-op, and the `Verify`-against-`Load`-fingerprint trap the whole store
+design turns on. A green test that has never been seen red proves nothing.
+
+The three probed surprises (D4, D5, D6) are the specific places where a test can
+pass while the adapter is wrong, so each gets an assertion written against the
+**real** shape, listed in the Testing strategy below.
+
+**BDD suitability assessment** — required by the project's BDD guidance, which
+asks every spec to decide this up front rather than leave it to the implementer:
+
+*In the adapter: no Gherkin.* `config-vault` is pure library logic behind a
+narrow injected interface — no CLI, no multi-step user workflow, no service
+lifecycle. Its contracts are matrix-shaped (value types, path shapes, absent and
+deleted secrets) which table-driven unit tests express directly and a scenario
+would express with more wiring and less precision. Crucially, its
+*wired-together* behaviour is already covered by an executable contract:
+`backendconformance.Run`, which is the family's conformance suite and does the
+job a feature file would, in a form every adapter shares. No adapter in this
+family has a `features/` directory, and this spec does not add the first.
+
+*In the core: one scenario, and it closes a real gap.* Verified 2026-07-22, the
+core's `features/store/` covers write routing — "a write targets the layer that
+already defines the key" — but **no scenario anywhere covers the sensitive-leak
+refusal**. That behaviour is only in `sensitive_test.go`. It is the most
+security-critical routing rule in the design and the entire premise of Phase B,
+and it is exactly the shape BDD is for: user-facing, Given/When/Then, spanning
+layers. So it gets a scenario in the core's existing suite, where the behaviour
+and the step definitions already live:
+
+```gherkin
+@store @writes @sensitive
+Scenario: A secret is never written into the plain layer beneath it
+  Given a config file "/app.yaml" containing:
+    """
+    db:
+      password: from-file
+    """
+  And a sensitive read-only backend providing "db.password"
+  And a store reading both
+  When I set "db.password" to "rotated"
+  Then the write is refused as a sensitive leak
+  And "/app.yaml" still contains "from-file"
+```
+
+This is a **`config` core change, so it is a separate MR** from the adapter and
+is not gated on it — the gap exists today, independent of Vault. It is recorded
+here because this spec is what surfaced it.
+
 ## Rejected alternatives
 
 **Use `vault-client-go`.** The newer, generated official client. Rejected on
@@ -459,10 +574,13 @@ core change is required — v0.7.0 already carries everything this adapter needs
 
 ## Testing strategy
 
-Per D13: a fake-`KV` unit suite; `backendconformance.Run` over the fake as the
-gate (the sensitive read-only branch, umbrella R2); a testcontainers suite
-against real Vault under `./test/integration/`, gated on `INT_TEST_INTEGRATION`
-and run on the DIND job (D14); and a `depfootprint_test.go` allowlist (D12).
+Per D13, written test-first per D16: a fake-`KV` unit suite;
+`backendconformance.Run` over the fake as the gate (the sensitive read-only
+branch, umbrella R2); a testcontainers suite against real Vault under
+`./test/integration/`, gated on `INT_TEST_INTEGRATION` and run on the DIND job
+(D14); and a `depfootprint_test.go` allowlist (D12). No Gherkin in the adapter,
+and one new scenario in the core's existing suite — the assessment and its
+reasoning are D16.
 
 What would falsely pass, and is therefore watched to fail explicitly:
 
@@ -510,10 +628,31 @@ adapters D18) and its own dated revision here (D11).
    example in the module README *and* in the config site's Diátaxis docs
    (`how-to/vault.md` plus the shared dynamic-backends explanation), so a consumer
    meets it before a refused Load does.
+4. **Authentication.** **Injected client, no auth in the adapter** (D9, umbrella
+   D3) — confirmed at review as the deliberate default, not an omission. Extended,
+   at review, with the same documentation obligation as the collision rule: the
+   README and how-to carry runnable **token, AppRole and Kubernetes** examples
+   plus a `LifetimeWatcher` **token-renewal** example, because token expiry
+   degrades a long-running consumer in a way that is not the adapter's bug but
+   will be read as one.
+5. **Documentation status.** **First-class: each phase ships its own docs** (D15).
+   The param-store and filesystem families deferred site docs to a centralised
+   pass to stop parallel agents colliding on shared files; `config-vault` is built
+   solo, so that reason does not apply and the deferral would only risk the auth
+   and collision examples being written thinly and last.
+6. **Test approach.** **Test-first, with every assertion watched to fail** (D16).
+   BDD assessed per the project's guidance rather than assumed: **no Gherkin in
+   the adapter** (pure library logic; `backendconformance` already is the
+   executable wired-together contract), but **one new scenario in the `config`
+   core** covering the sensitive-leak refusal, which is verifiably uncovered by
+   any existing scenario and is Phase B's whole security premise. That is a
+   separate core MR, not gated on this adapter.
 
 All open questions resolved.
 
 ## Implementation phases
+
+Each phase ships code **and** its documentation (D15), test-first (D16).
 
 **Phase 0 — this spec.** Approve it, resolving the questions above.
 
@@ -522,15 +661,20 @@ All open questions resolved.
 `New`/`FromClient`, `Load` for one secret, `json.Number` normalisation (D4),
 deleted-secret handling (D6), `Capabilities` with static `Sensitive: true` (D7),
 provenance (D11). Fake-`KV` tests + the `depfootprint` allowlist (D12).
+**Docs:** README with the footprint and the **auth examples** (D9).
 
 **Phase 2 — prefix mode and watch.** `NewPrefix`/`FromClientPrefix`, the
 recursive walk with prefix stripping and field/child merging, the **collision
-refusal** (D5) with its README section, and the polled `Watch` (D10). Run
-`backendconformance` against the backend over the fake — the gate that proves the
-`ErrSensitiveLeak` contract (D13).
+refusal** (D5), and the polled `Watch` (D10). Run `backendconformance` against
+the backend over the fake — the gate that proves the `ErrSensitiveLeak` contract
+(D13). **Docs:** the README's collision section, by worked example (D5).
 
-**Phase 3 — real-Vault integration and release.** testcontainers suite (D13),
-env-gated, on the DIND CI job (D14). Then publish v0.1.0: the module `main`, the
-`config` docs page (`how-to/vault.md`, carrying the collision worked example per
-D5) bundled into the parent site, and the landing card — the rollout every
-adapter takes.
+**Phase 3 — real-Vault integration, docs and release.** testcontainers suite
+(D13), env-gated, on the DIND CI job (D14). **Docs:** `how-to/vault.md`, the
+`explanation/dynamic-backends.md` extension, the `explanation/adapters.md` matrix
+row, the homepage pill and the landing card (D15). Then publish v0.1.0 — the
+rollout every adapter takes.
+
+**Separate, ungated — the core BDD gap.** The sensitive-leak scenario (D16) lands
+in the `config` core on its own MR. It is not part of the adapter's phases and
+does not block them; it is recorded here because this spec is what surfaced it.
