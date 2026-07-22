@@ -209,6 +209,7 @@ not need; it cannot infer one it was never given.
 
 | Spec | Status |
 |---|---|
+| [Filesystem adapters](2026-07-22-filesystem-adapters.md) | draft |
 | [config-aws-ssm adapter](2026-07-22-config-aws-ssm.md) | approved |
 | [config-azure-appconfig adapter](2026-07-22-config-azure-appconfig.md) | approved |
 | [config-gcp-parameter adapter](2026-07-22-config-gcp-parameter.md) | approved |
