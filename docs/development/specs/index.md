@@ -209,6 +209,12 @@ not need; it cannot infer one it was never given.
 
 | Spec | Status |
 |---|---|
+| [config-iofs adapter](2026-07-22-config-iofs.md) | draft |
+| [config-billy adapter](2026-07-22-config-billy.md) | draft |
+| [config-aws-s3 adapter](2026-07-22-config-aws-s3.md) | draft |
+| [config-gcp-gcs adapter](2026-07-22-config-gcp-gcs.md) | draft |
+| [config-azure-blob adapter](2026-07-22-config-azure-blob.md) | draft |
+| [config-sftp adapter](2026-07-22-config-sftp.md) | draft |
 | [Filesystem adapters](2026-07-22-filesystem-adapters.md) | approved |
 | [config-aws-ssm adapter](2026-07-22-config-aws-ssm.md) | approved |
 | [config-azure-appconfig adapter](2026-07-22-config-azure-appconfig.md) | approved |
