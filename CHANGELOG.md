@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.9.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.9.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.8.0...v0.9.0)
+
+### Features
+
+- add the PollIntervalHinter optional interface ([493c56a](https://gitlab.com/phpboyscout/go/config/-/commit/493c56a70032d794136ce053ed70278e5b9c9a13))
+
 ## [v0.8.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.8.0)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.7.0...v0.8.0)
