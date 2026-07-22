@@ -2,7 +2,8 @@
 title: Filesystem adapters — wrapping other filesystems as config.FS sibling modules
 date: 2026-07-22
 author: matt.cockayne
-status: draft
+status: approved
+approved: 2026-07-22
 ---
 
 # Filesystem adapters
@@ -60,7 +61,8 @@ decision, for the same reason, as the format and backend adapters. It is sharpes
 stores, whose SDKs are large: a consumer reading config from S3 must not acquire the GCP or Azure
 SDK. Naming follows the backend family (dynamic backend adapters D1): a cloud service carries its
 cloud — `config-aws-s3`, `config-gcp-gcs`, `config-azure-blob` — and a vendor-neutral filesystem
-stays bare — `config-iofs`, `config-billy`, `config-sftp`, `config-http`.
+stays bare — `config-iofs`, `config-billy`, `config-sftp`. (A read-only HTTP-URL adapter and a
+git-ref adapter were considered and dropped as too niche for the cost; see Resolved.)
 
 Two things are **not** adapters and must not become modules: the operating-system filesystem is
 already `config.OS()` in the core, and an `embed.FS` is an `io/fs.FS`, so it is served by
@@ -90,21 +92,29 @@ calls. A fake or in-memory underlying filesystem then drives the unit suite with
 ### D4 — Capability is what the underlying filesystem genuinely supports
 
 A read-only filesystem yields a read-only adapter: `ReadFile` and `Stat` work, and the write
-methods (`WriteFile`, `Rename`, `Remove`, `MkdirAll`) return a clear, sentinel error rather than
-pretending. `io/fs` is read-only *by design* (it has no write, rename or remove), so `config-iofs`
-and `config-http` are read-only; `config-billy`, the cloud stores and `config-sftp` are read+write.
-A read-only filesystem is a first-class citizen: a write routed at it fails loudly at the point of
-the write, exactly as it would for a read-only file on disk.
+methods (`WriteFile`, `Rename`, `Remove`, `MkdirAll`) return **`config.ErrReadOnlyFS`** — a shared
+sentinel added to the core for this family, so a consumer can `errors.Is` it regardless of which
+read-only filesystem produced it, rather than each adapter returning a bare `fs.ErrPermission` a
+real permission error is indistinguishable from. `io/fs` is read-only *by design* (it has no write,
+rename or remove), so `config-iofs` is read-only; `config-billy`, the cloud stores and
+`config-sftp` are read+write. A read-only filesystem is a first-class citizen: a write routed at it
+fails loudly at the point of the write, exactly as it would for a read-only file on disk.
 
-### D5 — Hot-reload needs a real path; filesystems without one are read-at-load
+### D5 — Hot-reload is native where there is a real path, and polled where there is not
 
-The fsnotify watcher works only on real OS paths, reported through `RealPather`. An OS-backed
-filesystem (a billy `osfs`, an SFTP mount that is really local) can report real paths and be
-watched; an `embed.FS`, an object store and an HTTP URL cannot, so they are **read at load and not
-natively watched**. This is honest, not a gap: compiled-in defaults never change, and a config
-object in a bucket changes rarely and out of band. A **polling reload** — re-read on an interval
-and let the Store coalesce and stay quiet if nothing resolved differently — is a possible future
-option for the remote adapters, decided per adapter, not a requirement of this umbrella.
+The watcher uses fsnotify for a filesystem that reports real OS paths (`RealPather`), and — this
+**already ships in the core** — falls back to a `pollWatcher` for one that does not. So a
+filesystem without real paths (an `embed.FS`, an object store, SFTP) is not un-watchable: when the
+consumer calls `Watch`, the Store polls it, re-reading and staying quiet if nothing resolved
+differently, with the existing `WithPollInterval` setting the cadence (`DefaultPollInterval`, 2s).
+No new mechanism is needed — the poll watcher and `WithPollInterval` are already there, so **the
+remote adapters get opt-in polled reload for free**.
+
+The one thing the adapters owe here is a *sensible* interval, not a mechanism: for a cloud store a
+poll is a billed API call and the 2-second default is far too eager, so each cloud adapter's spec
+recommends a much longer default and documents the cost. (An `embed.FS` never changes, so watching
+it is pointless but harmless.) The shared convention is therefore: rely on the core's poll watcher,
+tuned per adapter — not a new per-adapter watch API.
 
 ### D6 — Object stores are not POSIX: the rename is a copy, and that is fine
 
@@ -179,9 +189,12 @@ configs3.Wrap(s3Client, "my-bucket")         // *s3.Client + bucket → config.F
 configsftp.Wrap(sftpClient)                  // *sftp.Client → config.FS
 ```
 
-The result is passed to `WithFiles`/`NewFileBackend` exactly as `config.OS()` is. No change to the
-`config` core is required — `config.FS`, `RealPather` and `LinkReader` already exist and are
-sufficient, proven by `config-afero` implementing them against the public API.
+The result is passed to `WithFiles`/`NewFileBackend` exactly as `config.OS()` is. The core needs
+**one** small addition — the exported sentinel `config.ErrReadOnlyFS` (D4) that the read-only
+adapters return from their write methods. Everything else the adapters need — `config.FS`,
+`RealPather`, `LinkReader`, and the poll watcher that reloads a non-real-path filesystem (D5) —
+already exists and is sufficient, proven by `config-afero` implementing the interfaces against the
+public API.
 
 ## Testing strategy
 
@@ -196,31 +209,38 @@ does, which the module's own suite already asserts against any `config.FS`.
 Additive for consumers: a consumer adds a module and passes its `Wrap` to `WithFiles`, exactly as
 for `config-afero`. No core change; nothing breaks.
 
-## Open questions
+## Resolved (2026-07-22)
 
-To resolve with the human before this moves to `approved`:
-
-1. **The adapter set and order.** Proposed: `config-iofs` and `config-billy` first (trivial,
-   zero/light dependency, POSIX-shaped), then the cloud trio (`config-aws-s3`, `config-gcp-gcs`,
-   `config-azure-blob`), then `config-sftp`. Is `config-http` (read-only URL fetch) in or out, and
-   is `config-git` (read a file at a ref) wanted or deferred?
-2. **Polling reload for the remote adapters (D5).** Ship read-at-load only, or offer an opt-in poll
-   for the cloud/SFTP adapters? Per-adapter, or a shared convention set here?
-3. **Read-only write errors (D4).** A shared sentinel (e.g. a `config.ErrReadOnlyFS`) the read-only
-   adapters return, or each returning `fs.ErrPermission`? A shared sentinel a consumer can branch on
-   is the cleaner story if worth a small core addition.
+1. **The adapter set.** Six adapters: `config-iofs`, `config-billy`, `config-aws-s3`,
+   `config-gcp-gcs`, `config-azure-blob`, `config-sftp`. A read-only `config-http` (URL fetch) and a
+   `config-git` (file at a ref) were considered and **dropped** — HTTP overlaps with simply fetching
+   the file yourself, and git-at-a-ref is genuinely niche; neither earns its surface yet. Either can
+   be added later by a dated revision if a consumer needs it.
+2. **Polling reload.** No new mechanism — the core **already** polls a filesystem without real
+   paths (D5): `Watch` builds a `pollWatcher` for it, tuned by the existing `WithPollInterval`. So
+   the remote adapters get opt-in polled reload for free; the shared convention is to rely on that
+   and have each cloud adapter recommend a sensible (long) default interval, because a poll is a
+   billed API call. This was verified against `watch.go` before deciding.
+3. **Read-only write errors.** A shared **`config.ErrReadOnlyFS`** sentinel is added to the core
+   (D4), returned by every read-only adapter's write methods, so a consumer can `errors.Is` it
+   rather than guess from a bare `fs.ErrPermission`. It is the one small core addition this family
+   needs.
 
 ## Implementation phases
 
 **Phase 0 — this umbrella spec.**
 
-**Phase 1 — the POSIX-shaped adapters.** `config-iofs` (read-only, zero-dependency) and
-`config-billy` (read+write), each its own approved spec then module. They validate the family
-against the simplest cases and add no cloud surface.
+**Phase 1 — the core precursor.** Add and release the exported `config.ErrReadOnlyFS` sentinel (D4)
+that the read-only adapters depend on. Small and additive; everything else the family needs already
+ships (the poll watcher, `RealPather`, `LinkReader`).
 
-**Phase 2 — the cloud object stores.** `config-aws-s3`, `config-gcp-gcs`, `config-azure-blob` — the
-symmetric trio, each D2-gated, each with an emulator integration suite (D8). The object-store
-atomicity model (D6) is proven here.
+**Phase 2 — the POSIX-shaped adapters.** `config-iofs` (read-only, zero-dependency, over any
+`io/fs.FS` including `embed.FS`) and `config-billy` (read+write), each its own approved spec then
+module. They validate the family against the simplest cases and add no cloud surface.
 
-**Phase 3 — remote and revisit.** `config-sftp`, and `config-http`/`config-git` if adopted (OQ1).
-Anything the earlier adapters showed this umbrella got wrong is corrected here by dated revision.
+**Phase 3 — the cloud object stores.** `config-aws-s3`, `config-gcp-gcs`, `config-azure-blob` — the
+symmetric trio, each D2-gated, each with an emulator integration suite (LocalStack, fake-gcs-server,
+Azurite; D8). The object-store atomicity model (D6) is proven here.
+
+**Phase 4 — remote and revisit.** `config-sftp`. Anything the earlier adapters showed this umbrella
+got wrong is corrected here by dated revision, never silently.
