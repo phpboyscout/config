@@ -4,6 +4,7 @@ date: 2026-07-22
 author: matt.cockayne
 status: approved
 approved: 2026-07-22
+revised: 2026-07-22
 ---
 
 # config-iofs
@@ -62,7 +63,8 @@ overlay from a broken installation.
 
 **Names are `io/fs` names, not OS paths.** `io/fs` uses unrooted,
 forward-slash-separated names with no leading slash (`fs.ValidPath` rejects a
-leading `/`, `..`, and backslashes; verified). A consumer wrapping an `embed.FS`
+leading `/`, a `.` or `..` segment, an empty name and a trailing slash — but not
+a backslash, which is an ordinary byte in an `io/fs` path element; see R1). A consumer wrapping an `embed.FS`
 passes the embedded name — `"defaults/config.yaml"`, not `"/etc/app.yaml"` —
 exactly as they would to `embed.FS.ReadFile` directly. The adapter passes the
 name through unchanged; it does not rewrite, root, or clean it. Per Resolved
@@ -200,7 +202,7 @@ facts.
 
 1. **Invalid-name handling — validate and surface the mistake** (sharpens D2).
    `Wrap`'s `ReadFile` and `Stat` call `fs.ValidPath(name)` **first** and, for an
-   invalid name — a leading slash, a `..` segment, a backslash — return a distinct
+   invalid name — a leading slash, a `..` segment, a trailing slash — return a distinct
    error that wraps `fs.ErrInvalid`, deliberately **not** one satisfying
    `fs.ErrNotExist`. Rationale: the Store treats `fs.ErrNotExist` as a *normal*
    missing optional source, so without this check a fat-fingered absolute path
@@ -244,3 +246,18 @@ umbrella D2 / adapter docs model), `Wrap` returning the single read-only type
 and the `depfootprint` allowlist asserting the empty footprint (D5). Then publish
 v0.1.0: the module `main`, the `config` docs page bundled into the parent site,
 and the landing card — the same rollout every adapter takes.
+
+## Revisions
+
+### R1 (2026-07-22) — `fs.ValidPath` does not reject a backslash
+
+**Corrects D2 and Resolved item 1.** Both stated, in a parenthetical, that
+`fs.ValidPath` rejects a backslash "verified". Implementing the invalid-name
+check falsified that: on the `io/fs` abstraction a backslash is an ordinary byte
+in a path element, so a name containing one is **valid** and reads as
+valid-but-absent, not rejected. The decision is unchanged — invalid
+names (a leading `/`, a `.` or `..` segment, an empty name, a trailing slash) are
+still rejected early with an `fs.ErrInvalid`-wrapping error — only the incorrect
+backslash claim is removed. A backslash is correctly treated as a valid `io/fs`
+name that simply does not exist. Caught during implementation; the shipped
+`config-iofs` behaves as this revision describes.
