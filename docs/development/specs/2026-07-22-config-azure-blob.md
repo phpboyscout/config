@@ -35,7 +35,7 @@ atomicity model is proven for the first time.
 
 A tool whose configuration lives in an Azure Blob container cannot point this
 module at it today. The core reads and writes through its six-method
-[`config.FS`](../reference), and its shipped implementations — `config.OS()`,
+[`config.FS`](../../explanation/backends.md), and its shipped implementations — `config.OS()`,
 `config.Dir`, and the sibling `config-afero` — all assume a POSIX-shaped
 filesystem with an atomic rename. Azure Blob Storage is an **object store**
 reached over HTTPS with an Azure credential: it has no directories (only key

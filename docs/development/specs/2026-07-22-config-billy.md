@@ -15,7 +15,7 @@ The [filesystem adapters umbrella](2026-07-22-filesystem-adapters.md) establishe
 deliberately specifies no single adapter. This is that per-adapter spec for **`config-billy`**, a
 Phase 2 POSIX-shaped adapter (umbrella Implementation phases) that wraps a
 [`go-billy`](https://github.com/go-git/go-billy) `billy.Filesystem` as a read+write
-[`config.FS`](../../reference).
+[`config.FS`](../../explanation/backends.md).
 
 `go-billy` is the storage-agnostic filesystem abstraction underneath `go-git` and a large family of
 Git tooling; a tool built on it already holds a `billy.Filesystem` — a real on-disk tree

@@ -12,7 +12,7 @@ revised: 2026-07-22
 ## Problem
 
 The module reads and writes configuration through its own small
-[`config.FS`](../../reference) interface. Two implementations exist: the built-in `config.OS()`
+[`config.FS`](../../explanation/backends.md) interface. Two implementations exist: the built-in `config.OS()`
 (the real operating-system filesystem) and `config.Dir` (one rooted at a directory), plus the
 sibling [`config-afero`](https://gitlab.com/phpboyscout/go/config-afero), which bridges an
 `afero.Fs` a consumer already holds. But a large and growing share of configuration lives on a
