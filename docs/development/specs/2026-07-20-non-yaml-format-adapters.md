@@ -109,12 +109,27 @@ the `config-consul` docs referenced a `configjson.Codec{}` that did not exist.**
 
 The fix is small and additive: a format adapter **exports its codec as a public `Codec`**. It was
 already a `config.Codec` (and, where it edits, `config.EditingCodec`); exporting only makes the
-existing type public, so `New` is unchanged and nothing breaks. `config-json` ships it first, at
-the point of need (a minor version); the other read-capable adapters export theirs as a consumer
-wants them, rather than all at once for symmetry no one is using yet.
+existing type public, so `New` is unchanged and nothing breaks.
 
-This is the same "no speculative surface" discipline as R3 — the export lands when there is a
-consumer for it (the Consul value codec), not before.
+**This is exported across the whole family, not one at a time.** The first instinct was to export
+`config-json` alone, at the point of need, on the no-speculative-surface discipline (R3). But the
+codec export is not new surface — it exposes an *existing, tested* type — and the format adapters
+are a structurally identical family, so `configjson.Codec{}` existing while `configtoml.Codec{}`
+does not is an asymmetry a consumer trips on. Consistency across the family is the stronger value
+here, and the cost is a one-line rename per module. So **every read-capable format adapter exports
+its codec as `Codec`**: `config-json`, `config-toml`, `config-xml`, `config-hcl`, `config-dotenv`,
+`config-ini`, `config-properties`. The document formats (JSON, TOML, XML, HCL) are the realistic
+value-decoder targets; the flat ones are exported for uniformity.
+
+**The core exports its YAML codec too, as [`YAMLCodec`](../../).** YAML is the most likely format
+for a document-valued key, and it lived only in the core, unexported — so the most common blob case
+had no decoder at all. It is exported as `config.YAMLCodec` rather than `Codec` because the plain
+name is the [`Codec`](../../) interface here. This is a core public-API addition, additive and
+non-breaking (`NewFileBackend`/`WithFiles` are unchanged), recorded here because the codec seam is
+this spec's.
+
+The distinction from R3 is real: R3 withheld *new, trivial* helpers that did not do the job; this
+exposes *existing, load-bearing* types unchanged, for a consumer that now exists (the value codec).
 
 ## Problem
 
