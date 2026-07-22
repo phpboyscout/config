@@ -4,6 +4,7 @@ date: 2026-07-21
 author: matt.cockayne
 status: approved
 approved: 2026-07-21
+revised: 2026-07-22
 issue: phpboyscout/go/config#4
 ---
 
@@ -309,3 +310,22 @@ the flat file adapters, non-YAML R3), keeps the format choice with the consumer 
 takes no codec dependency of its own, and applies uniformly to etcd, the parameter stores and any
 other byte-valued backend. Each adapter's own spec states whether it offers the option and which
 formats it is tested against; config-consul D3 is the worked example.
+
+### R2 (2026-07-22) — `backendconformance` expects a sensitive read-only backend to refuse the routed-beneath write (refines D11 against D5)
+
+D11 built a shared conformance suite; its read-only check asserts that a write to a key the
+backend defines routes down to the writable layer beneath and is reported shadowed. Building the
+first sensitive-capable adapter, [config-aws-ssm](2026-07-22-config-aws-ssm.md), surfaced that this
+is **wrong for a sensitive backend**: the D5 leak guard *correctly* refuses that write with
+`ErrSensitiveLeak`, because routing a key a sensitive layer owns into a plain file is exactly the
+leak D5 exists to stop. So "routes beneath" and "sensitive" are mutually exclusive by design.
+
+This is not a niche case — **every Phase-B secrets manager is a *statically* sensitive read-only
+backend** (Vault, AWS Secrets Manager, Azure Key Vault, GCP Secret Manager), so all of them would
+fail the suite as first written. The suite is therefore refined: for a backend whose
+`Capabilities().Sensitive` is true, the read-only check asserts the routed-beneath write is
+**refused with `ErrSensitiveLeak`**, not routed; for a non-sensitive read-only backend it asserts
+routing-beneath as before. This closes the D5/D11 interaction once, in the shared suite, so no
+Phase-B secrets backend has to rediscover it. (config-aws-ssm dodged it another way — dynamic
+sensitivity, its R1 — but the statically-sensitive backends cannot, which is why this belongs in
+the suite.)

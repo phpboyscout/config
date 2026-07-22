@@ -74,22 +74,48 @@ func TestBackendConformance_ReadOnly(t *testing.T) {
 	})
 }
 
+func TestBackendConformance_SensitiveReadOnly(t *testing.T) {
+	t.Parallel()
+
+	backendconformance.Run(t, backendconformance.Suite{
+		NewBackend: func(_ *testing.T, seed map[string]any) (config.Backend, backendconformance.Control) {
+			remote := newFakeRemote(seed)
+
+			return newSensitiveReadOnlyBackend(remote, "vault/"),
+				&suiteControl{remote: remote, reopen: func(r *fakeRemote) config.Backend {
+					return newSensitiveReadOnlyBackend(r, "vault/")
+				}}
+		},
+		Seed:    conformanceSeed(),
+		Defines: conformanceDefines(),
+	})
+}
+
 // readOnlyBackend is a backend that reads but neither writes nor watches — it
 // implements Backend and nothing more, so the suite discovers it is read-only
 // from the type and runs read_only_skipped_by_routing.
 type readOnlyBackend struct {
-	store  remoteStore
-	prefix string
+	store     remoteStore
+	prefix    string
+	sensitive bool
 }
 
 func newReadOnlyBackend(store remoteStore, prefix string) *readOnlyBackend {
 	return &readOnlyBackend{store: store, prefix: prefix}
 }
 
+// newSensitiveReadOnlyBackend is a read-only backend that also declares itself
+// sensitive — the shape every read-only secrets backend (Vault, a cloud secrets
+// manager) has. The suite must confirm a write to a key it owns is refused, not
+// routed into the plain layer beneath.
+func newSensitiveReadOnlyBackend(store remoteStore, prefix string) *readOnlyBackend {
+	return &readOnlyBackend{store: store, prefix: prefix, sensitive: true}
+}
+
 func (b *readOnlyBackend) ID() string { return b.prefix }
 
 func (b *readOnlyBackend) Capabilities() config.Capabilities {
-	return config.Capabilities{}
+	return config.Capabilities{Sensitive: b.sensitive}
 }
 
 func (b *readOnlyBackend) Load(ctx context.Context, _ []config.Layer) ([]config.Layer, error) {

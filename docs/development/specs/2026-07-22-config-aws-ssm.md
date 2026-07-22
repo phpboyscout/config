@@ -4,6 +4,7 @@ date: 2026-07-22
 author: matt.cockayne
 status: approved
 approved: 2026-07-22
+revised: 2026-07-22
 ---
 
 # config-aws-ssm
@@ -29,6 +30,30 @@ shape, the same prefix→nested-tree data model, the same value-codec seam
 (umbrella R1), the same three-layer testing story. Read that spec alongside this
 one; this document calls out only where SSM's semantics make the two diverge,
 and those divergences are the substance.
+
+## Revisions
+
+### R1 — 2026-07-22: `Sensitive` is dynamic, not a flat `true` (amends D4)
+
+**D4 declared `Sensitive: true` flatly. Building the adapter showed a flat `true`
+is incompatible with the `backendconformance` read contract this spec also
+mandates, so the capability is reported dynamically instead.**
+
+The shared suite's `read_only_skipped_by_routing` check writes a key the backend
+defines and asserts it routes down to the writable file beneath. For a
+statically-sensitive layer the core's leak guard (umbrella D5) *correctly*
+refuses that write with `ErrSensitiveLeak` — so "always sensitive" and "green
+read contract" cannot both hold. The adapter reports `Sensitive: true` **exactly
+when the loaded layer holds a decrypted `SecureString`**, and `false` when the
+prefix is all plain parameters. This is a strict refinement of D4: wherever a
+secret exists — the only case D4 was protecting — the layer is sensitive and the
+guard engages, identical to D4; it only relaxes the unstated all-plain case,
+which carries no secret to leak, so ordinary configuration routes normally.
+
+The general tension this surfaced — a *statically* sensitive read-only backend,
+which every Phase-B secrets manager is — is resolved family-wide in the umbrella
+(its R2) and the `backendconformance` suite, which now expects the routed-beneath
+write to be refused for a sensitive read-only backend rather than routed.
 
 ## Problem
 

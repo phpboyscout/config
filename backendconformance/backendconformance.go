@@ -101,8 +101,10 @@ type Control interface {
 // backend. A [config.WritableBackend] additionally has its write round-trip and
 // — the trap the suite exists for — its refusal of a change that landed between
 // load and commit with [config.ErrConflict] checked; a read-only backend instead
-// has its layer confirmed skipped by write routing. A [config.WatchableBackend]
-// has a foreign change confirmed to reach observers.
+// has its layer confirmed skipped by write routing — or, when it is sensitive
+// (a secrets backend), the routed-beneath write confirmed refused with
+// [config.ErrSensitiveLeak]. A [config.WatchableBackend] has a foreign change
+// confirmed to reach observers.
 func Run(t *testing.T, s Suite) {
 	t.Helper()
 
@@ -236,6 +238,21 @@ func (s Suite) readOnlySkippedByRouting(t *testing.T) {
 	)
 
 	plan, err := store.Plan(config.Set(key, "new"))
+
+	// A sensitive read-only backend is the stricter case, and the one every
+	// read-only secrets backend meets. Its layer defines the key, so routing a
+	// write to the plain file beneath would materialise secret-category data
+	// there — and the core's leak guard refuses exactly that. So the write must be
+	// refused with ErrSensitiveLeak, not silently routed down.
+	if backend.Capabilities().Sensitive {
+		if !errors.Is(err, config.ErrSensitiveLeak) {
+			t.Errorf("Plan of a write to a key the sensitive read-only backend defines = %v, want "+
+				"ErrSensitiveLeak — a secret must not route into the plain layer beneath", err)
+		}
+
+		return
+	}
+
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
