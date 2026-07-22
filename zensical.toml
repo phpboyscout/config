@@ -3,7 +3,10 @@
 # alphabetically; the order below is pedagogical.
 nav = [
   { Home = "index.md" },
-  { Tutorial = [ { "Getting started" = "getting-started.md" } ] },
+  { Tutorial = [
+    { "Getting started" = "getting-started.md" },
+    { "Configure from Consul" = "tutorials/consul.md" },
+  ] },
   { Adapters = "adapters.md" },
   { "How-to guides" = [
     { "Load & merge configuration" = "how-to/load-and-merge.md" },
@@ -32,6 +35,7 @@ nav = [
     { "Provenance" = "explanation/provenance.md" },
     { "What survives a write" = "explanation/write-fidelity.md" },
     { "Backends & capabilities" = "explanation/backends.md" },
+    { "How the Consul backend works" = "explanation/consul-backend.md" },
     { "Hot-reload safety" = "explanation/hot-reload-safety.md" },
   ] },
   { Development = [

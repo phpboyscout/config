@@ -96,8 +96,10 @@ store, err := config.NewStore(ctx,
 
 A Consul layer takes part in precedence, per-key merge, provenance and hot-reload exactly as a
 file does — and `Explain` will tell you when a value came from Consul rather than the file
-beneath it. It is the reference implementation for everything that follows. The
-[Read &amp; write Consul](how-to/consul.md) guide walks it end to end.
+beneath it. It is the reference implementation for everything that follows. Learn it by building
+one in the [Configure from Consul](tutorials/consul.md) tutorial, reach for a specific operation in
+the [Read &amp; write Consul](how-to/consul.md) how-to, or read [How the Consul backend
+works](explanation/consul-backend.md) for the data, conflict and watch models behind it.
 
 ### Roadmap
 
