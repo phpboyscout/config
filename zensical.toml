@@ -1,66 +1,6 @@
-# Curated navigation, ordered by the Diátaxis quadrants (tutorial → how-to →
-# explanation → reference). Without this, the sidebar auto-generates
-# alphabetically; the order below is pedagogical.
-nav = [
-  { Home = "index.md" },
-  { Tutorial = [
-    { "Getting started" = "getting-started.md" },
-    { "Configure from Consul" = "tutorials/consul.md" },
-  ] },
-  { Adapters = "adapters.md" },
-  { "How-to guides" = [
-    { "Load & merge configuration" = "how-to/load-and-merge.md" },
-    { "Read configuration values" = "how-to/read-values.md" },
-    { "Write configuration" = "how-to/write-config.md" },
-    { "Use typed sections" = "how-to/typed-sections.md" },
-    { "React to changes with hot-reload" = "how-to/hot-reload.md" },
-    { "Validate configuration" = "how-to/validate-config.md" },
-    { "Bind CLI flags" = "how-to/bind-cli-flags.md" },
-    { "Write a custom backend" = "how-to/custom-backend.md" },
-    { "Support a new file format" = "how-to/format-adapter.md" },
-    { "Read & write JSON" = "how-to/json.md" },
-    { "Read & write TOML" = "how-to/toml.md" },
-    { "Read XML" = "how-to/xml.md" },
-    { "Read & write HCL" = "how-to/hcl.md" },
-    { "Read dotenv" = "how-to/dotenv.md" },
-    { "Read INI" = "how-to/ini.md" },
-    { "Read Java properties" = "how-to/properties.md" },
-    { "Read & write Consul" = "how-to/consul.md" },
-    { "Use an afero filesystem" = "how-to/afero.md" },
-    { "Test with the config mocks" = "how-to/test-with-mocks.md" },
-  ] },
-  { Explanation = [
-    { "The Store" = "explanation/the-store.md" },
-    { "Precedence & merge model" = "explanation/precedence-and-merge.md" },
-    { "Provenance" = "explanation/provenance.md" },
-    { "What survives a write" = "explanation/write-fidelity.md" },
-    { "Backends & capabilities" = "explanation/backends.md" },
-    { "How the Consul backend works" = "explanation/consul-backend.md" },
-    { "Hot-reload safety" = "explanation/hot-reload-safety.md" },
-  ] },
-  { Development = [
-    { "Development guide" = "development/index.md" },
-    { Testing = "development/testing.md" },
-    { "Feature specifications" = [
-      { Overview = "development/specs/index.md" },
-      { "config-consul adapter" = "development/specs/2026-07-22-config-consul.md" },
-      { "Dynamic backend adapters" = "development/specs/2026-07-21-dynamic-backend-adapters.md" },
-      { "Filesystem abstraction" = "development/specs/2026-07-20-filesystem-abstraction.md" },
-      { "Non-YAML format adapters" = "development/specs/2026-07-20-non-yaml-format-adapters.md" },
-      { "Store architecture" = "development/specs/2026-07-19-store-architecture.md" },
-      { "Structure-preserving writes" = "development/specs/2026-07-18-structure-preserving-config-writes.md" },
-    ] },
-  ] },
-  { About = [
-    { "What it does, and why" = "about/features.md" },
-    { History = "about/history.md" },
-    { "Migrating from v0.2.x" = "migrating.md" },
-  ] },
-  { "Reference (pkg.go.dev)" = "https://pkg.go.dev/gitlab.com/phpboyscout/go/config" },
-]
-
 [project]
 site_name = "config"
+extra_css = ["stylesheets/hero.css"]
 site_description = "Layered configuration for Go with a single owner — comment-preserving layer-correct writes, per-key provenance, safe hot-reload, typed sections and struct-tag validation"
 site_author = "Matt Cockayne"
 site_url = "https://config.go.phpboyscout.uk"

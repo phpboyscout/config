@@ -1,3 +1,9 @@
+---
+title: Configure a service from Consul
+description: Build a program that loads its configuration from Consul as a layer, with precedence, provenance and hot-reload.
+tags: [tutorial, backends, consul]
+---
+
 # Configure a service from Consul
 
 By the end of this tutorial you will have a program that loads its configuration from a

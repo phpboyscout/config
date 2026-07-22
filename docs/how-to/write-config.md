@@ -1,3 +1,9 @@
+---
+title: Write configuration
+description: Persist a change to the layer that owns the key, with comments and structure intact.
+tags: [how-to, writes]
+---
+
 # Write configuration
 
 You need to persist a change — a user flipped a setting, a command took a `--set` flag, a

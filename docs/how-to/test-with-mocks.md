@@ -1,3 +1,9 @@
+---
+title: Test with the config mocks
+description: Use MockReader, MockBinder and MockObserved to test code that consumes configuration.
+tags: [how-to, testing, mocks]
+---
+
 # Test with the config mocks
 
 Code that reads configuration should take a `config.Reader`, not a concrete `*Store` —

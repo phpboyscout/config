@@ -1,3 +1,9 @@
+---
+title: Read dotenv
+description: Read dotenv (.env) files as a layer through the config-dotenv sibling module.
+tags: [how-to, formats, dotenv]
+---
+
 # Read dotenv
 
 The core reads and writes only YAML. dotenv (`.env`) comes from a sibling module,

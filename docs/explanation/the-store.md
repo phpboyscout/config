@@ -1,3 +1,9 @@
+---
+title: The Store
+description: Why one component owns all configuration I/O, and what follows from that single rule.
+tags: [explanation, architecture, store]
+---
+
 # The Store
 
 This module is built on one rule:

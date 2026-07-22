@@ -1,3 +1,9 @@
+---
+title: Read and write HCL
+description: Read and write HCL configuration as a layer through the config-hcl sibling module.
+tags: [how-to, formats, hcl]
+---
+
 # Read and write HCL
 
 The core reads and writes only YAML. HCL comes from a sibling module,

@@ -1,3 +1,9 @@
+---
+title: Hot-reload safety
+description: "Why reloading under a running process is safe here: snapshots, fail-closed parsing and coherent reads."
+tags: [explanation, hot-reload, safety]
+---
+
 # Hot-reload safety
 
 Reloading configuration under a running process is dangerous if done naïvely. A

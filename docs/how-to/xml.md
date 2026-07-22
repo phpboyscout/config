@@ -1,3 +1,9 @@
+---
+title: Read XML
+description: Read XML configuration as a layer through the config-xml sibling module.
+tags: [how-to, formats, xml]
+---
+
 # Read XML
 
 The core reads and writes only YAML. XML comes from a sibling module,

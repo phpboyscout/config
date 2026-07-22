@@ -1,3 +1,9 @@
+---
+title: Use an afero filesystem
+description: Bridge an existing afero filesystem to config.FS for code that already threads an afero.Fs.
+tags: [how-to, filesystem, afero]
+---
+
 # Use an afero filesystem
 
 `config` defines its own six-method [`config.FS`](../explanation/backends.md) rather than

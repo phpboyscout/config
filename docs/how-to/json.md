@@ -1,3 +1,9 @@
+---
+title: Read and write JSON
+description: Read and write JSON and JSON Lines configuration, structure-preserving, through config-json.
+tags: [how-to, formats, json]
+---
+
 # Read and write JSON
 
 The core reads and writes only YAML. JSON and [JSON Lines](https://jsonlines.org) come from a

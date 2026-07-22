@@ -1,3 +1,9 @@
+---
+title: Load & merge configuration
+description: Assemble configuration from defaults, files, the environment and flags, with a precedence you can read off the call site.
+tags: [how-to, loading, precedence]
+---
+
 # Load & merge configuration
 
 You need to assemble configuration from more than one source — shipped defaults, a

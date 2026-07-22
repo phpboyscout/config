@@ -1,3 +1,9 @@
+---
+title: Read and write TOML
+description: Read TOML configuration as a layer through the config-toml sibling module.
+tags: [how-to, formats, toml]
+---
+
 # Read and write TOML
 
 The core reads and writes only YAML. TOML comes from a sibling module,

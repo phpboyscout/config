@@ -1,3 +1,9 @@
+---
+title: Migrating from v0.2.x
+description: Porting from the v0.2.x Viper-backed API to the v0.3+ Store.
+tags: [migration, upgrade]
+---
+
 # Migrating from v0.2.x
 
 v0.2.x was a wrapper around Viper. This release is not: a `Store` owns every read, write
@@ -421,7 +427,7 @@ usually just passing the store instead of the container — and the closures pas
 
     Add it only if you *want* the callback to run once at startup, which v0.2.x could not
     do at all. See
-    [configure your component at startup](how-to/typed-sections.md#configure-your-component-at-startup-too).
+    [configure your component at startup](../how-to/typed-sections.md#configure-your-component-at-startup-too).
 
 Before:
 

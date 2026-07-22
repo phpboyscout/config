@@ -1,3 +1,9 @@
+---
+title: What it does, and why
+description: The full case for config — every guarantee, why it exists, and who it is for.
+tags: [overview, rationale]
+---
+
 # What it does, and why
 
 The [landing page](../index.md) is the short version. This is the whole case: what each

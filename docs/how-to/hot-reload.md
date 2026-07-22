@@ -1,3 +1,9 @@
+---
+title: React to changes with hot-reload
+description: Watch a store, register observers, and react to configuration changes made outside your process.
+tags: [how-to, hot-reload, watch]
+---
+
 # React to changes with hot-reload
 
 A long-running service often needs to pick up configuration changes without a

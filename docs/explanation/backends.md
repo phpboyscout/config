@@ -1,3 +1,9 @@
+---
+title: Backends and capabilities
+description: What a backend is, and how the type system answers whether one can be written to or watched.
+tags: [explanation, backends, architecture]
+---
+
 # Backends and capabilities
 
 A backend is a source of configuration. The Store owns everything about

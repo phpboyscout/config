@@ -1,0 +1,166 @@
+/* config — homepage hero & ecosystem-landing treatment.
+   Scoped under .cfg-* and prefixed with .md-typeset where the theme would
+   otherwise win on specificity. */
+
+:root {
+  --cfg-teal:       #14534F;
+  --cfg-teal-deep:  #0E3B38;
+  --cfg-amber:      #E8912A;
+  --cfg-amber-soft: #EBBD63;
+  --cfg-cream:      #F5F2EA;
+  --cfg-charcoal:   #211E1A;
+}
+
+/* ---- Hero band ------------------------------------------------------------ */
+.md-typeset .cfg-hero {
+  position: relative;
+  overflow: hidden;
+  margin: 0 0 2rem;
+  padding: clamp(1.75rem, 3.5vw, 3.25rem);
+  border-radius: 1rem;
+  color: var(--cfg-cream);
+  background:
+    radial-gradient(115% 135% at 88% -15%, rgba(232, 145, 42, .28), transparent 55%),
+    linear-gradient(152deg, var(--cfg-teal) 0%, var(--cfg-teal-deep) 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  gap: clamp(1.5rem, 4vw, 3rem);
+  align-items: center;
+}
+
+.md-typeset .cfg-hero__eyebrow {
+  margin: 0 0 1rem;
+  font-family: var(--md-code-font-family, "JetBrains Mono", monospace);
+  font-size: .72rem;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--cfg-amber-soft);
+}
+
+.md-typeset .cfg-hero__title {
+  margin: 0;
+  color: var(--cfg-cream);
+  font-weight: 800;
+  font-size: clamp(1.95rem, 4.6vw, 3.05rem);
+  line-height: 1.04;
+  letter-spacing: -.021em;
+}
+.md-typeset .cfg-hero__title .amber { color: var(--cfg-amber); }
+
+.md-typeset .cfg-hero__lede {
+  margin: 1rem 0 0;
+  max-width: 48ch;
+  color: rgba(245, 242, 234, .84);
+  font-size: 1.05rem;
+  line-height: 1.55;
+}
+
+.md-typeset .cfg-hero__cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  margin-top: 1.6rem;
+}
+
+.md-typeset .cfg-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: .62rem 1.15rem;
+  border-radius: .55rem;
+  font-weight: 700;
+  font-size: .92rem;
+  text-decoration: none;
+  transition: transform .12s ease, background-color .12s ease, border-color .12s ease;
+}
+.md-typeset .cfg-btn--primary { background: var(--cfg-amber); color: var(--cfg-charcoal); }
+.md-typeset .cfg-btn--primary:hover { background: var(--cfg-amber-soft); transform: translateY(-1px); }
+.md-typeset .cfg-btn--ghost { color: var(--cfg-cream); border: 1px solid rgba(245, 242, 234, .38); }
+.md-typeset .cfg-btn--ghost:hover { background: rgba(245, 242, 234, .10); border-color: rgba(245, 242, 234, .6); transform: translateY(-1px); }
+.md-typeset .cfg-btn:focus-visible { outline: 2px solid var(--cfg-amber-soft); outline-offset: 2px; }
+
+.md-typeset .cfg-hero__install {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 1.5rem;
+  padding: .5rem .8rem;
+  border-radius: .5rem;
+  background: rgba(7, 17, 20, .35);
+  border: 1px solid rgba(245, 242, 234, .14);
+  font-family: var(--md-code-font-family, "JetBrains Mono", monospace);
+  font-size: .82rem;
+  color: var(--cfg-cream);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.md-typeset .cfg-hero__install::before { content: "$"; color: var(--cfg-amber); margin-right: .6rem; opacity: .8; }
+
+/* ---- Hero art: the mark on a cream tile ----------------------------------- */
+.md-typeset .cfg-hero__art { display: flex; justify-content: center; }
+.md-typeset .cfg-hero__tile {
+  width: min(230px, 58vw);
+  padding: 1rem 1.25rem;
+  border-radius: 1.35rem;
+  background: var(--cfg-cream);
+  box-shadow:
+    0 0 0 1px rgba(245, 242, 234, .1),
+    0 18px 45px -12px rgba(7, 17, 20, .6),
+    0 0 60px -8px rgba(232, 145, 42, .35);
+}
+.md-typeset .cfg-hero__tile img { display: block; width: 100%; height: auto; }
+
+/* ---- Ecosystem strip ------------------------------------------------------ */
+.md-typeset .cfg-eco {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .55rem;
+  margin: 0 0 2.5rem;
+}
+.md-typeset .cfg-eco__label {
+  flex: 0 0 100%;          /* own line: pills always start beneath the label */
+  margin: 0 0 .1rem;
+  font-family: var(--md-code-font-family, "JetBrains Mono", monospace);
+  font-size: .7rem;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--md-default-fg-color--light);
+}
+.md-typeset .cfg-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: .28rem .72rem;
+  border-radius: 999px;
+  font-size: .8rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--cfg-teal);
+  background: rgba(20, 83, 79, .08);
+  border: 1px solid rgba(20, 83, 79, .22);
+  transition: background-color .12s ease, border-color .12s ease, transform .12s ease;
+}
+.md-typeset .cfg-pill:hover { background: rgba(20, 83, 79, .15); transform: translateY(-1px); }
+.md-typeset .cfg-pill--more { color: var(--cfg-charcoal); background: rgba(232, 145, 42, .16); border-color: rgba(232, 145, 42, .4); }
+.md-typeset .cfg-pill--more:hover { background: rgba(232, 145, 42, .26); }
+
+[data-md-color-scheme="slate"] .md-typeset .cfg-pill {
+  color: var(--cfg-amber-soft);
+  background: rgba(232, 145, 42, .10);
+  border-color: rgba(232, 145, 42, .28);
+}
+[data-md-color-scheme="slate"] .md-typeset .cfg-pill:hover { background: rgba(232, 145, 42, .18); }
+[data-md-color-scheme="slate"] .md-typeset .cfg-eco__label { color: var(--cfg-amber-soft); }
+
+/* ---- Responsive ----------------------------------------------------------- */
+@media (max-width: 55em) {
+  .md-typeset .cfg-hero { grid-template-columns: 1fr; }
+  .md-typeset .cfg-hero__art { justify-content: flex-start; }
+  .md-typeset .cfg-hero__tile { width: min(170px, 42vw); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-typeset .cfg-btn,
+  .md-typeset .cfg-pill { transition: none; }
+  .md-typeset .cfg-btn:hover,
+  .md-typeset .cfg-pill:hover { transform: none; }
+}

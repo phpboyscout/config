@@ -1,3 +1,11 @@
+---
+title: Getting started
+description: Build a store over a YAML file, read values, ask where they came from, write a change back, and react to a foreign edit.
+tags: [tutorial, getting-started]
+hide:
+  - navigation
+---
+
 # Getting started
 
 By the end of this tutorial you will have a small program that loads a YAML file, reads

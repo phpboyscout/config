@@ -1,3 +1,9 @@
+---
+title: Use typed sections
+description: Project a configuration subtree onto your own struct with UnmarshalSection and ObserveSection.
+tags: [how-to, typed, sections]
+---
+
 # Use typed sections
 
 Reading `view.GetString("server.host")` everywhere is stringly-typed and easy to get

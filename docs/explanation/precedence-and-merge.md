@@ -1,3 +1,9 @@
+---
+title: Precedence & merge model
+description: How a value is resolved when several sources define it — precedence, per-key merge and shadowing.
+tags: [explanation, precedence, merge]
+---
+
 # Precedence & merge model
 
 This page explains how a value is resolved: which source wins when several define the

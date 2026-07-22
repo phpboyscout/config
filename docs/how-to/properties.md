@@ -1,3 +1,9 @@
+---
+title: Read Java properties
+description: Read Java .properties configuration as a layer through the config-properties sibling module.
+tags: [how-to, formats, properties]
+---
+
 # Read Java properties
 
 The core reads and writes only YAML. Java `.properties` come from a sibling module,

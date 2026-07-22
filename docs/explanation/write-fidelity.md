@@ -1,3 +1,9 @@
+---
+title: What survives a write
+description: What survives a write — comments, key order, quoting and anchors — and why the file stays yours.
+tags: [explanation, writes, fidelity]
+---
+
 # What survives a write
 
 A configuration file is a document a person wrote, not a serialisation of a data

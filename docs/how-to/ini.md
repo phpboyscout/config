@@ -1,3 +1,9 @@
+---
+title: Read INI
+description: Read INI configuration as a layer through the config-ini sibling module.
+tags: [how-to, formats, ini]
+---
+
 # Read INI
 
 The core reads and writes only YAML. INI comes from a sibling module,

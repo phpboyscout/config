@@ -1,3 +1,9 @@
+---
+title: History
+description: How config grew from a thin Viper wrapper into a single-owner configuration store.
+tags: [history, background]
+---
+
 # History
 
 This module did not start as a configuration system. It started as a thin

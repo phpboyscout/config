@@ -1,14 +1,40 @@
-# config
+---
+title: config
+description: Layered configuration for Go that tells you where a value came from, and writes one back without wrecking the file.
+tags: [config, go, overview]
+hide:
+  - navigation
+---
 
-**Layered configuration for Go that can tell you where a value came from — and write one
-back without wrecking the file.**
+<div class="cfg-hero">
+  <div class="cfg-hero__body">
+    <p class="cfg-hero__eyebrow">phpboyscout · go toolkit</p>
+    <h1 class="cfg-hero__title">Configuration that <span class="amber">shows its work</span></h1>
+    <p class="cfg-hero__lede">Assemble settings from defaults, files, the environment, flags and remote systems like Consul — with a precedence you read off the call site, every value able to say where it came from, and writes that never wreck the file.</p>
+    <div class="cfg-hero__cta">
+      <a class="cfg-btn cfg-btn--primary" href="getting-started/">Get started</a>
+      <a class="cfg-btn cfg-btn--ghost" href="explanation/adapters/">Explore the ecosystem</a>
+    </div>
+    <code class="cfg-hero__install">go get gitlab.com/phpboyscout/go/config</code>
+  </div>
+  <div class="cfg-hero__art">
+    <div class="cfg-hero__tile"><img src="images/branding/logo_transparent.svg" alt="config — layered plates resolving into one container"></div>
+  </div>
+</div>
 
-Assemble settings from embedded defaults, files, the environment and CLI flags, with a
-precedence you can read off the call site.
-
-```bash
-go get gitlab.com/phpboyscout/go/config
-```
+<div class="cfg-eco">
+  <span class="cfg-eco__label">One store, every source</span>
+  <a class="cfg-pill" href="getting-started/">YAML</a>
+  <a class="cfg-pill" href="how-to/json/">JSON</a>
+  <a class="cfg-pill" href="how-to/toml/">TOML</a>
+  <a class="cfg-pill" href="how-to/hcl/">HCL</a>
+  <a class="cfg-pill" href="how-to/xml/">XML</a>
+  <a class="cfg-pill" href="how-to/dotenv/">dotenv</a>
+  <a class="cfg-pill" href="how-to/ini/">INI</a>
+  <a class="cfg-pill" href="how-to/properties/">properties</a>
+  <a class="cfg-pill" href="how-to/consul/">Consul</a>
+  <a class="cfg-pill cfg-pill--more" href="explanation/adapters/">+ dynamic backends →</a>
+</div>
 
 ## The thirty-second version
 
@@ -64,7 +90,7 @@ so it changes the key you asked for, and nothing else.
 | **Read any type** | `Value[T]` reads whatever `T` is — durations, IP addresses, URLs, and your own `encoding.TextUnmarshaler` types. |
 | **No filesystem imposed** | `config.FS` is six methods you can satisfy over `os`, a rooted directory, or your own. `config.Dir(path)` confines every operation to that directory. |
 
-**[→ The full case, with the reasoning and the measurements](about/features.md)**
+**[→ The full case, with the reasoning and the measurements](about/index.md)**
 
 ## At a glance
 
@@ -131,7 +157,7 @@ released now at v0.1.0. From there, a phased roadmap:
 - **Secrets managers** — Vault, AWS Secrets Manager, Azure Key Vault, GCP Secret Manager (read-only by default).
 - **Cloud-native key–value** — etcd and Kubernetes ConfigMaps, with native change-watch.
 
-**[→ The full adapter ecosystem, with status and roadmap](adapters.md)**
+**[→ The full adapter ecosystem, with status and roadmap](explanation/adapters.md)**
 
 ## Should you use this?
 
@@ -193,7 +219,7 @@ then understand.
 v0.3.0 is a breaking release. Two things changed: the Viper-backed container became the
 `Store`, and `afero.Fs` became a six-method `config.FS` the module defines itself.
 
-The **[migration guide](migrating.md)** covers both step by step — `Containable` becomes
+The **[migration guide](about/migrating.md)** covers both step by step — `Containable` becomes
 `Reader`, the several constructors become `NewStore`, `afero.NewOsFs()` becomes
 `config.OS()`, and the handful of call sites that are genuine ports rather than renames
 each get their own section.

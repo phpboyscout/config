@@ -1,3 +1,9 @@
+---
+title: Write a custom backend
+description: Make any remote system an ordinary layer by implementing Backend — reads, watch and compare-and-swap writes.
+tags: [how-to, backends, extending]
+---
+
 # Write a custom backend
 
 You want configuration from somewhere this module has never heard of — Consul, a secrets
@@ -186,7 +192,7 @@ backends can coexist without the weakest one setting the contract for everybody.
 
 **`Sensitive` is the one to think hardest about.** It marks a backend as holding secret
 material, and a value from a sensitive source must never be written into a layer that is
-not. That is the [environment-secret leak](../about/features.md#writing-where-it-gets-genuinely-hard)
+not. That is the [environment-secret leak](../about/index.md#writing-where-it-gets-genuinely-hard)
 wearing a different costume: a secrets-manager value flattened into a config file is the
 same incident by another route. Declaring `Sensitive: true` makes the core enforce it — a
 write that would land a key your backend owns into a non-sensitive layer beneath is refused

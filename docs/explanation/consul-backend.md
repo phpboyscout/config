@@ -1,3 +1,9 @@
+---
+title: How the Consul backend works
+description: The data model, conflict detection and watch strategy behind config-consul, the reference dynamic backend.
+tags: [explanation, backends, consul]
+---
+
 # How the Consul backend works
 
 [`config-consul`](https://gitlab.com/phpboyscout/go/config-consul) is the first *backend* adapter

@@ -353,7 +353,7 @@ every constructor, so skipping `Store.Watch(ctx)` means configuration silently s
 reloading. And **`ApplyInitial` is not a required fix** — delivery has always been
 change-only.
 
-See the [migration guide](https://config.go.phpboyscout.uk/migrating/) and the
+See the [migration guide](https://config.go.phpboyscout.uk/about/migrating/) and the
 [history](https://config.go.phpboyscout.uk/about/history/) of how the module got here.
 
 ## Documentation

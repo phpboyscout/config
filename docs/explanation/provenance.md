@@ -1,3 +1,9 @@
+---
+title: Provenance
+description: What Origin, Shadowed and Explain can and cannot tell you about where a value came from.
+tags: [explanation, provenance]
+---
+
 # Provenance
 
 Every configuration debugging session opens with the same question: *why is this value

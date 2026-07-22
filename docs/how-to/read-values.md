@@ -1,3 +1,9 @@
+---
+title: Read configuration values
+description: Typed accessors, the generic Value[T], scoped views and decoding a subtree onto a struct.
+tags: [how-to, reading, typed]
+---
+
 # Read configuration values
 
 !!! note "Assumed setup"

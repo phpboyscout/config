@@ -1,3 +1,9 @@
+---
+title: The adapter ecosystem
+description: The config adapter family — file/format adapters and dynamic remote backends, each an ordinary layer.
+tags: [adapters, backends, ecosystem]
+---
+
 # The adapter ecosystem
 
 **One store, many sources.** YAML files are the default `config` reads out of the box, but
@@ -38,24 +44,24 @@ Available now, each published and versioned. The adapter name links to its how-t
 
 | Adapter | Handles | Reads | Writes | Source |
 |---|---|:---:|:---:|---|
-| [`config-json`](how-to/json.md) | JSON &amp; JSON Lines | ✓ | ✓ *(structure-preserving)* | [repo](https://gitlab.com/phpboyscout/go/config-json) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-json) |
-| [`config-toml`](how-to/toml.md) | TOML | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-toml) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-toml) |
-| [`config-hcl`](how-to/hcl.md) | HCL *(as a config format, not Terraform)* | ✓ | ✓ | [repo](https://gitlab.com/phpboyscout/go/config-hcl) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-hcl) |
-| [`config-xml`](how-to/xml.md) | XML | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-xml) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-xml) |
-| [`config-dotenv`](how-to/dotenv.md) | dotenv (`.env`) | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-dotenv) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-dotenv) |
-| [`config-ini`](how-to/ini.md) | INI | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-ini) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-ini) |
-| [`config-properties`](how-to/properties.md) | Java `.properties` | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-properties) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-properties) |
+| [`config-json`](../how-to/json.md) | JSON &amp; JSON Lines | ✓ | ✓ *(structure-preserving)* | [repo](https://gitlab.com/phpboyscout/go/config-json) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-json) |
+| [`config-toml`](../how-to/toml.md) | TOML | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-toml) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-toml) |
+| [`config-hcl`](../how-to/hcl.md) | HCL *(as a config format, not Terraform)* | ✓ | ✓ | [repo](https://gitlab.com/phpboyscout/go/config-hcl) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-hcl) |
+| [`config-xml`](../how-to/xml.md) | XML | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-xml) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-xml) |
+| [`config-dotenv`](../how-to/dotenv.md) | dotenv (`.env`) | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-dotenv) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-dotenv) |
+| [`config-ini`](../how-to/ini.md) | INI | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-ini) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-ini) |
+| [`config-properties`](../how-to/properties.md) | Java `.properties` | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-properties) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-properties) |
 
 The read-only format adapters (`dotenv`, `ini`, `properties`, `xml`) add **no third-party
 dependency** — they parse their format in-module. And if the format you need is not here,
-[write a format adapter](how-to/format-adapter.md): a codec is a `Decode`/`Encode` pair, and
+[write a format adapter](../how-to/format-adapter.md): a codec is a `Decode`/`Encode` pair, and
 the store handles the rest.
 
 ### Filesystem
 
 | Adapter | Handles | Source |
 |---|---|---|
-| [`config-afero`](how-to/afero.md) | Bridges an existing [afero](https://github.com/spf13/afero) filesystem to `config.FS`, for consumers who already hold one | [repo](https://gitlab.com/phpboyscout/go/config-afero) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-afero) |
+| [`config-afero`](../how-to/afero.md) | Bridges an existing [afero](https://github.com/spf13/afero) filesystem to `config.FS`, for consumers who already hold one | [repo](https://gitlab.com/phpboyscout/go/config-afero) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-afero) |
 
 `config` imposes no filesystem of its own — `config.FS` is six methods you can satisfy over
 `os`, a rooted directory, or anything else. `config-afero` is the ready-made bridge for the
@@ -66,9 +72,9 @@ large body of code that already threads an `afero.Fs` around.
 The next chapter, and the one that pulls furthest ahead of a file-only tool: configuration
 fetched **at runtime from a remote system**, given full precedence, provenance and hot-reload
 exactly as a file is. The seam already exists and is proven —
-[`WithBackend`](how-to/custom-backend.md) takes anything satisfying a three-method `Backend`,
+[`WithBackend`](../how-to/custom-backend.md) takes anything satisfying a three-method `Backend`,
 with writes and native watch as opt-in capabilities. The
-[dynamic backend adapters spec](development/specs/2026-07-21-dynamic-backend-adapters.md) is the
+[dynamic backend adapters spec](../development/specs/2026-07-21-dynamic-backend-adapters.md) is the
 umbrella that governs the whole family.
 
 ### config-consul — the first
@@ -97,9 +103,9 @@ store, err := config.NewStore(ctx,
 A Consul layer takes part in precedence, per-key merge, provenance and hot-reload exactly as a
 file does — and `Explain` will tell you when a value came from Consul rather than the file
 beneath it. It is the reference implementation for everything that follows. Learn it by building
-one in the [Configure from Consul](tutorials/consul.md) tutorial, reach for a specific operation in
-the [Read &amp; write Consul](how-to/consul.md) how-to, or read [How the Consul backend
-works](explanation/consul-backend.md) for the data, conflict and watch models behind it.
+one in the [Configure from Consul](../tutorials/consul.md) tutorial, reach for a specific operation in
+the [Read &amp; write Consul](../how-to/consul.md) how-to, or read [How the Consul backend
+works](consul-backend.md) for the data, conflict and watch models behind it.
 
 ### Roadmap
 
@@ -109,7 +115,7 @@ before it is built**. The grouping is a planned order, not a commitment date.
 
 | Adapter | System | Phase | Status |
 |---|---|---|---|
-| [`config-consul`](how-to/consul.md) | HashiCorp Consul | A — reference &amp; parameter stores | **Released · v0.1.0** |
+| [`config-consul`](../how-to/consul.md) | HashiCorp Consul | A — reference &amp; parameter stores | **Released · v0.1.0** |
 | `config-aws-ssm` | AWS SSM Parameter Store | A | Planned |
 | `config-azure-appconfig` | Azure App Configuration | A | Planned |
 | `config-gcp-parameter` | GCP Parameter Manager | A | Planned |
@@ -128,8 +134,8 @@ Feature-flag systems are deliberately out of scope.
 
 Nothing here is a closed set. The same two seams the family is built on are yours to use:
 
-- [**Write a custom backend**](how-to/custom-backend.md) — make any remote system (a secrets
+- [**Write a custom backend**](../how-to/custom-backend.md) — make any remote system (a secrets
   manager, an HTTP endpoint, an internal service) an ordinary layer, walked end to end against
   a Consul-shaped example.
-- [**Support a new file format**](how-to/format-adapter.md) — a codec is a `Decode`/`Encode`
+- [**Support a new file format**](../how-to/format-adapter.md) — a codec is a `Decode`/`Encode`
   pair; add one and every store feature comes with it for free.

@@ -1,3 +1,9 @@
+---
+title: Read and write Consul
+description: Read and write configuration from HashiCorp Consul as an ordinary layer, with a codec for structured values.
+tags: [how-to, backends, consul]
+---
+
 # Read and write Consul
 
 The core reads and writes files. HashiCorp Consul's key-value store is a remote

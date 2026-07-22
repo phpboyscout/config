@@ -1,3 +1,9 @@
+---
+title: Bind CLI flags
+description: Let a CLI flag override a configured value, but only when the flag was actually set.
+tags: [how-to, flags, cli]
+---
+
 # Bind CLI flags
 
 A command-line flag should be able to override a configured value — but only when the

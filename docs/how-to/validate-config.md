@@ -1,3 +1,9 @@
+---
+title: Validate configuration
+description: Catch bad configuration at load time with Schema and struct-tag ValidateStruct[T].
+tags: [how-to, validation]
+---
+
 # Validate configuration
 
 Catch a bad configuration at load time — a missing required key, a typo, a value outside

@@ -1,3 +1,9 @@
+---
+title: Support a new file format
+description: Teach config a new file format by implementing a Codec and adding it as a layer.
+tags: [how-to, formats, extending]
+---
+
 # Support a new file format
 
 The core reads and writes YAML. Any other file format — JSON, TOML, INI, one of your own —
