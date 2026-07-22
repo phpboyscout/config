@@ -21,6 +21,7 @@ nav = [
     { "Read dotenv" = "how-to/dotenv.md" },
     { "Read INI" = "how-to/ini.md" },
     { "Read Java properties" = "how-to/properties.md" },
+    { "Read & write Consul" = "how-to/consul.md" },
     { "Use an afero filesystem" = "how-to/afero.md" },
     { "Test with the config mocks" = "how-to/test-with-mocks.md" },
   ] },
