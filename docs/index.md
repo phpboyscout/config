@@ -38,7 +38,9 @@ hide:
   <a class="cfg-pill" href="how-to/iofs/">io/fs</a>
   <a class="cfg-pill" href="how-to/billy/">go-billy</a>
   <a class="cfg-pill" href="how-to/sftp/">SFTP</a>
-  <a class="cfg-pill cfg-pill--more" href="explanation/adapters/#cloud-object-stores">+ cloud object stores →</a>
+  <a class="cfg-pill" href="how-to/aws-s3/">S3</a>
+  <a class="cfg-pill" href="how-to/gcp-gcs/">GCS</a>
+  <a class="cfg-pill" href="how-to/azure-blob/">Azure Blob</a>
 
   <span class="cfg-eco__label">Backends</span>
   <a class="cfg-pill" href="how-to/consul/">Consul</a>
@@ -170,7 +172,7 @@ the file lives somewhere else. They compose with any format adapter.
 - :material-package-variant-closed: **[io/fs](how-to/iofs.md)** — an `embed.FS`, zip or tar, read-only.
 - :material-source-branch: **[go-billy](how-to/billy.md)** — a go-git / go-billy filesystem, read and write.
 - :material-server-network: **[SFTP](how-to/sftp.md)** — a config file on a remote host over SSH.
-- :material-cloud-outline: **cloud object stores** — [S3, GCS &amp; Azure Blob](explanation/adapters.md#cloud-object-stores) *(in progress)*.
+- :material-cloud-outline: **cloud object stores** — [S3](how-to/aws-s3.md), [GCS](how-to/gcp-gcs.md) &amp; [Azure Blob](how-to/azure-blob.md), read and write.
 
 </div>
 

@@ -90,11 +90,11 @@ polling, committed with the store's best atomic primitive — and differ only wh
 (GCS has a native atomic move; S3 and Azure Blob copy-then-delete). Each is its own approved spec,
 built and released independently.
 
-| Adapter | Store | Commit | Status |
-|---|---|---|---|
-| `config-aws-s3` | AWS S3 | copy-then-delete | In progress |
-| `config-gcp-gcs` | GCP Cloud Storage | native `Move` | In progress |
-| `config-azure-blob` | Azure Blob Storage | copy-then-delete | In progress |
+| Adapter | Store | Commit | Status | Source |
+|---|---|---|---|---|
+| [`config-aws-s3`](../how-to/aws-s3.md) | AWS S3 | copy-then-delete | **v0.1.0** | [repo](https://gitlab.com/phpboyscout/go/config-aws-s3) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-aws-s3) |
+| [`config-gcp-gcs`](../how-to/gcp-gcs.md) | GCP Cloud Storage | native `Move` | **v0.1.0** | [repo](https://gitlab.com/phpboyscout/go/config-gcp-gcs) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-gcp-gcs) |
+| [`config-azure-blob`](../how-to/azure-blob.md) | Azure Blob Storage | copy-then-delete | **v0.1.0** | [repo](https://gitlab.com/phpboyscout/go/config-azure-blob) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-azure-blob) |
 
 All three are read+write, poll at a 60-second default (a poll is a billed object read;
 `WithPollInterval` overrides), and are proven against a real emulator — LocalStack, fake-gcs-server
