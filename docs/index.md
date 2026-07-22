@@ -34,7 +34,7 @@ hide:
   <a class="cfg-pill" href="how-to/properties/">properties</a>
 
   <span class="cfg-eco__label">Filesystems</span>
-  <a class="cfg-pill" href="explanation/filesystem-adapters/#the-built-ins-and-no-hidden-default">config.OS()</a>
+  <a class="cfg-pill" href="explanation/filesystem-adapters/#the-built-ins-and-no-hidden-default">local disk</a>
   <a class="cfg-pill" href="how-to/afero/">afero</a>
   <a class="cfg-pill" href="how-to/iofs/">io/fs</a>
   <a class="cfg-pill" href="how-to/billy/">go-billy</a>
