@@ -2,8 +2,6 @@
 title: Branding
 description: Logo, palette and downloadable brand assets for config.
 tags: [branding, identity, design]
-hide:
-  - navigation
 ---
 
 # Branding
