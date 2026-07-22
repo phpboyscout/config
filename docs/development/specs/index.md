@@ -209,6 +209,9 @@ not need; it cannot infer one it was never given.
 
 | Spec | Status |
 |---|---|
+| [config-aws-ssm adapter](2026-07-22-config-aws-ssm.md) | draft |
+| [config-azure-appconfig adapter](2026-07-22-config-azure-appconfig.md) | draft |
+| [config-gcp-parameter adapter](2026-07-22-config-gcp-parameter.md) | draft |
 | [config-consul adapter](2026-07-22-config-consul.md) | implemented |
 | [Dynamic backend adapters](2026-07-21-dynamic-backend-adapters.md) | approved |
 | [Filesystem abstraction](2026-07-20-filesystem-abstraction.md) | approved |
