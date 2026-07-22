@@ -2,7 +2,8 @@
 title: config-gcp-gcs — the GCP Cloud Storage filesystem adapter
 date: 2026-07-22
 author: matt.cockayne
-status: draft
+status: approved
+approved: 2026-07-22
 ---
 
 # config-gcp-gcs
@@ -132,7 +133,7 @@ only production seam is the `*storage.Client` itself, which `Wrap` takes.
 | `ReadFile(name)` | `Bucket(b).Object(name).NewReader(ctx)`, read to EOF, `Close` | `ErrObjectNotExist` → `fs.ErrNotExist` (D6) |
 | `WriteFile(name, data, perm)` | `Object(name).NewWriter(ctx)`; `Write(data)`; `Close()` | **commits atomically on `Close`** (D5); `perm` is ignored (no POSIX mode) |
 | `Stat(name)` | `Object(name).Attrs(ctx)` → synthesised `fs.FileInfo` (D5) | `ErrObjectNotExist` → `fs.ErrNotExist` |
-| `Rename(old, new)` | `Object(new).CopierFrom(Object(old)).Run(ctx)`; then `Object(old).Delete(ctx)` | copy-then-delete, per umbrella **D6** (D5) |
+| `Rename(old, new)` | `Object(new).Move(ctx, storage.MoveObjectDestination{Object: new})` on `Object(old)` | native atomic server-side move, per umbrella **R2** (D5) |
 | `Remove(name)` | `Object(name).Delete(ctx)` | `ErrObjectNotExist` → `fs.ErrNotExist` |
 | `MkdirAll(path, perm)` | **no-op**, returns nil | object stores have no directories, only key prefixes (umbrella D6) |
 | `RealPath` | **not implemented** | no OS path → polled, not fsnotify (D5, umbrella D5) |
@@ -141,9 +142,9 @@ only production seam is the `*storage.Client` itself, which `Wrap` takes.
 The adapter therefore returns a **plain** `config.FS` (no optional interface),
 the object-store analogue of `config-afero`'s `default` case: config polls it and
 uses keys as given. Every method takes a `context.Context` internally; because
-`config.FS` methods are context-free, the adapter holds a base context (from
-`Wrap`, or `context.Background()` — see Open questions) and derives per-call
-contexts from it.
+`config.FS` methods are context-free, the adapter holds a base context that
+`Wrap` defaults to `context.Background()`, overridable via a `WithContext` option
+(resolved 2026-07-22), and derives per-call contexts from it.
 
 ### D5 — Object-store semantics: what "atomic" honestly means (umbrella D6)
 
@@ -157,14 +158,13 @@ otherwise. This is the umbrella's **D6** made concrete against the verified SDK:
   for updates and deletes, since 2020), so the fingerprint conflict trap below
   holds without an eventual-consistency caveat.
 
-- **`Rename` is copy-then-delete, and there is no atomic rename.** `WriteFile`
-  maps to an upload and rename's copy maps to `CopierFrom(...).Run` — both atomic
-  *per object*, so the **target** (`new`) is still replaced atomically and a
-  reader never sees a half-written target. The only imperfection: a crash
-  **between** the copy succeeding and the delete completing leaves the source
-  object (`old`, the staged content) behind — garbage to clean up, **never**
-  corruption of the target. This is stated in the README, not hidden (umbrella
-  D6).
+- **`Rename` uses the native `ObjectHandle.Move` (umbrella R2).** GCS exposes a
+  server-side atomic single-bucket move, so `config-gcp-gcs` uses it rather than
+  copy-then-delete: one round-trip, no orphan-on-crash window, and the source is
+  never left behind. This is the umbrella's **R2** — an object store with a real
+  atomic move uses it, and only S3 and Azure Blob keep copy-then-delete because
+  neither has one. The family's rename story is "copy-then-delete except where a
+  store has a native move — GCS (`Move`) and SFTP (`PosixRename`) do".
 
 - **`MkdirAll` is a no-op.** No directories exist to create; `env/prod/app.yaml`
   is a single flat key. Returning nil is correct, not a lie — the subsequent
@@ -187,8 +187,8 @@ otherwise. This is the umbrella's **D6** made concrete against the verified SDK:
   `GenerationMatch` / `DoesNotExist` preconditions on the write and copy — which
   could make the commit *server-side* conflict-safe rather than relying on the
   read-modify-check window. v0.1.0 keeps the content-fingerprint model (it is the
-  shared machinery and needs no per-adapter code), and preconditions are surfaced
-  as an Open question, not adopted here.
+  shared machinery and needs no per-adapter code); preconditions are deferred to a
+  later dated revision, not adopted here (resolved 2026-07-22).
 
 - **Not a `RealPather` → polled reload (umbrella D5).** A GCS object has no OS
   path, so the adapter does not implement `RealPath`; when the consumer calls
@@ -196,14 +196,15 @@ otherwise. This is the umbrella's **D6** made concrete against the verified SDK:
   quiet if nothing resolved differently. **No new mechanism** — this ships in the
   core. The one thing the adapter owes is a *sensible* interval: the core default
   is `DefaultPollInterval` = **2s**, which for GCS is far too eager because **each
-  poll is a billed API call** (a `NewReader` or `Attrs` per watched key). The
-  README therefore **documents the cost and recommends a much longer interval**
-  via the existing `WithPollInterval` — a **60s** starting point, matching the
-  conservatism of `config-gcp-parameter`'s poll default and for the same reason
-  (billed-per-tick, no free long-poll). The adapter does **not** invent a new
-  watch API or change the core default; it advises the consumer to set the option.
-  (Open question: whether the adapter can/should nudge a default without a core
-  change — see below.)
+  poll is a billed API call** (a `NewReader` or `Attrs` per watched key). Rather
+  than only *recommend* a longer interval in docs — an interval the adapter cannot
+  itself apply — `config-gcp-gcs` **implements the new optional
+  `config.PollIntervalHinter` (umbrella R1)**, returning **60s**, so the core's
+  poll watcher adopts that cadence for this filesystem without the consumer having
+  to set anything. 60s matches the conservatism of `config-gcp-parameter`'s poll
+  default and for the same reason (billed-per-tick, no free long-poll).
+  `WithPollInterval` still overrides the hint; the adapter invents no new watch
+  API and does not change the core default.
 
 ### D6 — Error and absence semantics
 
@@ -340,12 +341,13 @@ uses.
 (v1.64.0) **does** expose `ObjectHandle.Move(ctx, MoveObjectDestination)` — an
 atomic, server-side, single-bucket rename with optional preconditions, which is
 genuinely closer to POSIX `rename` than the umbrella's copy-then-delete model.
-It is **tempting** and would remove the orphan-on-crash imperfection. It is not
-adopted in this draft because the umbrella's **D6** deliberately standardises the
-trio on copy-then-delete (the model S3 and Azure Blob must use, since neither has
-a true atomic move), and diverging one adapter risks the family telling three
-different rename stories. It is the sharpest Open question below — a decision the
-human should make, not this spec.
+It removes the orphan-on-crash imperfection, and it **is adopted** (resolved
+2026-07-22; see the Resolved section and D5): the umbrella's **R2** endorses a
+store with a real atomic move using it, and only S3 and Azure Blob keep
+copy-then-delete because neither has one. The family therefore tells one coherent
+story — copy-then-delete except where a store has a native move (GCS `Move`, SFTP
+`PosixRename`) — rather than forcing GCS onto a weaker primitive for uniformity's
+sake. This entry is retained to record the alternative that was weighed.
 
 **Poll GCS via Pub/Sub bucket notifications.** GCS **can** emit object-change
 notifications to a Pub/Sub topic, which would give push-based reload. Rejected for
@@ -361,70 +363,70 @@ is meaningful to the core's optional-vs-fatal source decision. Mapping a `403` t
 into an `fs` bucket the core treats specially. Non-not-found errors are returned
 wrapped, verbatim in cause.
 
-## Open questions
+## Resolved (2026-07-22)
 
-*Surfaced, not resolved — for the human.*
+All open questions were answered by the human on 2026-07-22, and the decisions
+above were amended in place to match (no decision renumbered). Each records what
+was verified, so the choice rests on facts.
 
-1. **Rename: copy-then-delete (umbrella D6) vs the SDK's native
-   `ObjectHandle.Move`?** `Move` is atomic and single-bucket and removes the
-   orphan-on-crash window, but the umbrella standardises the object-store trio on
-   copy-then-delete because S3 and Azure Blob have no atomic move. Do we keep GCS
-   uniform with its siblings (copy+delete, one family story) or let GCS use `Move`
-   and document the trio as "copy+delete except GCS, which has a real move"? This
-   is the single sharpest decision in the spec.
+1. **Rename — use the native `ObjectHandle.Move`** (amends D4, D5). GCS has a
+   server-side atomic single-bucket move, so `config-gcp-gcs` uses it rather than
+   copy-then-delete — no orphan-on-crash window, one round-trip. This is exactly
+   umbrella **R2** (an object store with a native atomic move uses it; S3 and
+   Azure Blob keep copy-then-delete because they have none). The family story is
+   "copy-then-delete except where a store has a real move — GCS (`Move`) and SFTP
+   (`PosixRename`) do".
 
-2. **Server-side conflict guard via preconditions.** Should the commit use
-   `If(Conditions{GenerationMatch: n})` / `DoesNotExist` to make the write
-   *server-side* conflict-safe, rather than leaning only on the core's SHA-256
-   content fingerprint? Preconditions close the read-modify-check window but are
-   GCS-specific machinery the shared write path does not model; adopting them
-   per-adapter diverges the family's conflict story just as (1) does the rename
-   story.
+2. **Server-side preconditions — deferred; rely on the core fingerprint**
+   (confirms D5). v0.1.0 uses the shared write path's SHA-256 content fingerprint
+   for conflict detection (umbrella **D6**), keeping the family's conflict story
+   uniform. `If(GenerationMatch:)` / `DoesNotExist` preconditions are a
+   GCS-specific hardening that can be added by a later dated revision; they are
+   not adopted now.
 
-3. **The heavy footprint — 46 modules, the largest anywhere.** The GCS SDK drags
-   in monitoring, s2a/spiffe, envoy/xds and go-jose that the Parameter Manager
-   client does not. Is that acceptable for a filesystem adapter, or does it argue
-   for the **gRPC client** (`storage.NewGRPCClient`) or some build-tag trimming?
-   (No evidence the gRPC path is lighter; it may be heavier. Flagging, not
-   assuming.)
+3. **Heavy footprint (≈46 modules) — accepted and documented** (confirms D8). The
+   GCS SDK's graph is the honest cost of the adapter (umbrella **D7**), asserted
+   by the allowlist `depfootprint` test and stated in the README. Because it is
+   its own module, only a consumer reading from GCS compiles it. No gRPC-client or
+   build-tag trimming is pursued (no evidence the gRPC path is lighter; it may be
+   heavier).
 
-4. **Emulator endpoint wiring: `STORAGE_EMULATOR_HOST` env var vs
-   `option.WithEndpoint` + `WithoutAuthentication`.** Both are verified to work.
-   The env var is simplest but process-global (a hazard under `t.Parallel()`); the
-   explicit options are hermetic and per-client but require the consumer's test to
-   thread them. Which does the integration suite standardise on — and does that
-   choice belong in the adapter at all, given **D3** says the consumer builds the
-   client? (Leaning: the adapter's *tests* own it; the adapter does not.)
+4. **Emulator wiring — the adapter's tests own it, via explicit options**
+   (confirms D7). The integration suite uses `option.WithEndpoint(...)` +
+   `option.WithoutAuthentication()` (hermetic, per-client, safe under
+   `t.Parallel()`), not the process-global `STORAGE_EMULATOR_HOST`. Per **D3** the
+   adapter itself does not wire endpoints — the consumer builds the client; only
+   the tests do.
 
-5. **`Stat` mode synthesis.** What nominal `fs.FileMode` should a bucket object
-   report — a fixed `0644`, or a configurable default — given the core uses
-   `Stat`'s mode to preserve permissions across a write (which is meaningless on
-   GCS)? And should `Sys()` expose the raw `*storage.ObjectAttrs`?
+5. **`Stat` mode — fixed `0o644`, `Sys()` nil** (amends D5). Nominal `0o644`
+   (mode preservation is meaningless on GCS); `Sys()` returns `nil` for v0.1.0;
+   exposing the raw `*storage.ObjectAttrs` can follow by revision.
 
-6. **Poll interval default without a core change.** The core default is 2s, far
-   too eager for a billed-per-poll store. The adapter cannot change the core
-   default from outside; it can only *recommend* `WithPollInterval(60s)` in docs.
-   Is documentation enough, or should the family provide a per-`config.FS`
-   "suggested interval" hook the watcher consults? (This is arguably an umbrella-
-   level question the whole cloud trio shares.)
+6. **Poll cadence — implements `config.PollIntervalHinter`, 60-second default**
+   (amends D5). A poll is a billed object read, so `config-gcp-gcs` implements the
+   new optional `config.PollIntervalHinter` (umbrella **R1**) returning **60
+   seconds** — consistent with the rest of the remote family — rather than only
+   recommending `WithPollInterval` in docs. `WithPollInterval` overrides it.
 
-7. **Base context for context-free `config.FS` methods.** `config.FS` methods
-   take no `context.Context`, but every `storage` call needs one. Does `Wrap`
-   take a `ctx` (tying the adapter's lifetime to it), default to
-   `context.Background()`, or grow a `WithContext` option? A cancelled base
-   context would make every subsequent read fail — a footgun to decide
-   deliberately.
+7. **Base context — `context.Background()` default, opt-in `WithContext`**
+   (amends D4). `config.FS` methods take no `context.Context`, but every `storage`
+   call needs one; `Wrap` defaults to `context.Background()` and offers a
+   `WithContext` option for a consumer who wants to tie the adapter's lifetime to
+   a cancellable context. The README notes that a cancelled base context makes
+   every subsequent read fail.
+
+**No open questions remain.**
 
 ## Implementation phases
 
-This spec is `draft`; it is implemented only once `approved` (open questions
-resolved with the human and the decisions amended in place, per the specs
-convention — never renumbered).
+This spec is `approved`; its questions are resolved (see the Resolved section,
+with the decisions amended in place, per the specs convention — never
+renumbered), so implementation can proceed.
 
-**Phase 0 — this spec.** Draft; open questions above are for the human. The
-headline findings are already settled by probing v1.64.0: the SDK exists and maps
-cleanly onto all six methods, GCS is strongly consistent so the fingerprint trap
-holds, and fake-gcs-server gives a real emulator.
+**Phase 0 — this spec.** Approved; the questions are resolved in the Resolved
+section above. The headline findings are settled by probing v1.64.0: the SDK
+exists and maps cleanly onto all six methods, GCS is strongly consistent so the
+fingerprint trap holds, and fake-gcs-server gives a real emulator.
 
 **Phase 1 — the module and read path.** Scaffold `config-gcp-gcs` (README-only,
 no microsite), `Wrap(client, bucket)`, `ReadFile`/`Stat` with
@@ -433,15 +435,16 @@ no microsite), `Wrap(client, bucket)`, `ReadFile`/`Stat` with
 allowlist (D8).
 
 **Phase 2 — the write/commit path.** `WriteFile` (NewWriter + Write + Close,
-atomic-on-Close), `Rename` (copy-then-delete, per the D6/OQ1 resolution),
-`Remove`, `MkdirAll` no-op (D4/D5). Unit tests for the stage-and-rename commit,
-the orphan-on-crash window, and the content-fingerprint conflict trap over the
+atomic-on-Close), `Rename` (native `ObjectHandle.Move`, per the resolved
+Resolved-section decision and D5), `Remove`, `MkdirAll` no-op (D4/D5). Unit tests
+for the atomic move commit and the content-fingerprint conflict trap over the
 fake.
 
 **Phase 3 — watch, emulator integration and release.** Confirm the plain
-`config.FS` (no `RealPather`) is polled by the core with a recommended long
-interval (D5); env-gated integration against **fake-gcs-server** under
-testcontainers-go via the resolved endpoint wiring (D7/OQ4). Then publish
+`config.FS` (no `RealPather`) is polled by the core at the 60s cadence the
+adapter hints via `config.PollIntervalHinter` (D5); env-gated integration against
+**fake-gcs-server** under testcontainers-go via the resolved explicit-option
+endpoint wiring (D7). Then publish
 v0.1.0: the module `main`, the `config` docs page (`how-to/gcp-gcs.md`) bundled
 into the parent site, and the landing card — the rollout every adapter takes.
 This adapter, with `config-aws-s3` and `config-azure-blob`, proves the umbrella's

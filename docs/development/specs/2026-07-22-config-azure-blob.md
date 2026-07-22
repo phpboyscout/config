@@ -2,7 +2,8 @@
 title: config-azure-blob — wrapping an Azure Blob container as a read+write config.FS
 date: 2026-07-22
 author: matt.cockayne
-status: draft
+status: approved
+approved: 2026-07-22
 ---
 
 # config-azure-blob
@@ -174,9 +175,11 @@ operation*, three natively and two by a cheap, credential-free derivation.
 ### D5 — Capability: read+write; not a `RealPather`, not a `LinkReader`; watched by polling
 
 `Wrap` returns a **single plain adapter type** that satisfies `config.FS` and,
-deliberately, **neither** optional interface — the `config-iofs` shape, not the
-four-type `config-afero` switch, because an object store's capabilities do not
-vary by instance:
+deliberately, **neither** optional *capability* interface (`RealPather` /
+`LinkReader`) — the `config-iofs` shape, not the four-type `config-afero` switch,
+because an object store's capabilities do not vary by instance. (It *does*
+implement the `config.PollIntervalHinter` hint interface — a poll cadence
+advertisement, not a filesystem capability — see below.)
 
 - **Not a `RealPather`.** A blob has no operating-system path (that is the whole
   point of an object store), so the adapter cannot honour `RealPath` and, per the
@@ -188,19 +191,21 @@ vary by instance:
 - **Not a `LinkReader`.** Blob storage has no symlink notion; paths are used as
   given.
 
-**On the poll interval — the honest limit of a filesystem adapter.** Umbrella D5
-says each cloud adapter recommends "a much longer default" than the core's
-2-second `DefaultPollInterval`, because a poll of an object store is a billed API
-call. A **backend** adapter like `config-azure-appconfig` owns its `Watch` loop
-and so *can* default to 30 s. A **filesystem** adapter does not: the poll lives in
-the core's `pollWatcher`, whose cadence is the Store-level `WithPollInterval`
-setting, which the adapter has no hook to change. So the adapter's obligation here
-is **documentation, not a default**: the README states plainly that the 2 s
-default is far too eager for a billed object store and that a consumer watching a
-blob **should raise `WithPollInterval`** to seconds-to-minutes. Each core poll
-re-reads the blob via `ReadFile` → download (a billed GET); an ETag-conditional
-short-circuit is possible but is an optimisation of the core poll path, surfaced
-as an open question below, not a v0.1.0 requirement.
+**On the poll interval — the adapter advertises a sane floor.** Umbrella D5 says
+each cloud adapter recommends "a much longer default" than the core's 2-second
+`DefaultPollInterval`, because a poll of an object store is a billed API call. A
+**backend** adapter like `config-azure-appconfig` owns its `Watch` loop and so
+*can* default to 30 s. A **filesystem** adapter historically could not — the poll
+lived in the core's `pollWatcher`, whose cadence was the Store-level
+`WithPollInterval` setting a `config.FS` had no hook to change. Umbrella **R1**
+closes that gap with an optional `config.PollIntervalHinter` interface the Store
+consults on the wrapped `config.FS`, so this adapter now **implements
+`config.PollIntervalHinter`, returning a 60-second default** — consistent with the
+rest of the remote family — rather than relying on the consumer reading the
+README. `WithPollInterval` still overrides the hint. Each core poll re-reads the
+blob via `ReadFile` → download (a billed GET); an ETag-conditional short-circuit
+is possible but is an optimisation of the core poll path — deferred to a later
+revision (Resolved (2026-07-22), item 2), not a v0.1.0 requirement.
 
 Read+write is genuine: reading config from a blob and writing it back
 (`config.Apply`, a snapshot, an edit) are both legitimate and common, and Blob
@@ -236,7 +241,7 @@ met honestly rather than pretended to be a disk:
   works unchanged over an object store — and Blob Storage's strong read-after-
   write consistency means a re-read to check the fingerprint sees the latest
   bytes. No ETag machinery is required for correctness (an ETag *If-Match* on the
-  put could harden it further — open question).
+  put could harden it further — deferred, Resolved 2).
 
 The consequence — a couple of extra API calls per commit and a possible orphaned
 staging blob on crash — is stated in the README, not hidden (umbrella D6).
@@ -283,9 +288,9 @@ type BlobInfo struct {
 `Wrap(client *azblob.Client, container string) config.FS` is the convenience path
 that binds the container and adapts the SDK client to a `BlobStore`, so a consumer
 writes `configazureblob.Wrap(client, "my-container")` and never sees the narrow
-interface unless testing. (Whether `BlobStore`/`New` are *exported* or kept
-package-internal is an open question — appconfig exports its equivalent; a
-filesystem adapter may not need to.)
+interface unless testing. `BlobStore` and `New` are **exported** — consistent with
+the sibling App Configuration backend, so a consumer can inject a custom
+implementation or a fake (Resolved 1).
 
 ### D8 — Dependency footprint: the modular Azure Blob SDK, `azidentity` absent
 
@@ -410,7 +415,7 @@ in a blob; `config-azure-appconfig` is the key-value member of Azure's story.
 func Wrap(client *azblob.Client, container string) config.FS
 
 // New is the injection seam: a fake BlobStore in tests, a Wrap-adapted client in
-// production. (Export of New/BlobStore is an open question.)
+// production. Exported, like the App Configuration sibling (Resolved 1).
 func New(store BlobStore) config.FS
 
 type BlobStore interface { … }   // Download, Upload, GetProperties, Copy, Delete
@@ -474,61 +479,66 @@ orphan a staging blob; never corrupt the target, D6) and that **watching is
 polled and the 2 s default is far too eager for a billed store**, so a watching
 consumer should raise `WithPollInterval` (D5).
 
-## Open questions
+## Resolved (2026-07-22)
 
-Surfaced, not resolved:
+All open questions were answered by the human on 2026-07-22, and the decisions
+above were amended in place to match (no decision renumbered). Each records what
+was verified, so the choice rests on facts.
 
-1. **Export `New`/`BlobStore`, or keep them package-internal?** The sibling
-   `config-azure-appconfig` backend **exports** its narrow `Store` and `New` so a
-   consumer *could* inject a custom implementation, and its README documents the
-   seam. A filesystem adapter may not need that — `config-afero` and `config-iofs`
-   export only `Wrap` and test against real/fake underlying types with no exported
-   seam. Should this adapter export `New(BlobStore)` (consistency with the Azure
-   backend sibling, injectable) or keep the fake seam internal to the package
-   (consistency with the filesystem-adapter siblings, smaller surface)?
+1. **Export `New(BlobStore)` and the `BlobStore` interface.** The adapter exports
+   a narrow `BlobStore` interface and `New(BlobStore)` alongside `Wrap`, consistent
+   with the sibling `config-azure-appconfig` backend, giving a clean injectable
+   seam for consumer tests and a real fake. `Wrap(client, container)` remains the
+   ordinary constructor over a real `*azblob` client, adapting it to a `BlobStore`;
+   a consumer never sees the narrow interface unless testing. Export wins over the
+   smaller `config-afero`/`config-iofs` surface because a cloud adapter's fake is
+   worth handing consumers, and it keeps the Azure family's two members shaped
+   alike.
 
-2. **ETag-conditional writes and polls.** D6's conflict detection is content-SHA
-   based and correct without ETags. But Blob Storage offers `If-Match` /
-   `If-None-Match` access conditions (verified: `blob.AccessConditions` /
-   `ModifiedAccessConditions` on the upload and copy options). Should the write
-   put be hardened with an `If-Match` on the ETag captured at load (belt-and-
-   braces over the content hash), and should the **poll** re-read use an
-   `If-None-Match` conditional GET so an unchanged blob returns 304 (no body, no
-   egress) instead of a full download each interval? Both are optimisations /
-   hardenings, not correctness requirements; do they earn v0.1.0, or a later
-   revision?
+2. **ETag-conditional writes/polls — deferred.** v0.1.0 relies on the shared write
+   path's content-SHA conflict detection (umbrella **D6**), which is correct without
+   ETags. Blob Storage's `If-Match` / `If-None-Match` access conditions (verified:
+   `blob.AccessConditions` / `ModifiedAccessConditions` on the upload and copy
+   options) would layer belt-and-braces hardening on the write and let the poll do
+   an `If-None-Match` conditional GET (304, no body, no egress) instead of a full
+   download each interval — but both are **optimisations / hardenings, not
+   correctness**, so they do not earn v0.1.0 and can be added by a later dated
+   revision here.
 
-3. **The poll interval a filesystem adapter cannot default (D5).** The core's
-   `pollWatcher` uses `WithPollInterval` (default 2 s), and a `config.FS` has no
-   hook to raise it. Documentation is the v0.1.0 answer. Is that sufficient, or
-   does the *family* want a core affordance — e.g. a Store consulting an optional
-   `PollIntervalHint` interface on the `config.FS` — so a cloud filesystem adapter
-   can advertise a sane floor rather than relying on the consumer reading the
-   README? (This is arguably an umbrella-level revision, not this adapter's to
-   settle.)
+3. **Poll cadence — implements `config.PollIntervalHinter`, 60-second default**
+   (amends D5). A poll is a billed blob read, so rather than relying on the consumer
+   reading the README, `config-azure-blob` implements the new optional
+   `config.PollIntervalHinter` (umbrella **R1**) and returns **60 seconds** —
+   consistent with the rest of the remote family. The core's Store consults the
+   hint when it polls a wrapped `config.FS`; `WithPollInterval` overrides it. This
+   turns the previous "documentation, not a default" limit into a real advertised
+   floor.
 
-4. **`Remove` of an absent blob.** D3 treats a `BlobNotFound` on `Remove` as
-   already-removed (nil error), matching the idempotent intent of discarding
-   staged content. Is silent success right, or should it surface `fs.ErrNotExist`
-   the way `os.Remove` of a missing file does? The staging-cleanup call path wants
-   idempotence; a consumer calling `Remove` directly might want the error.
+4. **`Remove` of an absent blob — idempotent success** (confirms D3). A
+   `BlobNotFound` on `Remove` returns nil, matching the idempotent intent of
+   discarding staged content (the primary caller). This diverges from `os.Remove`
+   of a missing file, which the README notes. `ReadFile` of an absent blob still
+   returns an `fs.ErrNotExist`-shaped error, which the Store relies on for its
+   optional-source handling — only `Remove` is idempotent.
 
-5. **Container existence and creation.** `Wrap` binds a container name but does
-   **not** create the container (`MkdirAll` is a no-op, D6). A write to a
-   non-existent container fails with `ContainerNotFound`. Is "the container must
-   exist, as the account/endpoint must" the right contract (consistent with D7 —
-   provisioning is the consumer's), or should the adapter offer an opt-in
-   create-if-absent? Leaning to the former; surfaced in case a consumer need
-   changes it.
+5. **Container existence — the container must exist (consumer provisions)**
+   (confirms D6, D7). `Wrap` binds a container but does **not** create it
+   (`MkdirAll` is a no-op, D6); a write to a missing container fails with
+   `ContainerNotFound`. Provisioning is the consumer's, consistent with **D7** (the
+   adapter owns no credentials or provisioning) and with the account/endpoint being
+   the consumer's to stand up. There is **no** opt-in create-if-absent in v0.1.0.
+
+**No open questions remain.**
 
 ## Implementation phases
 
-Gated on D2 of the umbrella: this spec is `draft`, and must be `approved` with
-the open questions resolved **before** any code.
+Gated on D2 of the umbrella: this spec is `approved`, with the open questions
+resolved (see Resolved (2026-07-22)) **before** any code.
 
-**Phase 0 — this spec.** Draft; open questions above to be resolved with the human
-before approval. Blocked on the umbrella's Phase 1 (the filesystem-adapter family
-baseline) being released, though this adapter adds no core symbol of its own.
+**Phase 0 — this spec.** Approved 2026-07-22, its open questions resolved with the
+human (Resolved (2026-07-22)). Blocked on the umbrella's Phase 1 (the
+filesystem-adapter family baseline) being released, though this adapter adds no
+core symbol of its own.
 
 **Phase 1 — the module, read + write.** Scaffold `config-azure-blob`
 (README-only, no microsite; umbrella D2), the narrow `BlobStore` interface and

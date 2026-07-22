@@ -2,7 +2,8 @@
 title: config-iofs — wrapping any io/fs.FS as a read-only config.FS
 date: 2026-07-22
 author: matt.cockayne
-status: draft
+status: approved
+approved: 2026-07-22
 ---
 
 # config-iofs
@@ -64,9 +65,9 @@ forward-slash-separated names with no leading slash (`fs.ValidPath` rejects a
 leading `/`, `..`, and backslashes; verified). A consumer wrapping an `embed.FS`
 passes the embedded name — `"defaults/config.yaml"`, not `"/etc/app.yaml"` —
 exactly as they would to `embed.FS.ReadFile` directly. The adapter passes the
-name through unchanged; it does not rewrite, root, or clean it. See Open
-questions on whether it should reject an `io/fs`-invalid name early rather than
-let it surface as `fs.ErrNotExist`.
+name through unchanged; it does not rewrite, root, or clean it. Per Resolved
+(2026-07-22), an `io/fs`-invalid name is rejected early with an `fs.ErrInvalid`-
+wrapping error rather than allowed to surface as `fs.ErrNotExist`.
 
 ### D3 — Read-only: writes return `config.ErrReadOnlyFS`
 
@@ -93,7 +94,10 @@ nothing to configure. `io/fs` has no symlink resolution either, so no
 
 For the headline case this is ideal: an `embed.FS` **never changes** at runtime,
 so watching it is pointless — but harmless, because a poll that always re-reads
-the same bytes simply stays quiet.
+the same bytes simply stays quiet. The adapter does **not** implement the core's
+`config.PollIntervalHinter`; it keeps the default poll cadence, because an
+arbitrary `io/fs.FS` could be dynamic and there is no billed-call cost (unlike the
+cloud backends) to justify slowing the default down.
 
 ### D5 — Zero dependencies
 
@@ -137,8 +141,8 @@ an unexported type with no stable contract, sniffing it is exactly the
 concrete-type guessing the `RealPather` doc warns against, and a consumer who
 wants native watching over a real directory already has the right tool —
 **`config.Dir`**, which is a `RealPather` by construction. `config-iofs` is for
-the cases that genuinely have no OS path. (Surfaced again below as an open
-question, in case a consumer need changes the calculus.)
+the cases that genuinely have no OS path. (Confirmed in Resolved (2026-07-22):
+documentation is sufficient, and no opt-in real-path bridge ships in v0.1.0.)
 
 **Making it writable via a copy-on-write overlay.** `io/fs` is read-only by
 design; synthesising writes into a side buffer would invent a filesystem the
@@ -188,36 +192,50 @@ umbrella's already-planned `ErrReadOnlyFS` precursor; nothing breaks. The module
 ships read-only at v0.1.0; because `io/fs` can never gain write, there is no
 later read→write promotion to communicate.
 
-## Open questions
+## Resolved (2026-07-22)
 
-Surfaced, not resolved:
+All open questions were answered by the human on 2026-07-22, and the decisions
+above stand as drafted. Each records what was verified, so the choice rests on
+facts.
 
-1. **Invalid-name handling.** When a consumer passes an `io/fs`-invalid name (a
-   leading slash, `..`), `fs.ReadFile` returns a "file does not exist"-shaped
-   error that satisfies `fs.ErrNotExist`, which the Store treats as a *normal*
-   missing optional source — so a fat-fingered absolute path silently reads as
-   "absent" rather than "you passed a bad name". Should `Wrap`'s methods call
-   `fs.ValidPath` and return a distinct error (not one that `errors.Is`
-   `fs.ErrNotExist`) for an invalid name, so the mistake surfaces? Or is passing
-   `io/fs`-valid names purely the consumer's responsibility, as it is when
-   calling `embed.FS.ReadFile` directly?
+1. **Invalid-name handling — validate and surface the mistake** (sharpens D2).
+   `Wrap`'s `ReadFile` and `Stat` call `fs.ValidPath(name)` **first** and, for an
+   invalid name — a leading slash, a `..` segment, a backslash — return a distinct
+   error that wraps `fs.ErrInvalid`, deliberately **not** one satisfying
+   `fs.ErrNotExist`. Rationale: the Store treats `fs.ErrNotExist` as a *normal*
+   missing optional source, so without this check a fat-fingered absolute path
+   (`"/etc/app.yaml"`) would silently read as "absent" instead of "you passed a
+   bad name", hiding the mistake behind ordinary optional-source semantics. A
+   valid-but-absent name is untouched: it still returns the `fs.ErrNotExist`-shaped
+   error `fs.ReadFile` produces, unchanged, so the Store's missing-overlay path
+   keeps working exactly as D2 describes. The two cases are now distinguishable —
+   a bad name is a caller error, an absent name is a normal one.
 
-2. **`os.DirFS` watchability.** `config-iofs` over an `os.DirFS` is polled, even
-   though the directory has real OS paths and could in principle be watched
-   natively. The clean answer is "use `config.Dir` for a real directory" (see
-   Rejected). Is that guidance sufficient, or does a consumer who already holds
-   an `os.DirFS` (and cannot easily swap it for `config.Dir`) warrant a
-   documented note, or even an opt-in real-path bridge?
+2. **`os.DirFS` watchability — documentation is sufficient.** `config-iofs` over
+   an `os.DirFS` is polled even though the directory has real OS paths behind it.
+   The guidance already recorded in Rejected — "use `config.Dir` for a real
+   directory", which is a `RealPather` by construction and watches natively — is
+   the right answer, and the README states it. Rationale: an opt-in real-path
+   bridge would resurrect exactly the unexported-type sniffing D4's Rejected entry
+   turns down, for a consumer who by definition already has the correct tool to
+   hand. No such bridge ships in v0.1.0; if a concrete need appears later it can be
+   added by a dated revision here, but nothing today justifies the surface.
 
-3. **A scoping helper.** `io/fs` offers `fs.Sub` to root a sub-filesystem. Should
-   `config-iofs` expose any convenience for that, or is composing `fs.Sub(fsys,
-   dir)` before `Wrap` — which already works with no help from this module —
-   the right and only story?
+3. **A scoping helper — none.** `config-iofs` adds no convenience wrapper for
+   rooting a sub-filesystem. Composing `fs.Sub(fsys, dir)` before `Wrap` already
+   produces exactly the scoped `config.FS` a consumer wants, with no help from this
+   module, so a helper would only wrap a one-liner the standard library already
+   provides. The README shows that `fs.Sub` one-liner instead. This keeps the
+   module to its single honest job (D2) — map two read methods, fail the writes —
+   and adds no API the stdlib does not already cover.
+
+**No open questions remain.**
 
 ## Implementation phases
 
-**Phase 0 — this spec.** Approve it, resolving the open questions above. Blocked
-on the umbrella's Phase 1 (`config.ErrReadOnlyFS`) being released.
+**Phase 0 — this spec.** Approved 2026-07-22, with its open questions resolved
+(see Resolved (2026-07-22)). Blocked on the umbrella's Phase 1
+(`config.ErrReadOnlyFS`) being released before Phase 1 here can start.
 
 **Phase 1 — the module.** Scaffold `config-iofs` (README-only, no microsite;
 umbrella D2 / adapter docs model), `Wrap` returning the single read-only type

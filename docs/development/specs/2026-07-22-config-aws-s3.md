@@ -2,7 +2,8 @@
 title: config-aws-s3 — the AWS S3 object-store filesystem adapter
 date: 2026-07-22
 author: matt.cockayne
-status: draft
+status: approved
+approved: 2026-07-22
 ---
 
 # config-aws-s3
@@ -145,12 +146,13 @@ is staged beside the target and renamed over it"), so it will call
 `WriteFile(stageKey, …)` then `Rename(stageKey, targetKey)`. Whatever staging
 key the Store chooses is used verbatim as an object key; S3 has no directories,
 so a key containing `/` simply creates a flat key — there is nothing to `MkdirAll`
-into being first (D5, `MkdirAll` no-op). **Whether the adapter should carry an
-optional `keyPrefix`** (so a bucket shared with unrelated objects can be scoped,
-the way `config-aws-ssm` takes a required prefix) is an **open question** (OQ3),
-not resolved here: the umbrella's advertised signature is `Wrap(client, bucket)`
-with no prefix, and a prefix can be added later as a functional option without
-breaking that.
+into being first (D5, `MkdirAll` no-op). The adapter also carries an **optional
+`WithKeyPrefix`** functional option (so a bucket shared with unrelated objects can
+be scoped, the way `config-aws-ssm` takes a required prefix), **shipped in
+v0.1.0** (Resolved 2026-07-22, item 3): the `config.FS` name joins onto the prefix
+to form the object key, and the staging key derives from that resolved key. It is
+additive over the umbrella's advertised `Wrap(client, bucket)`; with no option
+passed the name is used as the key verbatim.
 
 ### D4 — Capability: read **and** write; per-object-atomic commit; not natively watchable
 
@@ -174,7 +176,12 @@ PUT and the copy are **atomic per object**, so the *target* is only ever replace
 whole — a reader never sees a half-written object. The single imperfection is
 that a crash **between the copy and the delete** leaves the staged object behind:
 garbage to be cleaned up, never corruption of the target, never a lost write.
-This is stated plainly, not hidden (umbrella D6; OQ1 surfaces the trade-off).
+S3 has no atomic move (umbrella **D6/R2** keeps S3 on copy-then-delete), so this
+is the honest model. To keep the leak *findable*, the staged object uses a
+**deterministic, recognisable key convention** — a documented suffix such as
+`.config-stage` on the resolved target key — so an orphan left by a crash is
+identifiable and a consumer can lifecycle-expire it by rule rather than hunting
+blind. This is stated plainly, not hidden (umbrella D6/R2; Resolved item 1).
 
 It is **not** a `RealPather` (an object key is not an operating-system path) and
 **not** a `LinkReader` (S3 has no symlinks), so `Wrap` returns the plain adapter
@@ -191,16 +198,17 @@ synthesises one (umbrella D6):
 - `Name()` — the base name of the key.
 - `Size()` — `HeadObjectOutput.ContentLength`.
 - `ModTime()` — `HeadObjectOutput.LastModified`.
-- `Mode()` — a **nominal** regular-file mode (e.g. `0o644`), carrying no real
+- `Mode()` — a **nominal** regular-file mode, fixed at `0o644`, carrying no real
   permission information because the store has none.
 - `IsDir()` — `false` (this adapter stats objects, never prefixes).
-- `Sys()` — `nil` (or the raw `HeadObjectOutput`; OQ2).
+- `Sys()` — `nil` (Resolved 2026-07-22, item 2; the raw `HeadObjectOutput` may be
+  exposed later by revision if a consumer needs the ETag).
 
 The nominal mode is load-bearing for one interaction: the Store calls `Stat`
 before a write "to preserve permissions across a write" (fs.go). On S3 there is
 nothing to preserve — `WriteFile` ignores `perm` (D4) — so a synthesised
 `0o644` is honest about there being no mode, and round-trips harmlessly. The
-exact nominal mode value is a small **open question** (OQ2).
+nominal mode value is a fixed `0o644` (Resolved 2026-07-22, item 2).
 
 ### D6 — Error & consistency semantics
 
@@ -226,7 +234,7 @@ exact nominal mode value is a small **open question** (OQ2).
   failure surfaces as a read/write error the Store already tolerates for a
   transient source.
 
-### D7 — Watch is polled, with a long recommended interval; a poll is a billed call
+### D7 — Watch is polled; the adapter declares a 60-second interval via `PollIntervalHinter`; a poll is a billed call
 
 S3 has no native change signal in-SDK (D6/verified), and the adapter is not a
 `RealPather`, so — exactly as the umbrella promises (**D5**) — when a consumer
@@ -235,22 +243,25 @@ and stays quiet if nothing resolved differently, coalesced and settled by the
 Store's existing hybrid watch. **No new mechanism is needed or added** — the poll
 watcher and `WithPollInterval` already ship in the core.
 
-What this adapter owes is a *sensible interval*, not a mechanism. The core's
+What this adapter owes is a *sensible interval*, and — now that R1 gives it a
+mechanism — it applies one rather than only recommending it. The core's
 `DefaultPollInterval` is **2 seconds**, which is far too eager for S3: every poll
 is a **billed** `GetObject`/`HeadObject`, and a 2-second cadence is 43,200 API
-calls per object per day. So the adapter recommends a **much longer default —
-proposed 5 minutes** — documented in the README with the cost stated, mirroring
-`config-aws-ssm`'s conservative 60-second poll default and its reasoning
-(config is provisioned by a pipeline, not edited in a hot loop; minutes of
-staleness is acceptable). The exact default is an **open question** (OQ4).
+calls per object per day. So the adapter **implements the optional
+`config.PollIntervalHinter`** interface (umbrella R1), returning **60 seconds** —
+consistent with the rest of the remote family (`config-aws-ssm` uses a 60-second
+poll default) and reasoned the same way (config is provisioned by a pipeline, not
+edited in a hot loop; up-to-a-minute staleness is acceptable while the bill is
+bounded at ~1 call/min). A changed config object is still caught within a minute.
 
 The mechanics: this adapter is a `config.FS`, and the core poll watcher tuned by
-`WithPollInterval` is a *Store* setting, not an adapter method — so, strictly, the
-adapter cannot set the interval itself; it **documents the recommended
-`WithPollInterval` value** the consumer should pass, and cannot lower the risk of
-a consumer leaving it at the 2-second default beyond saying so loudly in the
-README. (Whether the family wants a per-`config.FS` "recommended interval" hint
-the Store reads is a family-level question, noted in OQ4, not resolved here.)
+`WithPollInterval` is a *Store* setting. R1 closes the gap the draft lamented —
+the adapter no longer merely *documents* a number it cannot apply. By
+implementing `config.PollIntervalHinter` it **declares** its 60-second hint to
+the Store, which reads the hint when it builds the poll watcher, so a consumer who
+passes no `WithPollInterval` gets the adapter's 60-second cadence rather than the
+core's 2-second default. `WithPollInterval`, when passed, still overrides the
+hint. This removes the risk the draft could only warn about in the README.
 
 ### D8 — Dependency footprint: the S3 service SDK, stated plainly
 
@@ -371,16 +382,22 @@ endpoint (D2).
 
 The exported surface (read+write `config.FS`):
 
-- `func Wrap(client *s3.Client, bucket string) config.FS` — the injection seam,
-  the umbrella's advertised signature. Returns the plain adapter (neither
-  `RealPather` nor `LinkReader`), so the Store polls it (D7).
+- `func Wrap(client *s3.Client, bucket string, opts ...Option) config.FS` — the
+  injection seam, the umbrella's advertised signature widened with variadic
+  options. Returns the adapter (neither `RealPather` nor `LinkReader`, but a
+  `config.PollIntervalHinter`), so the Store polls it on the adapter's 60-second
+  hint (D7).
+- `func WithKeyPrefix(prefix string) Option` — scopes the bucket by joining
+  `prefix` onto each `config.FS` name to form the object key (D3; Resolved
+  2026-07-22, item 3). Shipped in v0.1.0.
 
-That is the whole public surface for v0.1.0 — a single constructor, as
-`config-afero`'s `Wrap` is the whole of its surface. A later revision may add
-functional options (a `keyPrefix`, OQ3; an explicit nominal mode, OQ2) without
-breaking `Wrap`, in which case a `Wrap(client, bucket, opts...)` variadic or a
-sibling `WrapWithOptions` is the additive path. No change to the `config` core is
-required: the `config.FS` interface, the optional interfaces this adapter
+That is the public surface for v0.1.0 — the constructor plus the `WithKeyPrefix`
+option, close to as minimal as `config-afero`'s `Wrap`. The nominal `Stat` mode is
+fixed at `0o644` and `Sys()` is `nil` (D5; Resolved items 2), not options. Further
+functional options can be added additively over `Wrap`'s variadic without breaking
+it should a later dated revision want them. No change to the `config` core is
+required beyond the optional `config.PollIntervalHinter` this adapter implements
+(umbrella R1): the `config.FS` interface, the optional interfaces this adapter
 deliberately does *not* claim, and the poll watcher all already ship (umbrella
 Public API).
 
@@ -410,49 +427,62 @@ and run on the go-test DIND job (D9); and a `depfootprint_test.go` allowlist
 Per the module's testing rule, each assertion is watched to fail before it is
 trusted.
 
-## Open questions
+## Resolved (2026-07-22)
 
-Surfaced, **not resolved** — these are the decisions the human settles before this
-spec goes `approved` (umbrella D2), exactly as `config-aws-ssm` surfaced its write
-and SecureString questions before resolution.
+All open questions were answered by the human on 2026-07-22, and the decisions
+above were amended in place to match (no decision renumbered). Each records what
+was decided and why, so the choice rests on rationale rather than deferral.
 
-1. **The copy-then-delete rename and its orphaned stage object.** `Rename` is
-   `CopyObject` + `DeleteObject`, non-atomic, and a crash between the two leaves
-   the staged object behind (D4, D6). The target is always intact — this is a leak,
-   never corruption — but the question is whether v0.1.0 should (a) accept the leak
-   and document it (simplest, matches umbrella D6), (b) use a deterministic,
-   recognisable stage-key convention (e.g. a `.tmp`/`.stage` suffix) so orphans are
-   findable and a consumer can lifecycle-expire them, or (c) attempt any
-   opportunistic cleanup of prior orphans on write. This is the sharpest trade-off
-   in the adapter and is the umbrella's headline object-store concern.
+1. **Copy-then-delete rename — recognisable staging key, leak accepted and
+   documented** (amends D3, D4). `Rename` stays `CopyObject` + `DeleteObject`;
+   S3 has no atomic move and the umbrella's **D6/R2** keeps S3 on copy-then-delete,
+   so pretending otherwise is off the table. The staged object uses a
+   **deterministic, recognisable key convention** — a documented suffix such as
+   `.config-stage` on the resolved target key — so a crash between the copy and the
+   delete leaves a *findable* orphan that a consumer can lifecycle-expire by rule.
+   The target is always intact: this is a **leak, never corruption**, and never a
+   lost write. v0.1.0 does **no** opportunistic cleanup of prior orphans on write —
+   the recognisable key plus a bucket lifecycle rule is the whole story, and
+   scanning for and sweeping strangers' orphans is out of scope.
 
-2. **`Stat`'s synthesised `fs.FileMode`.** The mode is nominal (D5) — what value?
-   `0o644` reads as an ordinary config file and round-trips harmlessly through the
-   Store's preserve-permissions step (which has nothing to preserve on S3). Should
-   it be a fixed `0o644`, configurable via an option, or derived from anything in
-   the object metadata (there is nothing suitable)? And should `FileInfo.Sys()`
-   return `nil` or the raw `*HeadObjectOutput` for consumers who want the ETag?
+2. **`Stat` mode — fixed `0o644`, `Sys()` nil** (confirms D5). The synthesised
+   `fs.FileInfo` reports a nominal **`0o644`** — it reads as an ordinary config file
+   and round-trips harmlessly through the Store's preserve-permissions step, which
+   has nothing to preserve on S3 anyway. The mode is **fixed**, not an option and
+   not derived from object metadata (there is nothing suitable to derive it from).
+   `FileInfo.Sys()` returns **`nil`** for v0.1.0; exposing the raw
+   `*HeadObjectOutput` (ETag and the rest) to consumers who want it can be added
+   later by a dated revision if a real need appears, without breaking anything.
 
-3. **Key prefix vs. bare key.** `Wrap(client, bucket)` uses the `config.FS` name as
-   the object key verbatim (D3). Should the adapter also offer an optional
-   `keyPrefix` (a bucket shared with unrelated objects, scoped the way
-   `config-aws-ssm` takes a required prefix)? It is additive (a functional option)
-   and does not block v0.1.0, but the naming/precedence with the staging key wants
-   deciding before it ships.
+3. **Key prefix — optional `WithKeyPrefix`, shipped in v0.1.0** (amends D3). The
+   adapter offers an **optional `WithKeyPrefix` functional option** that scopes a
+   bucket shared with unrelated objects, mirroring `config-aws-ssm`'s prefix. The
+   `config.FS` name joins onto the prefix to form the object key; the staging key
+   (item 1) derives from that **resolved** key, so prefix and staging compose
+   cleanly. It is additive and cheap over the umbrella's advertised
+   `Wrap(client, bucket)`, so rather than deferring it to a later revision it
+   **ships in v0.1.0**. With no option passed, behaviour is exactly the draft's
+   verbatim-key mapping.
 
-4. **The recommended poll interval, and how strongly to enforce it.** A poll is a
-   billed `GetObject`/`HeadObject`, so the core's 2-second `DefaultPollInterval`
-   is far too eager; the proposal is a documented **5-minute** recommended
-   `WithPollInterval` (D7). But the adapter is a `config.FS` and cannot set a Store
-   setting itself — it can only document the value. Is 5 minutes right, and does
-   the *family* want a per-`config.FS` "recommended interval" hint the Store reads
-   so a consumer cannot accidentally poll S3 every 2 seconds? That is a
-   family-level question this adapter surfaces but does not own.
+4. **Poll cadence — implements `config.PollIntervalHinter`, 60-second default**
+   (amends D7). A poll is a **billed** `GetObject`/`HeadObject`, so the core's
+   2-second `DefaultPollInterval` is far too eager. Rather than only *documenting* a
+   recommended `WithPollInterval` it cannot apply, `config-aws-s3` **implements the
+   new optional `config.PollIntervalHinter`** (umbrella **R1**), returning
+   **60 seconds** — consistent with the rest of the remote family (`config-aws-ssm`
+   uses a 60-second poll default) and reasoned the same way: config is provisioned
+   by a pipeline, not edited in a hot loop, so up-to-a-minute staleness is fine
+   while the bill is bounded at ~1 call/min. The adapter now **declares** the number
+   to the Store rather than hoping a consumer reads the README; `WithPollInterval`
+   still overrides the hint when passed.
+
+**No open questions remain.**
 
 ## Implementation phases
 
-**Phase 0 — this spec.** Draft; open questions above go to the human before
-`approved` (umbrella D2).
+**Phase 0 — this spec.** Approved 2026-07-22; the four questions the draft
+surfaced were settled by the human and recorded in Resolved (2026-07-22), with the
+decisions amended in place (umbrella D2).
 
 **Phase 1 — the module, read+write path.** Scaffold `config-aws-s3` (README-only,
 no microsite; umbrella D2), the internal object-operation interface and its
@@ -469,7 +499,12 @@ API surface, plus a MinIO-endpoint note for the S3-compatible story. Then publis
 v0.1.0: the module `main`, the `config` docs page (`how-to/aws-s3.md`) bundled into
 the parent site, and the landing card — the same rollout every adapter takes.
 
-**Phase 3 (as needed) — options.** Any of the open questions the human elects to
-build — a `keyPrefix` option (OQ3), a configurable nominal mode (OQ2), a
-recognisable stage-key convention for orphan cleanup (OQ1) — added additively over
-`Wrap`, each by a dated revision here, never silently.
+**Phase 3 (as needed) — later revisions.** The four questions are resolved and
+their v0.1.0 answers land in Phases 1–2: `WithKeyPrefix` (item 3), the recognisable
+`.config-stage` staging key (item 1), the fixed `0o644` mode with `Sys()` nil
+(item 2) and the `config.PollIntervalHinter` 60-second hint (item 4). What remains
+genuinely deferred are the resolutions' own "later by revision" hooks — exposing
+the raw `*HeadObjectOutput` through `Sys()` (item 2), opportunistic cleanup of
+prior orphaned stage objects (item 1), or push-based watch via S3 Event
+Notifications — each added additively over `Wrap`, by a dated revision here, never
+silently.

@@ -2,7 +2,8 @@
 title: config-billy — wrapping a go-billy filesystem as config.FS
 date: 2026-07-22
 author: matt.cockayne
-status: draft
+status: approved
+approved: 2026-07-22
 ---
 
 # config-billy
@@ -61,22 +62,27 @@ configbilly.Wrap(bfs) // billy.Filesystem → config.FS
 
 The result is passed to `WithFiles`/`NewFileBackend` exactly as `config.OS()` is. It is
 **read+write** (umbrella D4): a `billy.Filesystem` mandates the write methods, so all six work and
-none returns `config.ErrReadOnlyFS`. (A `billy` filesystem mounted read-only surfaces the
-underlying store's own write error, e.g. `fs.ErrPermission`; see Open questions.)
+none returns `config.ErrReadOnlyFS` in the ordinary writable case. (A `billy` filesystem mounted
+read-only is caught by inspecting `billy.Capabilities()`: a missing `WriteCapability` makes the
+write methods return `config.ErrReadOnlyFS` up front — see Resolved (2026-07-22), item 4.)
 
 ### D2 — Map the six methods through `util`, staging and rename done by the Store
 
 `config-billy` translates the six calls and nothing more. A write is committed the way the whole
 module commits one — the Store stages content beside the target and `Rename`s over it, through the
 `config.FS` methods — so the adapter needs no staging logic of its own. It maps `WriteFile` to
-`util.WriteFile` and `Rename` to `billy.Rename`, and the atomicity is whatever the wrapped
-filesystem gives: on `osfs` a same-directory `Rename` is `os.Rename` (atomic on POSIX); on `memfs`
-it is an in-process map swap (atomic within the process). Either way a reader never observes a
-half-written file, which is the contract's promise (`fs.go`, `Rename` doc).
+`util.WriteFile` and `Rename` to billy's **native `Rename`** — a real filesystem-level rename (the
+umbrella's rename primitive, R2), never a copy-then-delete emulation — and the atomicity is whatever
+the wrapped filesystem gives: on `osfs` a same-directory `Rename` is `os.Rename` (atomic on POSIX);
+on `memfs` it is an in-process map swap (atomic within the process). Either way a reader never
+observes a half-written file, which is the contract's promise (`fs.go`, `Rename` doc). The
+*overwrite* semantics of `Rename` — whether renaming over an existing target succeeds or errors —
+vary by billy backend, so the README documents the assumption (the Store stages beside the target
+and renames over it, which osfs and memfs both honour).
 
 `go-billy` *has* a `TempFile(dir, prefix)` method, but `config.FS` has no `TempFile` and the Store
 builds the staging path itself, so the adapter does not use it — noted only so a future reader knows
-it was considered and is available if the Store's staging model ever changes (Open questions).
+it was considered and is available if the Store's staging model ever changes.
 
 ### D3 — Missing files satisfy `errors.Is(err, fs.ErrNotExist)`, verified
 
@@ -122,7 +128,9 @@ Because it claims no real path, a wrapped billy filesystem is watched by the cor
 `WithPollInterval` cadence (`DefaultPollInterval`, 2s) and stays quiet when nothing resolves
 differently. This is free and needs no per-adapter watch API. The 2s default is fine for the common
 cases — an `osfs` tree and an in-process `memfs` both poll cheaply, unlike a billed cloud API — so
-`config-billy` recommends no special interval.
+`config-billy` recommends no special interval. Because it wraps a *local* filesystem (in-memory
+`memfs` or on-disk `osfs`), not a billed remote store, it does **not** implement
+`config.PollIntervalHinter` and keeps the responsive default cadence.
 
 ### D6 — Footprint is exactly one module: `github.com/go-git/go-billy/v5`
 
@@ -180,8 +188,9 @@ func Wrap(bfs billy.Filesystem) config.FS
 ```
 
 `Wrap` returns a single unexported adapter type satisfying `config.FS` and *only* `config.FS` — no
-four-way type ladder as in `config-afero`, because there is no optional interface to conditionally
-claim (D4; `LinkReader` deferred, Open questions). The core needs no addition: everything used
+four-way type ladder as in `config-afero`, because `RealPather` is the only optional interface it
+declines (D4); `config.LinkReader` it claims unconditionally, since `Readlink` is mandatory on every
+`billy.Filesystem` (Resolved (2026-07-22), item 2). The core needs no addition: everything used
 (`config.FS`, the poll watcher) already ships, and `config.ErrReadOnlyFS` (umbrella Phase 1) is not
 returned because the adapter is read+write.
 
@@ -209,54 +218,63 @@ var _ config.FS = adapter{}
 
 `testify` is a test-only dependency and does not reach consumers, exactly as in `config-afero`.
 
-## Open questions
+## Resolved (2026-07-22)
 
-*(Surfaced per D2, not resolved here.)*
+All four open questions were answered by the human on 2026-07-22. Each records what was decided and
+why, so the choice rests on facts rather than intuition; no decision above is renumbered.
 
-1. **An opt-in real-path escape hatch.** D4 omits `RealPather` because the interface cannot prove an
-   OS path. Should there be an explicit opt-in — e.g. `WrapReal(bfs, root)` or an option asserting
-   "this billy filesystem is disk-backed, trust `Root()` as an OS path" — so a consumer who *knows*
-   they hold an `osfs` can recover native fsnotify hot-reload? It restores watchability for the
-   common on-disk case at the cost of a second constructor and a caller who can lie. The watcher's
-   `os.SameFile` guard would still catch a lie per path, degrading to polling. Deferrable: polling
-   works for everyone today.
+1. **Opt-in real-path escape hatch — deferred.** v0.1.0 ships **no** `WrapReal`/disk-backed opt-in.
+   D4 omits `RealPather` because `billy.Filesystem` cannot prove an OS path, and polling already
+   works for *every* billy filesystem today — an `osfs` tree and an in-process `memfs` both poll
+   cheaply (D5). Restoring native fsnotify for the known-on-disk case would mean a second constructor
+   a caller can lie through, and even then the watcher's `os.SameFile` guard would confirm the
+   claimed path and degrade a lie back to polling per path — so the escape hatch buys little over the
+   default. Deferrable to a dated revision if a real demand appears; never a silent addition.
 
-2. **`LinkReader`.** `billy.Filesystem` mandates `Readlink` (via the `billy.Symlink` interface), so
-   *every* wrapped filesystem could satisfy `config.LinkReader` — unlike afero, where it is
-   conditional. But semantics vary: `memfs.Readlink` on a regular file returns "not a symlink" and
-   `osfs.Readlink` returns `invalid argument`, both honest "this is not a link" answers, but the
-   Store must treat that error as "no link, use the path as given". Should `config-billy` claim
-   `LinkReader` unconditionally (justified because the method is mandatory and its error is the
-   correct negative), or omit it until a symlink-following need is demonstrated? Leaning claim, but
-   it wants the Store's `LinkReader`-on-error behaviour confirmed first.
+2. **`LinkReader` — claim it unconditionally.** `billy.Filesystem` mandates `Readlink` (via the
+   `billy.Symlink` interface), so `config-billy` satisfies `config.LinkReader` for **every** wrapped
+   filesystem — unlike afero, where the claim is conditional. Where the target is not a link,
+   `Readlink` returns an honest negative — `memfs` a "not a symlink" error, `osfs` an
+   `invalid argument` error — and the Store must fall back to using the path as given. This is not
+   assumed: an acceptance test asserts exactly that fallback (a regular file wrapped, written through
+   its plain path) so the claim rests on **observed** Store behaviour on a `Readlink` error, not on
+   an untested presumption.
 
-3. **Path/`Join` convention.** `go-billy` paths are forward-slash and interpreted *relative to the
-   wrapped filesystem's root* (an `osfs.New("/etc/app")` reads `"config.yaml"`, not
-   `"/etc/app/config.yaml"`) — like `config.Dir`, unlike `config.OS()`. Names pass through
-   unchanged; `billy.Join` is available but the Store composes paths itself. The README must state
-   this relative-to-root convention plainly so a consumer does not pass an absolute OS path expecting
-   `config.OS()` semantics. Is documentation sufficient, or should `Wrap` normalise/validate names?
+3. **Path convention — documentation, no normalisation.** `go-billy` names are forward-slash and
+   interpreted *relative to the wrapped filesystem's root* (an `osfs.New("/etc/app")` reads
+   `"config.yaml"`, not `"/etc/app/config.yaml"`) — like `config.Dir`, unlike `config.OS()`. Names
+   pass through `Wrap` **unchanged**: the adapter does not normalise or validate them, and the Store
+   composes paths itself. The README states the relative-to-root convention plainly so a consumer
+   does not pass an absolute OS path expecting `config.OS()` semantics. Documentation is sufficient;
+   silent normalisation would only hide the mismatch it is meant to prevent.
 
-4. **Read-only / capability-limited billy filesystems.** A `billy.Filesystem` can be mounted
-   read-only or lack `LockCapability` (memfs does). A write then fails with the underlying store's
-   own error rather than `config.ErrReadOnlyFS`. Should `config-billy` inspect
-   `billy.Capabilities()` and map a missing `WriteCapability` to `config.ErrReadOnlyFS` for a
-   consistent `errors.Is` story (umbrella D4), or leave capability mismatches to surface as the raw
-   underlying error? The umbrella's sentinel exists for *by-design* read-only adapters (`config-iofs`),
-   not for a runtime-read-only writable interface, so this is a judgement call.
+4. **Runtime-read-only billy filesystems — map to `config.ErrReadOnlyFS`.** `config-billy` inspects
+   `billy.Capabilities()` and, when `WriteCapability` is absent, its write methods return
+   `config.ErrReadOnlyFS` **up front** — so from a consumer's `errors.Is` perspective a read-only
+   filesystem is a read-only filesystem whether it is read-only *by design* (`config-iofs`) or
+   *by mount*. This deliberately widens the umbrella D4 sentinel's use slightly beyond by-design
+   adapters, for one consistent read-only story across the family rather than a raw underlying error
+   for one case and a sentinel for another. A write to a genuinely *writable* filesystem that then
+   fails still surfaces the underlying error unchanged — the mapping applies only where the
+   capability is absent, not to every write failure.
+
+**No open questions remain.**
 
 ## Implementation phases
 
-**Phase 0 — this spec** (Phase 2 of the umbrella).
+**Phase 0 — this spec**, approved 2026-07-22 with all four open questions resolved (Phase 2 of the
+umbrella).
 
 **Phase 1 — the module.** Scaffold `config-billy` from `config-afero`'s layout (go.mod, CI, lint,
 justfile, renovate, LICENSE, README skeleton). Implement `Wrap` and the single six-method adapter
-over `util.ReadFile`/`util.WriteFile`/`Stat`/`Rename`/`Remove`/`MkdirAll` (D2). Resolve open
-questions 2–4 into the code or explicitly into the README before merge.
+over `util.ReadFile`/`util.WriteFile`/`Stat`/`Rename`/`Remove`/`MkdirAll` (D2). Land the resolved
+decisions — unconditional `LinkReader`, the `WriteCapability`→`config.ErrReadOnlyFS` mapping, and
+the relative-to-root path convention (Resolved (2026-07-22), items 2–4) — into the code and the
+README before merge.
 
 **Phase 2 — tests.** The `memfs` unit suite, the negative `RealPather` assertion, the missing-file
 error test, the `osfs` backend-agnostic spot check, and the `depfootprint` allowlist (D6, D7).
 
 **Phase 3 — docs & release.** A README page (bundled into the parent config docs site,
 page-per-adapter, as the other adapters are), then the v0.1.0 release MR. Any real-path escape hatch
-(open question 1) is a later dated revision, never a silent addition.
+(deferred, Resolved (2026-07-22), item 1) is a later dated revision, never a silent addition.

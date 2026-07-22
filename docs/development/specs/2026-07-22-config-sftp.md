@@ -2,7 +2,8 @@
 title: config-sftp — the SFTP remote-filesystem adapter
 date: 2026-07-22
 author: matt.cockayne
-status: draft
+status: approved
+approved: 2026-07-22
 ---
 
 # config-sftp
@@ -121,18 +122,18 @@ and they differ exactly on overwrite:
   is documented to *"replace newname if it already exists"* — i.e. POSIX
   `rename(2)` semantics: atomic replace of the destination, server-side.
 
-So the adapter's `Rename` **prefers `PosixRename`** and falls back to `Rename`.
-The atomicity is real but it is the **remote server's**, not the adapter's: on an
-OpenSSH server `PosixRename` is an atomic replace and the commit is clean; on a
-server that does not advertise the extension the adapter has only the
-non-overwriting `Rename`, and the commit's rename-over-existing cannot be atomic.
-How to behave in that second case is the sharpest open question (see Open
-questions) — the safe default under discussion is to `Remove` the target then
-`Rename`, accepting a narrow non-atomic window, versus failing loudly so the
-consumer knows their server cannot give the guarantee the write path assumes. The
-adapter documents that atomic-overwrite commit **requires a server that supports
-`posix-rename@openssh.com`** (OpenSSH and most others do), rather than silently
-degrading.
+So — this is exactly umbrella **R2** (SFTP has a native atomic rename extension) —
+`config-sftp` uses `PosixRename` where the server advertises it, falling back to
+plain `Rename`, and where that fails because the target already exists, to
+`Remove(target)` then `Rename`. Capability is detected per connection so the
+strongest available primitive is chosen. The atomicity is real but it is the
+**remote server's**, not the adapter's: on an OpenSSH server `PosixRename` is an
+atomic replace and the commit is clean; on a server that does not advertise the
+extension the adapter has only the non-overwriting `Rename`, and the
+`Remove`-then-`Rename` fallback opens a narrow non-atomic window that the README
+documents. The adapter documents that atomic-overwrite commit **requires a server
+that supports `posix-rename@openssh.com`** (OpenSSH and most others do), and
+degrades explicitly rather than silently.
 
 ### D6 — Capability: read and write; not a `RealPather`; watched by polling
 
@@ -152,9 +153,12 @@ it cannot honour"*). Not implementing it routes the Store to its **poll watcher*
 (umbrella D5), which re-reads the remote file on an interval and stays quiet if
 nothing resolved differently. No new mechanism is needed — the poll watcher and
 `WithPollInterval` already ship. Unlike the cloud stores (umbrella D5), an SFTP
-poll is a network round-trip but **not a billed API call**, so the core's 2-second
-`DefaultPollInterval` is tolerable; the README nonetheless recommends a modestly
-longer interval for a busy remote, since each poll is an SSH round-trip.
+poll is a network round-trip but **not a billed API call**, so 2 seconds is too
+eager but it can be more responsive than the billed cloud stores. `config-sftp`
+therefore implements the new optional `config.PollIntervalHinter` (umbrella R1),
+returning a **15-second** default so the Store polls at a cadence suited to an SSH
+round-trip rather than the core's 2-second `DefaultPollInterval`; `WithPollInterval`
+overrides the hint.
 
 ### D7 — Symlinks: implement `config.LinkReader`, because SFTP genuinely resolves them
 
@@ -289,46 +293,47 @@ Purely additive for consumers: add the module and pass
 `config` core change, nothing breaks. The module ships at v0.1.0 as a full
 read+write adapter, so there is no later read→write promotion to communicate.
 
-## Open questions
+## Resolved (2026-07-22)
 
-*Surfaced, not resolved — for the approval discussion.*
+All open questions were answered by the human on 2026-07-22, and the decisions
+above were amended in place to match (no decision renumbered). Each records what
+was verified, so the choice rests on facts.
 
-1. **Non-OpenSSH rename fallback (the sharpest).** `PosixRename` gives the atomic
-   overwrite the commit needs, but it is the `posix-rename@openssh.com`
-   extension; a server that does not advertise it leaves only the non-overwriting
-   `Rename`. Do we (a) fall back to `Remove(target)` then `Rename`, accepting a
-   narrow window where a reader could see the target absent; (b) fail the commit
-   loudly so the consumer learns their server cannot give the guarantee; or (c)
-   detect extension support up front (a capability the SFTP handshake exposes) and
-   pick per-connection? All three keep atomicity honest rather than pretended; the
-   choice is which failure mode to hand the consumer.
-2. **Rename atomicity is ultimately server-dependent.** Even with `PosixRename`,
-   the atomicity is the remote server's implementation of `rename(2)` over its own
-   storage — a server backing SFTP with a non-POSIX store may not honour it. The
-   adapter can document the assumption and prefer the strongest primitive, but it
-   cannot *enforce* what the far side does. How loudly should the README state
-   this, and is any runtime probe worth its cost?
-3. **In-process test server: which fidelity as the default gate?** The pure-pipe
-   `NewServer`/`NewClientPipe` harness is fast and dependency-free but skips the
-   SSH transport; the SSH-loopback harness exercises the real path but pays a
-   handshake per test. Is loopback the ordinary unit gate, or an env-gated second
-   suite with pipe as the default? (D8 leans pipe-primary; confirm.)
-4. **Path conventions and separators.** SFTP paths are always `/`-separated and
-   interpreted by the server (absolute, or relative to the login directory). The
-   adapter must use `path`, never `filepath`, so it stays POSIX even when the
-   adapter runs on Windows — but the *staging path* the core's write layer
-   computes may use `filepath.Join`. Does the commit path already pass
-   `/`-separated names down, or does `config-sftp` need to normalise separators at
-   its boundary? This needs checking against the write path before v0.1.0.
-5. **`MkdirAll` mode loss.** SFTP's mkdir carries no mode through `client.MkdirAll`,
-   so a directory created for a config file lands at the server's umask, not the
-   `perm` the write path passed. Is documenting the loss enough, or should the
-   adapter follow up with an explicit `Chmod` on each created directory?
+1. **Rename fallback — detect the extension, prefer `PosixRename`, degrade
+   explicitly** (amends D5). The commit uses `posix-rename@openssh.com`
+   (`PosixRename`) for atomic overwrite where the server advertises it (umbrella
+   R2). Where it is not advertised, the adapter falls back to plain `Rename`, and
+   where that fails because the target exists, to `Remove(target)` then `Rename` —
+   a narrow non-atomic window that the README documents. Capability is detected per
+   connection so the strongest available primitive is chosen; atomicity is kept
+   honest rather than pretended.
+2. **Server-dependent atomicity — documented, not probed** (documents D5). Even
+   `PosixRename`'s atomicity is the remote server's implementation of `rename(2)`
+   over its own storage; a server backing SFTP with a non-POSIX store may not
+   honour it. The README states this assumption prominently; no runtime probe is
+   worth its cost.
+3. **Test server — pipe-primary unit gate, loopback env-gated** (confirms D8). The
+   pure-pipe `NewServer`/`NewClientPipe` harness is the ordinary unit gate (fast,
+   dependency-free); a real SSH-loopback suite exercising the transport is an
+   env-gated second suite (confirms the D8 lean).
+4. **Path separators — normalise at the boundary** (amends D3). SFTP paths are
+   always `/`-separated and server-interpreted, so the adapter uses the `path`
+   package (never `filepath`) and normalises any separators the core write layer's
+   staging paths arrive with (which may use `filepath.Join`) to `/` at its boundary
+   — so it stays POSIX even when the adapter process runs on Windows.
+5. **`MkdirAll` mode — `Chmod` after create** (amends D3). SFTP's mkdir carries no
+   mode, so a directory would land at the server umask; the adapter follows each
+   created directory with an explicit `Chmod` to the `perm` the write path passed,
+   honouring the requested mode. (Modest cost, correct behaviour.)
+
+**No open questions remain.**
 
 ## Implementation phases
 
-**Phase 0 — this spec.** Approve it, resolving the open questions above (chiefly
-the rename fallback, #1).
+**Phase 0 — this spec.** Approved (2026-07-22), with every question resolved in
+the Resolved (2026-07-22) section: the rename fallback (`PosixRename` → `Rename` →
+`Remove`+`Rename`), path normalisation at the boundary, the `MkdirAll` `Chmod`, and
+the `PollIntervalHinter` cadence.
 
 **Phase 1 — the module, read + write over the in-process server.** Scaffold
 `config-sftp` (README-only, no microsite; umbrella D2 / adapter docs model),
@@ -338,8 +343,8 @@ pure-pipe in-process server suite (D8) covering read, write, stage-and-rename,
 permissions, missing-file and symlink. `depfootprint` allowlist (D9).
 
 **Phase 2 — transport-fidelity and polish.** The optional SSH-loopback suite (D8),
-the non-OpenSSH rename-fallback behaviour chosen at approval (D5 / OQ1), and the
-`MkdirAll`/separator edges (OQ4, OQ5). Confirm polled reload end to end against
+the non-OpenSSH rename-fallback behaviour resolved at approval (D5 / Resolved #1),
+and the `MkdirAll`/separator edges (D3 / Resolved #4, #5). Confirm polled reload end to end against
 the in-process server with `WithPollInterval` (D6).
 
 **Phase 3 — publish v0.1.0.** The module `main`, the `config` docs page
