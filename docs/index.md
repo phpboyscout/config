@@ -143,7 +143,22 @@ never pulls a cloud SDK it does not touch.
 - :material-dots-horizontal: **[dotenv](how-to/dotenv.md)** — read `.env`, no added dependency.
 - :material-cog: **[INI](how-to/ini.md)** — read INI, no added dependency.
 - :material-language-java: **[Java properties](how-to/properties.md)** — read `.properties`.
-- :material-folder-cog: **[afero](how-to/afero.md)** — bridge an existing afero filesystem to `config.FS`.
+
+</div>
+
+### Filesystem adapters — where the file lives
+
+A format adapter parses the file; a filesystem adapter decides *where* it lives, over the six-method
+`config.FS`. The core covers local disk (`config.OS()`, `config.Dir`) — reach for one of these when
+the file lives somewhere else. They compose with any format adapter.
+
+<div class="grid cards" markdown>
+
+- :material-folder-cog: **[afero](how-to/afero.md)** — bridge an existing afero filesystem.
+- :material-package-variant-closed: **[io/fs](how-to/iofs.md)** — an `embed.FS`, zip or tar, read-only.
+- :material-source-branch: **[go-billy](how-to/billy.md)** — a go-git / go-billy filesystem, read and write.
+- :material-server-network: **[SFTP](how-to/sftp.md)** — a config file on a remote host over SSH.
+- :material-cloud-outline: **cloud object stores** — [S3, GCS &amp; Azure Blob](explanation/adapters.md#cloud-object-stores) *(in progress)*.
 
 </div>
 

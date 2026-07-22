@@ -57,15 +57,48 @@ dependency** — they parse their format in-module. And if the format you need i
 [write a format adapter](../how-to/format-adapter.md): a codec is a `Decode`/`Encode` pair, and
 the store handles the rest.
 
-### Filesystem
+## Filesystem adapters
 
-| Adapter | Handles | Source |
-|---|---|---|
-| [`config-afero`](../how-to/afero.md) | Bridges an existing [afero](https://github.com/spf13/afero) filesystem to `config.FS`, for consumers who already hold one | [repo](https://gitlab.com/phpboyscout/go/config-afero) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-afero) |
+A format adapter decides *how* a config file is parsed; a **filesystem adapter** decides *where* it
+lives. The two compose — you can read TOML out of an S3 bucket — because `config` imposes no
+filesystem of its own: [`config.FS`](filesystem-adapters.md) is six methods you can satisfy over the
+real disk (`config.OS()`), a rooted directory (`config.Dir`), an embedded filesystem, a remote host
+or a cloud object store. A filesystem adapter reads a configuration *file* that happens to live
+somewhere other than local disk — which is what distinguishes it from a [dynamic backend](#dynamic-backends),
+that maps a remote key–value namespace instead.
 
-`config` imposes no filesystem of its own — `config.FS` is six methods you can satisfy over
-`os`, a rooted directory, or anything else. `config-afero` is the ready-made bridge for the
-large body of code that already threads an `afero.Fs` around.
+Two implementations ship in the core — `config.OS()` and `config.Dir(path)` — so you only reach for
+an adapter when the file lives somewhere neither covers.
+
+| Adapter | Where the file lives | Reads | Writes | Source |
+|---|---|:---:|:---:|---|
+| [`config-afero`](../how-to/afero.md) | an existing [afero](https://github.com/spf13/afero) filesystem | ✓ | ✓ | [repo](https://gitlab.com/phpboyscout/go/config-afero) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-afero) |
+| [`config-iofs`](../how-to/iofs.md) | any [`io/fs.FS`](https://pkg.go.dev/io/fs#FS) — `embed.FS`, zip, tar | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-iofs) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-iofs) |
+| [`config-billy`](../how-to/billy.md) | a [go-billy](https://github.com/go-git/go-billy) filesystem (go-git) | ✓ | ✓ | [repo](https://gitlab.com/phpboyscout/go/config-billy) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-billy) |
+| [`config-sftp`](../how-to/sftp.md) | a remote host over SSH | ✓ | ✓ | [repo](https://gitlab.com/phpboyscout/go/config-sftp) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-sftp) |
+
+`config-iofs` is read-only because `io/fs` is read-only by design, and adds **no third-party
+dependency**. How reload, read-only capability and the object-store commit work across the family is
+[How filesystem adapters work](filesystem-adapters.md); the
+[filesystem adapters spec](../development/specs/2026-07-22-filesystem-adapters.md) is the umbrella
+that governs it.
+
+### Cloud object stores
+
+The three cloud object stores share one model — a config file that lives in a bucket, watched by
+polling, committed with the store's best atomic primitive — and differ only where the services do
+(GCS has a native atomic move; S3 and Azure Blob copy-then-delete). Each is its own approved spec,
+built and released independently.
+
+| Adapter | Store | Commit | Status |
+|---|---|---|---|
+| `config-aws-s3` | AWS S3 | copy-then-delete | In progress |
+| `config-gcp-gcs` | GCP Cloud Storage | native `Move` | In progress |
+| `config-azure-blob` | Azure Blob Storage | copy-then-delete | In progress |
+
+All three are read+write, poll at a 60-second default (a poll is a billed object read;
+`WithPollInterval` overrides), and are proven against a real emulator — LocalStack, fake-gcs-server
+and Azurite — in a Docker-in-Docker job.
 
 ## Dynamic backends
 
