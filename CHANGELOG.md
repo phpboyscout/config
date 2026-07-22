@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.8.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.8.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.7.0...v0.8.0)
+
+### Features
+
+- add the ErrReadOnlyFS sentinel ([60ab581](https://gitlab.com/phpboyscout/go/config/-/commit/60ab581c17ffaf1ff50e7b9edd98c720bf19c9fe))
+
 ## [v0.7.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.7.0)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.6.0...v0.7.0)
