@@ -46,6 +46,18 @@ func NewWatcher(filesystem FS, interval time.Duration) Watcher {
 		interval = DefaultPollInterval
 	}
 
+	// A filesystem that must be polled may ask for a cadence other than the
+	// default — a remote store where every poll is a billed call. The hint fills
+	// in only where the caller left the default; an explicit WithPollInterval,
+	// which arrives here as any other value, still wins.
+	if interval == DefaultPollInterval {
+		if hinter, ok := filesystem.(PollIntervalHinter); ok {
+			if hinted := hinter.PollInterval(); hinted > 0 {
+				interval = hinted
+			}
+		}
+	}
+
 	poll := &pollWatcher{fs: filesystem, interval: interval}
 
 	resolve, ok := realPathResolver(filesystem)

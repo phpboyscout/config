@@ -386,6 +386,53 @@ func TestNewWatcher_PicksPollingForNonOSFilesystems(t *testing.T) {
 	}
 }
 
+// hintingFS is a polled filesystem that declares a non-default poll cadence.
+type hintingFS struct {
+	FS
+	hint time.Duration
+}
+
+func (h hintingFS) PollInterval() time.Duration { return h.hint }
+
+// A remote filesystem is polled, and each poll is a round-trip it would rather
+// not make every two seconds. When it hints a cadence, the watcher adopts it —
+// but only where the caller left the default; an explicit interval still wins.
+func TestNewWatcher_HonoursPollIntervalHint(t *testing.T) {
+	t.Parallel()
+
+	fs := hintingFS{FS: wrapAfero(afero.NewMemMapFs()), hint: 90 * time.Second}
+
+	// Caller left the default: the hint is adopted.
+	w, ok := NewWatcher(fs, DefaultPollInterval).(*pollWatcher)
+	if !ok {
+		t.Fatal("a hinting in-memory filesystem must be polled")
+	}
+
+	if w.interval != fs.hint {
+		t.Errorf("interval = %v, want the hint %v", w.interval, fs.hint)
+	}
+
+	// Caller was explicit: their interval wins over the hint.
+	w, ok = NewWatcher(fs, 250*time.Millisecond).(*pollWatcher)
+	if !ok {
+		t.Fatal("a hinting in-memory filesystem must be polled")
+	}
+
+	if w.interval != 250*time.Millisecond {
+		t.Errorf("interval = %v, want the explicit 250ms", w.interval)
+	}
+
+	// A filesystem that does not hint keeps the default.
+	plain, ok := NewWatcher(wrapAfero(afero.NewMemMapFs()), DefaultPollInterval).(*pollWatcher)
+	if !ok {
+		t.Fatal("a plain in-memory filesystem must be polled")
+	}
+
+	if plain.interval != DefaultPollInterval {
+		t.Errorf("interval = %v, want the default %v", plain.interval, DefaultPollInterval)
+	}
+}
+
 // Polling has to work: it is the fallback that keeps hot-reload functioning on
 // in-memory filesystems, network mounts and hosts out of watch descriptors.
 func TestPollWatcher_DetectsAChange(t *testing.T) {

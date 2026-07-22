@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // ErrReadOnlyFS is returned by the write methods of a read-only [FS] —
@@ -95,6 +96,24 @@ type RealPather interface {
 // does not implement this, and paths are used as given.
 type LinkReader interface {
 	Readlink(name string) (string, error)
+}
+
+// PollIntervalHinter optionally reports how often a filesystem that must be
+// polled should be checked for changes.
+//
+// A filesystem with no real path is watched by polling (see [RealPather]), and
+// the default cadence suits a local one. But for a remote filesystem — an object
+// store, a network share — each poll is a round-trip, and often a billed API
+// call, so the 2-second default is far too eager. Such a filesystem implements
+// this to declare a sensible default (minutes, not seconds), which the watcher
+// adopts unless the consumer sets one explicitly with [WithPollInterval] — an
+// explicit interval always wins.
+//
+// Implement this only when the filesystem genuinely wants a non-default cadence;
+// a local or in-memory filesystem should not, so it keeps the responsive
+// default.
+type PollIntervalHinter interface {
+	PollInterval() time.Duration
 }
 
 // OS returns an FS backed by the operating system.
