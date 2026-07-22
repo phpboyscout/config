@@ -1,10 +1,19 @@
 package config
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 )
+
+// ErrReadOnlyFS is returned by the write methods of a read-only [FS] —
+// WriteFile, Rename, Remove and MkdirAll. A filesystem adapter over an
+// inherently read-only source (an io/fs.FS, an HTTP URL) returns it so a caller
+// can errors.Is it, rather than a bare fs.ErrPermission that a genuine
+// permission failure is indistinguishable from. See the filesystem adapters
+// spec, D4.
+var ErrReadOnlyFS = errors.New("config: filesystem is read-only")
 
 // FS is the filesystem surface this module needs, and the whole of it.
 //
