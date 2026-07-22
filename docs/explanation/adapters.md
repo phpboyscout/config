@@ -45,7 +45,7 @@ Available now, each published and versioned. The adapter name links to its how-t
 | Adapter | Handles | Reads | Writes | Source |
 |---|---|:---:|:---:|---|
 | [`config-json`](../how-to/json.md) | JSON &amp; JSON Lines | ✓ | ✓ *(structure-preserving)* | [repo](https://gitlab.com/phpboyscout/go/config-json) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-json) |
-| [`config-toml`](../how-to/toml.md) | TOML | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-toml) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-toml) |
+| [`config-toml`](../how-to/toml.md) | TOML | ✓ | ✓ *(structure-preserving)* | [repo](https://gitlab.com/phpboyscout/go/config-toml) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-toml) |
 | [`config-hcl`](../how-to/hcl.md) | HCL *(as a config format, not Terraform)* | ✓ | ✓ | [repo](https://gitlab.com/phpboyscout/go/config-hcl) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-hcl) |
 | [`config-xml`](../how-to/xml.md) | XML | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-xml) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-xml) |
 | [`config-dotenv`](../how-to/dotenv.md) | dotenv (`.env`) | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-dotenv) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-dotenv) |

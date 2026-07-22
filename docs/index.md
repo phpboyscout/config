@@ -149,7 +149,7 @@ never pulls a cloud SDK it does not touch.
 <div class="grid cards" markdown>
 
 - :material-code-json: **[JSON](how-to/json.md)** — JSON and JSON Lines, read and write, structure-preserving.
-- :material-file-document: **[TOML](how-to/toml.md)** — read TOML as a layer.
+- :material-file-document: **[TOML](how-to/toml.md)** — read and write TOML, structure-preserving.
 - :material-hexagon-outline: **[HCL](how-to/hcl.md)** — HCL as a config format, read and write.
 - :material-xml: **[XML](how-to/xml.md)** — read XML.
 - :material-dots-horizontal: **[dotenv](how-to/dotenv.md)** — read `.env`, no added dependency.
