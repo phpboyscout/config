@@ -107,6 +107,21 @@ one in the [Configure from Consul](../tutorials/consul.md) tutorial, reach for a
 the [Read &amp; write Consul](../how-to/consul.md) how-to, or read [How the Consul backend
 works](consul-backend.md) for the data, conflict and watch models behind it.
 
+### Parameter stores — released
+
+Consul's siblings, the cloud parameter stores, are all released at **v0.1.0**. They share Consul's
+shape — injected client, prefix-scoped nested tree, values decoded through an injected codec — and
+differ where the systems do, which is what [How dynamic backends work](dynamic-backends.md)
+explains. In short: they **poll** rather than watch natively, and they split on compare-and-swap.
+
+- [**`config-aws-ssm`**](../how-to/aws-ssm.md) — AWS SSM Parameter Store. Read-only (SSM has no
+  compare-and-swap); `SecureString` values read decrypted and mark the layer sensitive so the leak
+  guard protects them.
+- [**`config-azure-appconfig`**](../how-to/azure-appconfig.md) — Azure App Configuration. Read
+  **and** write on per-key ETag compare-and-swap; scoped by a label.
+- [**`config-gcp-parameter`**](../how-to/gcp-parameter.md) — GCP Parameter Manager. Read-only, in
+  two shapes: one parameter as a whole document, or a prefix of many parameters.
+
 ### Roadmap
 
 Each adapter below carries its own SDK, its own authentication and its own consistency and
@@ -116,9 +131,9 @@ before it is built**. The grouping is a planned order, not a commitment date.
 | Adapter | System | Phase | Status |
 |---|---|---|---|
 | [`config-consul`](../how-to/consul.md) | HashiCorp Consul | A — reference &amp; parameter stores | **Released · v0.1.0** |
-| `config-aws-ssm` | AWS SSM Parameter Store | A | Planned |
-| `config-azure-appconfig` | Azure App Configuration | A | Planned |
-| `config-gcp-parameter` | GCP Parameter Manager | A | Planned |
+| [`config-aws-ssm`](../how-to/aws-ssm.md) | AWS SSM Parameter Store | A | **Released · v0.1.0** *(read-only)* |
+| [`config-azure-appconfig`](../how-to/azure-appconfig.md) | Azure App Configuration | A | **Released · v0.1.0** |
+| [`config-gcp-parameter`](../how-to/gcp-parameter.md) | GCP Parameter Manager | A | **Released · v0.1.0** *(read-only)* |
 | `config-vault` | HashiCorp Vault | B — secrets managers | Planned *(read-only by default)* |
 | `config-aws-secrets` | AWS Secrets Manager | B | Planned *(read-only by default)* |
 | `config-azure-keyvault` | Azure Key Vault | B | Planned *(read-only by default)* |

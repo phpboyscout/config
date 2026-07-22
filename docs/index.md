@@ -150,12 +150,13 @@ never pulls a cloud SDK it does not touch.
 ### Dynamic backends — remote systems as layers
 
 Fetch configuration at runtime from a remote system and give it full precedence, provenance and
-hot-reload, exactly as a file gets. [**config-consul**](how-to/consul.md) is the first,
-released now at v0.1.0. From there, a phased roadmap:
+hot-reload, exactly as a file gets. The reference — [**config-consul**](how-to/consul.md) — and the
+cloud **parameter stores** are released now at v0.1.0:
 
-- **Parameter stores** — AWS SSM, Azure App Configuration, GCP Parameter Manager (Consul's siblings).
-- **Secrets managers** — Vault, AWS Secrets Manager, Azure Key Vault, GCP Secret Manager (read-only by default).
-- **Cloud-native key–value** — etcd and Kubernetes ConfigMaps, with native change-watch.
+- **Parameter stores** — [AWS SSM](how-to/aws-ssm.md), [Azure App Configuration](how-to/azure-appconfig.md)
+  and [GCP Parameter Manager](how-to/gcp-parameter.md), Consul's siblings.
+- **Secrets managers** *(roadmap)* — Vault, AWS Secrets Manager, Azure Key Vault, GCP Secret Manager (read-only by default).
+- **Cloud-native key–value** *(roadmap)* — etcd and Kubernetes ConfigMaps, with native change-watch.
 
 **[→ The full adapter ecosystem, with status and roadmap](explanation/adapters.md)**
 
