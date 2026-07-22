@@ -4,6 +4,7 @@
 nav = [
   { Home = "index.md" },
   { Tutorial = [ { "Getting started" = "getting-started.md" } ] },
+  { Adapters = "adapters.md" },
   { "How-to guides" = [
     { "Load & merge configuration" = "how-to/load-and-merge.md" },
     { "Read configuration values" = "how-to/read-values.md" },

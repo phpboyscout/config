@@ -93,6 +93,46 @@ if _, err := store.Apply(ctx, config.Set("server.port", 9090)); err != nil {
 }
 ```
 
+## Any format, any system — the same layered store
+
+YAML is the default, not the ceiling. A file in another format, or configuration that lives in
+a remote system rather than a file at all, joins the store as an **ordinary layer**: same
+precedence, the same per-key provenance, the same coherent snapshots and fail-closed reload.
+This is where the model pulls decisively ahead of a library that bolts remote sources on as a
+special case — here there is no special case, and `Explain` will name Consul or a parameter
+store as the source exactly as it names a file.
+
+Every adapter is its own sibling module, so your dependency graph carries only what you use: a
+consumer reading TOML never compiles the XML parser, and a consumer configuring from Consul
+never pulls a cloud SDK it does not touch.
+
+### File & format adapters — available now
+
+<div class="grid cards" markdown>
+
+- :material-code-json: **[JSON](how-to/json.md)** — JSON and JSON Lines, read and write, structure-preserving.
+- :material-file-document: **[TOML](how-to/toml.md)** — read TOML as a layer.
+- :material-hexagon-outline: **[HCL](how-to/hcl.md)** — HCL as a config format, read and write.
+- :material-xml: **[XML](how-to/xml.md)** — read XML.
+- :material-dots-horizontal: **[dotenv](how-to/dotenv.md)** — read `.env`, no added dependency.
+- :material-cog: **[INI](how-to/ini.md)** — read INI, no added dependency.
+- :material-language-java: **[Java properties](how-to/properties.md)** — read `.properties`.
+- :material-folder-cog: **[afero](how-to/afero.md)** — bridge an existing afero filesystem to `config.FS`.
+
+</div>
+
+### Dynamic backends — remote systems as layers
+
+Fetch configuration at runtime from a remote system and give it full precedence, provenance and
+hot-reload, exactly as a file gets. [**config-consul**](how-to/consul.md) is the first,
+released now at v0.1.0. From there, a phased roadmap:
+
+- **Parameter stores** — AWS SSM, Azure App Configuration, GCP Parameter Manager (Consul's siblings).
+- **Secrets managers** — Vault, AWS Secrets Manager, Azure Key Vault, GCP Secret Manager (read-only by default).
+- **Cloud-native key–value** — etcd and Kubernetes ConfigMaps, with native change-watch.
+
+**[→ The full adapter ecosystem, with status and roadmap](adapters.md)**
+
 ## Should you use this?
 
 **Yes, if any of these describe you** — and note that only the first is about writing:

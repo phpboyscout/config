@@ -1,0 +1,133 @@
+# The adapter ecosystem
+
+**One store, many sources.** YAML files are the default `config` reads out of the box, but
+they are not the boundary. A file in another format, or configuration that lives in a remote
+system rather than a file at all, joins the store as an **ordinary layer** — with the same
+precedence, the same per-key provenance, the same coherent snapshots and the same fail-closed
+reload every other layer gets.
+
+That is the difference that matters. A library that treats "remote config" as a bolt-on
+special case gives you a value and little else; here there is no special case. Consul, a
+parameter store or a secrets manager takes part in the merge exactly as `/etc/app.yaml` does,
+and `Explain("server.port")` will name it as the source. This is what the previous
+Viper-shaped world could not do.
+
+Every adapter is its own **sibling module**, depended on only by the consumers who use it. Your
+dependency graph carries the one integration you reached for and nothing else: a consumer
+reading TOML never compiles the XML parser, and a consumer configuring from Consul never pulls
+a cloud SDK it does not touch.
+
+## What every adapter inherits
+
+An adapter only teaches the store how to *read* (and, where it makes sense, *write* and
+*watch*) one kind of source. Everything else is the core's job, so it is identical across the
+whole family:
+
+- **Precedence** — the adapter's layer sits wherever you place it in the source order.
+- **Provenance** — `Explain` and `Origin` name the adapter as the source of a value, and flag
+  where it shadows or is shadowed.
+- **Coherent reads** — a `View` is pinned to one snapshot regardless of which adapters fed it.
+- **Write fidelity** — where an adapter supports writes, the change lands in the layer that
+  owns the key, and structure (comments, order, quoting) is preserved.
+- **Fail-closed reload** — a source that will not parse or fails your schema is rejected;
+  last-known-good stays live.
+
+## File & format adapters
+
+Available now, each published and versioned. The adapter name links to its how-to guide.
+
+| Adapter | Handles | Reads | Writes | Source |
+|---|---|:---:|:---:|---|
+| [`config-json`](how-to/json.md) | JSON &amp; JSON Lines | ✓ | ✓ *(structure-preserving)* | [repo](https://gitlab.com/phpboyscout/go/config-json) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-json) |
+| [`config-toml`](how-to/toml.md) | TOML | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-toml) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-toml) |
+| [`config-hcl`](how-to/hcl.md) | HCL *(as a config format, not Terraform)* | ✓ | ✓ | [repo](https://gitlab.com/phpboyscout/go/config-hcl) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-hcl) |
+| [`config-xml`](how-to/xml.md) | XML | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-xml) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-xml) |
+| [`config-dotenv`](how-to/dotenv.md) | dotenv (`.env`) | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-dotenv) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-dotenv) |
+| [`config-ini`](how-to/ini.md) | INI | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-ini) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-ini) |
+| [`config-properties`](how-to/properties.md) | Java `.properties` | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-properties) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-properties) |
+
+The read-only format adapters (`dotenv`, `ini`, `properties`, `xml`) add **no third-party
+dependency** — they parse their format in-module. And if the format you need is not here,
+[write a format adapter](how-to/format-adapter.md): a codec is a `Decode`/`Encode` pair, and
+the store handles the rest.
+
+### Filesystem
+
+| Adapter | Handles | Source |
+|---|---|---|
+| [`config-afero`](how-to/afero.md) | Bridges an existing [afero](https://github.com/spf13/afero) filesystem to `config.FS`, for consumers who already hold one | [repo](https://gitlab.com/phpboyscout/go/config-afero) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-afero) |
+
+`config` imposes no filesystem of its own — `config.FS` is six methods you can satisfy over
+`os`, a rooted directory, or anything else. `config-afero` is the ready-made bridge for the
+large body of code that already threads an `afero.Fs` around.
+
+## Dynamic backends
+
+The next chapter, and the one that pulls furthest ahead of a file-only tool: configuration
+fetched **at runtime from a remote system**, given full precedence, provenance and hot-reload
+exactly as a file is. The seam already exists and is proven —
+[`WithBackend`](how-to/custom-backend.md) takes anything satisfying a three-method `Backend`,
+with writes and native watch as opt-in capabilities. The
+[dynamic backend adapters spec](development/specs/2026-07-21-dynamic-backend-adapters.md) is the
+umbrella that governs the whole family.
+
+### config-consul — the first
+
+[**`config-consul`**](https://gitlab.com/phpboyscout/go/config-consul) — released at
+**v0.1.0** ([API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-consul)) — reads and writes
+configuration from [HashiCorp Consul](https://www.consul.io/) through `config`. You build and
+configure the Consul client — every address, token, TLS and datacenter decision stays yours —
+and hand it in with a prefix that scopes and is stripped from the keys:
+
+```go
+import (
+	capi "github.com/hashicorp/consul/api"
+	"gitlab.com/phpboyscout/go/config"
+	configconsul "gitlab.com/phpboyscout/go/config-consul"
+)
+
+client, _ := capi.NewClient(capi.DefaultConfig())
+
+store, err := config.NewStore(ctx,
+	config.WithFiles(fsys, "/etc/app.yaml"),                     // YAML defaults
+	config.WithBackend(configconsul.FromClient(client, "app/")), // Consul outranks them
+)
+```
+
+A Consul layer takes part in precedence, per-key merge, provenance and hot-reload exactly as a
+file does — and `Explain` will tell you when a value came from Consul rather than the file
+beneath it. It is the reference implementation for everything that follows. The
+[Read &amp; write Consul](how-to/consul.md) guide walks it end to end.
+
+### Roadmap
+
+Each adapter below carries its own SDK, its own authentication and its own consistency and
+watch semantics, so — by the umbrella's headline rule — **each gets its own approved spec
+before it is built**. The grouping is a planned order, not a commitment date.
+
+| Adapter | System | Phase | Status |
+|---|---|---|---|
+| [`config-consul`](how-to/consul.md) | HashiCorp Consul | A — reference &amp; parameter stores | **Released · v0.1.0** |
+| `config-aws-ssm` | AWS SSM Parameter Store | A | Planned |
+| `config-azure-appconfig` | Azure App Configuration | A | Planned |
+| `config-gcp-parameter` | GCP Parameter Manager | A | Planned |
+| `config-vault` | HashiCorp Vault | B — secrets managers | Planned *(read-only by default)* |
+| `config-aws-secrets` | AWS Secrets Manager | B | Planned *(read-only by default)* |
+| `config-azure-keyvault` | Azure Key Vault | B | Planned *(read-only by default)* |
+| `config-gcp-secret` | GCP Secret Manager | B | Planned *(read-only by default)* |
+| `config-etcd` | etcd | C — cloud-native key–value | Planned *(native watch)* |
+| `config-k8s` | Kubernetes ConfigMaps | C | Planned *(native watch)* |
+
+Secrets managers ship **read-only by default** — a config tool writing a secret is a rarer and
+riskier thing than reading one, so write support for those is opt-in and specified per adapter.
+Feature-flag systems are deliberately out of scope.
+
+## Build your own
+
+Nothing here is a closed set. The same two seams the family is built on are yours to use:
+
+- [**Write a custom backend**](how-to/custom-backend.md) — make any remote system (a secrets
+  manager, an HTTP endpoint, an internal service) an ordinary layer, walked end to end against
+  a Consul-shaped example.
+- [**Support a new file format**](how-to/format-adapter.md) — a codec is a `Decode`/`Encode`
+  pair; add one and every store feature comes with it for free.
