@@ -99,6 +99,23 @@ minor version (v0.2.0) per D18.
 **D16 is amended**: the writer-shaped hole did its job, but the module it anticipated is not
 needed. **D10's "TOML write is a fast follow" note** is fulfilled — by promotion, not a new module.
 
+### R5 — 2026-07-22: format adapters export their codec as `Codec`, for reuse as value decoders
+
+**The [dynamic backend adapters](2026-07-21-dynamic-backend-adapters.md) umbrella (its R1) made a
+format adapter's codec reusable — a backend over a byte-valued store, like Consul, decodes a
+document-valued key through an injected `config.Codec`. But the format adapters exported only
+`New`/`NewLines`, keeping the codec itself unexported, so the convention was unusable as written:
+the `config-consul` docs referenced a `configjson.Codec{}` that did not exist.**
+
+The fix is small and additive: a format adapter **exports its codec as a public `Codec`**. It was
+already a `config.Codec` (and, where it edits, `config.EditingCodec`); exporting only makes the
+existing type public, so `New` is unchanged and nothing breaks. `config-json` ships it first, at
+the point of need (a minor version); the other read-capable adapters export theirs as a consumer
+wants them, rather than all at once for symmetry no one is using yet.
+
+This is the same "no speculative surface" discipline as R3 — the export lands when there is a
+consumer for it (the Consul value codec), not before.
+
 ## Problem
 
 The module reads and writes YAML and nothing else, so "we only do YAML" is a real reason to
