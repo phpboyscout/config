@@ -382,8 +382,9 @@ golang.org/x/net                 golang.org/x/text
 golang.org/x/time
 ```
 
-Sixteen external modules — the same order as `config-consul`'s sixteen, and far
-below `config-gcp-gcs`'s 54. A `depfootprint_test.go` allowlist pins it exactly
+Seventeen external modules — the same order as `config-consul`'s sixteen, and far
+below `config-gcp-gcs`'s 54. With the nine the `config` graph brings, a consumer
+inherits **26** in total. A `depfootprint_test.go` allowlist pins it exactly
 (umbrella D9), so an SDK bump that drags in new modules fails the build rather
 than quietly widening every consumer's graph.
 
@@ -511,6 +512,31 @@ Scenario: A secret is never written into the plain layer beneath it
 This is a **`config` core change, so it is a separate MR** from the adapter and
 is not gated on it — the gap exists today, independent of Vault. It is recorded
 here because this spec is what surfaced it.
+
+## Revisions
+
+### R1 (2026-07-22) — the version is the change marker only, not part of provenance (corrects D11)
+
+D11 said the captured version "appears in **provenance**, so a value can always
+be traced to the exact secret path *and version* it came from". Building Phase 1
+showed the second half cannot hold, for a structural reason worth recording
+rather than quietly dropping.
+
+A layer's provenance is its `config.Source`, whose fields are `Kind`, `Name`,
+`Document` and `Writable` — there is nowhere to put a version. The only candidate
+is `Name`, and `Name` is spoken for: the core requires a backend's `ID()` to
+equal the `Source.Name` of the layers it returns, because that is how the Store
+finds the backend again when routing a write. `ID()` must therefore be the *same
+string on every Load*, while the version changes every time anyone writes the
+secret. Folding the version into `Name` would break routing the moment a secret
+was rotated.
+
+So: provenance names the **mount and secret path**, which is what a reader needs
+to go and look at the value, and the version remains what D11's other half
+already made it — the marker the poll watch compares to notice a foreign change.
+The decision is unchanged in substance; the claim about provenance was wrong and
+is corrected here. `TestLoad_IDIsStableAcrossLoads` guards it: a version bump
+must not change a layer's identity.
 
 ## Rejected alternatives
 
