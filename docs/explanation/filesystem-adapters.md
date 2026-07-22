@@ -16,6 +16,47 @@ legitimately differ. For what exists, see [the adapter ecosystem](adapters.md); 
 [filesystem adapters spec](../development/specs/2026-07-22-filesystem-adapters.md) is the umbrella
 that governs the whole family.
 
+## The built-ins, and no hidden default
+
+`config` imposes no filesystem, and it also assumes none. `WithFiles` takes the filesystem as its
+**first argument**, always — there is no implicit default that reads `/etc` behind your back, so the
+source of every file is something you can read off the call site:
+
+```go
+config.WithFiles(config.OS(), "/etc/app.yaml")   // the filesystem is named, not assumed
+```
+
+Two implementations ship in the core, and between them they cover almost everything before any
+adapter is needed:
+
+- **`config.OS()` — the real operating-system filesystem, and the ordinary choice.** Paths are real
+  OS paths (`"/etc/app.yaml"`, an absolute or working-directory-relative path); it has real paths so
+  it is watched **natively** with `fsnotify`, and it follows symlinks. This is what nearly every
+  example uses, and what you want unless you have a reason not to.
+
+  ```go
+  store, _ := config.NewStore(ctx,
+      config.WithFiles(config.OS(), "/etc/app.yaml", userConfigPath),
+  )
+  ```
+
+- **`config.Dir(path)` — a directory nothing can escape.** Every operation is confined to the
+  directory: a path that resolves outside it — through `..`, an absolute path, or a symlink pointing
+  away — is refused by the operating system, not by a check `config` bolts on. Paths are **relative
+  to the root** (`"app.yaml"`, not `"/etc/app/app.yaml"`). It is the right choice for a directory a
+  user named, and the one to reach for in tests — `config.Dir(t.TempDir())` gives real file
+  semantics, including watching, with no dependency and no in-memory filesystem to stand in.
+
+  ```go
+  store, _ := config.NewStore(ctx,
+      config.WithFiles(config.Dir("/etc/app"), "app.yaml"),
+  )
+  ```
+
+An adapter below is for when the file lives somewhere *neither* built-in reaches — compiled into the
+binary, on a remote host, in a bucket. If it lives on the local disk, one of these two is the answer,
+and `config.OS()` is the default you would otherwise be looking for.
+
 ## A file, not a key–value store
 
 This is the distinction that decides whether you want a filesystem adapter or a
