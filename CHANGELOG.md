@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.9.1](https://gitlab.com/phpboyscout/go/config/-/releases/v0.9.1)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.9.0...v0.9.1)
+
+### Bug Fixes
+
+- **store**: tolerate absent declared sources during Apply rebuild ([50d2b88](https://gitlab.com/phpboyscout/go/config/-/commit/50d2b88abb39793d13d7030b376865531f649398))
+
 ## [v0.9.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.9.0)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.8.0...v0.9.0)
