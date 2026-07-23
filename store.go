@@ -869,6 +869,24 @@ func (s *Store) rebuild(ctx context.Context, pending map[string]Pending) ([]back
 		// last-known-good: the outcome D15 exists to prevent.
 		layers, err := bl.backend.Load(ctx, flatten(next))
 		if err != nil {
+			// Mirrors loadAll: a declared source that is not there contributes
+			// nothing but stays a candidate for a write. Failing here instead
+			// refused a write routed at a perfectly writable sibling with an
+			// error about a file the caller never mentioned — the
+			// declared-but-not-yet-created overlay that load-time tolerance
+			// exists for. Everything else — a parse failure, an unsafe
+			// document, a permissions problem — stays fatal, because silently
+			// dropping a layer changes the effective configuration without
+			// telling anyone. A required-first source that vanished since load
+			// is tolerated the same way: requireFirst guards startup, and a
+			// running Store refusing every write over a missing file would
+			// leave the one surface able to recreate it unable to.
+			if errors.Is(err, fs.ErrNotExist) {
+				next = append(next, backendLayers{backend: bl.backend})
+
+				continue
+			}
+
 			return nil, err
 		}
 

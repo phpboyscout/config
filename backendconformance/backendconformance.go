@@ -122,6 +122,7 @@ func Run(t *testing.T, s Suite) {
 
 	t.Run("participates_as_layer", s.participatesAsLayer)
 	t.Run("absent_source_tolerated", s.absentSourceTolerated)
+	t.Run("apply_tolerated_beside_absent_source", s.applyToleratedBesideAbsentSource)
 	t.Run("provenance_names_backend", s.provenanceNamesBackend)
 
 	// Discover the capability from the type, never a flag — the same split the
@@ -198,6 +199,35 @@ func (s Suite) absentSourceTolerated(t *testing.T) {
 
 	if got := store.View().GetString(key); got != "from-base" {
 		t.Errorf("%s = %q, want the base to stand when the backend source is absent", key, got)
+	}
+}
+
+// applyToleratedBesideAbsentSource confirms an absent backend does not block a
+// write routed at a sibling source. Apply rebuilds the candidate by re-reading
+// every backend it did not write to, and a rebuild that treated the absence as
+// fatal refused a perfectly writable edit with an error about a source the
+// caller never mentioned — the declared-but-not-yet-created overlay setup that
+// load-time tolerance exists for.
+func (s Suite) applyToleratedBesideAbsentSource(t *testing.T) {
+	key := s.sortedKeys()[0]
+	backend, _ := s.newBackend(t, nil) // nil seed: the sibling source is absent
+
+	// A writable file layer beneath defines the key, so the write routes there
+	// — not at the absent backend.
+	fsys := dir(t)
+	write(t, fsys, "base.yaml", []byte(nestedYAML(key, "pre-write")))
+
+	store := newStore(t,
+		config.WithBackend(config.NewFileBackend(fsys, "base.yaml")), // writable, defines the key
+		config.WithBackend(backend),                                  // declared, absent
+	)
+
+	if _, err := store.Apply(context.Background(), config.Set(key, "routed-beneath")); err != nil {
+		t.Fatalf("Apply routed at the file beneath = %v, want it tolerated while the backend source is absent", err)
+	}
+
+	if got := store.View().GetString(key); got != "routed-beneath" {
+		t.Errorf("%s = %q after the write, want %q", key, got, "routed-beneath")
 	}
 }
 
