@@ -733,6 +733,12 @@ the backend over the fake — the gate that proves the `ErrSensitiveLeak` contra
 row, the homepage pill and the landing card (D15). Then publish v0.1.0 — the
 rollout every adapter takes.
 
-**Separate, ungated — the core BDD gap.** The sensitive-leak scenario (D16) lands
-in the `config` core on its own MR. It is not part of the adapter's phases and
-does not block them; it is recorded here because this spec is what surfaced it.
+**Separate, ungated — the core BDD gap. Delivered 2026-07-25.** The sensitive-leak
+scenario (D16) landed in the `config` core on its own MR, as
+`features/store/sensitive.feature`. It grew from one scenario to four in the
+writing: the refusal itself, a key the sensitive layer does not provide being
+written normally, a removal being allowed (it writes no secret anywhere), and —
+the one that turned out to matter most — a read-only layer that is *not*
+sensitive still routing the write beneath. That last scenario is what pins the
+guard to sensitivity rather than to read-only-ness, and it is the only one that
+fails when the distinction is removed.

@@ -42,6 +42,8 @@ type world struct {
 	reloadErrors []error
 	// schema, when set, is attached to the next store built.
 	schema *Schema
+	// backend, when set, is the read-only layer a store is built beneath.
+	backend Backend
 	// watcher lets a scenario decide exactly when a change is reported.
 	watcher *scriptedWatcher
 	// stopWatching releases the watcher at the end of a scenario.
@@ -109,6 +111,7 @@ func (w *world) reset() {
 	w.stopWatching = nil
 	w.section = nil
 	w.applyErrs = nil
+	w.backend = nil
 }
 
 func (w *world) recordReloadError(err error) {
@@ -177,6 +180,7 @@ func initStoreSteps(ctx *godog.ScenarioContext) {
 	ctx.Step(`^the deferred write succeeds$`, w.theDeferredWriteSucceeds)
 
 	initLifecycleSteps(ctx, w)
+	initSensitiveSteps(ctx, w)
 }
 
 // --- Given implementations -------------------------------------------------
