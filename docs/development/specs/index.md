@@ -209,7 +209,7 @@ not need; it cannot infer one it was never given.
 
 | Spec | Status |
 |---|---|
-| [config-vault adapter](2026-07-22-config-vault.md) | approved |
+| [config-vault adapter](2026-07-22-config-vault.md) | implemented |
 | [config-iofs adapter](2026-07-22-config-iofs.md) | approved |
 | [config-billy adapter](2026-07-22-config-billy.md) | approved |
 | [config-aws-s3 adapter](2026-07-22-config-aws-s3.md) | approved |

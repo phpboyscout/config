@@ -2,8 +2,9 @@
 title: config-vault — the HashiCorp Vault KV v2 secrets backend adapter
 date: 2026-07-22
 author: matt.cockayne
-status: approved
+status: implemented
 approved: 2026-07-22
+implemented: 2026-07-25
 ---
 
 # config-vault
@@ -537,6 +538,36 @@ already made it — the marker the poll watch compares to notice a foreign chang
 The decision is unchanged in substance; the claim about provenance was wrong and
 is corrected here. `TestLoad_IDIsStableAcrossLoads` guards it: a version bump
 must not change a layer's identity.
+
+### R2 (2026-07-25) — Vault itself caps integer precision at 2^53 (qualifies D4)
+
+D4 has the adapter convert `json.Number` to `int64` before `float64`, reasoning
+that routing an integer through a float "would silently lose precision above
+2^53 — a real risk for the ids and epoch timestamps that live in secrets".
+
+The conversion is right and stays. The premise was incomplete: running the
+integration suite against a real server showed **Vault loses that precision
+first**. It decodes a submitted JSON number through a float, so an integer above
+2^53 is rounded *on write*, before this adapter is involved. Confirmed against
+the raw HTTP response — the client sends `9007199254740993` and Vault returns
+`9007199254740992`.
+
+Two consequences, neither changing the decision:
+
+1. The adapter's int64-first conversion still earns its place. It guarantees the
+   adapter adds no loss of its own, and it is what stops `number()` being
+   "simplified" to a single `Float64` call, which would corrupt values Vault
+   *does* store exactly.
+2. The >2^53 case is **unreachable through real Vault**, so the unit test
+   asserting it is defensive rather than representative, and is marked as such.
+   The integration suite pins Vault's actual behaviour instead, so a future Vault
+   that decodes with `UseNumber` fails the test rather than passing silently.
+
+Documented for consumers in the README and how-to, with the workaround: store
+large identifiers as strings, which round-trip exactly.
+
+This is the kind of thing the integration suite exists to find — the unit suite
+could not have, because its fake was built to the same assumption the spec was.
 
 ## Rejected alternatives
 
