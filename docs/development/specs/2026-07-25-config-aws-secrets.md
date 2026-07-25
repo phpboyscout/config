@@ -145,13 +145,17 @@ client, resolves credentials, or reads the environment:
 ```go
 // SecretsAPI is the slice of Secrets Manager this adapter uses.
 type SecretsAPI interface {
-	// GetSecret reads one secret's current value. It returns a nil Secret and
-	// a nil error when the secret does not exist.
-	GetSecret(ctx context.Context, name string) (*Secret, error)
+	// Get reads one secret at a staging label ("" = AWSCURRENT). It returns a
+	// nil Secret and a nil error when the secret does not exist.
+	Get(ctx context.Context, name, stage string) (*Secret, error)
 
-	// ListSecrets reads every secret under prefix, in as few calls as the
-	// service allows. Partial failures are returned, not swallowed (D6).
-	ListSecrets(ctx context.Context, prefix string) (secrets []Secret, failures []Failure, err error)
+	// List reads every secret under prefix at AWSCURRENT, in as few calls as
+	// the service allows. Partial failures are returned, not swallowed (D6).
+	List(ctx context.Context, prefix string) (secrets []Secret, failures []Failure, err error)
+
+	// Names lists the names under prefix without their values, for the staged
+	// read the bulk API cannot serve (D10, R1).
+	Names(ctx context.Context, prefix string) (names []string, err error)
 }
 
 type Secret struct {
@@ -274,6 +278,49 @@ rather than quietly counted.
 narrow injected interface, whose wired-together contract is already
 `backendconformance`. Unchanged from `config-vault` D16, and for the same reasons.
 
+## Revisions
+
+### R1 (2026-07-25) — the injected interface and NewSecret's signature (amends D7, D3)
+
+Building Phase 2 changed two things the Public API section listed, both because
+the service's shape forced them.
+
+**`SecretsAPI` gained a third method.** D7 listed `GetSecret` and `ListSecrets`.
+`WithVersionStage` (D10) cannot use the bulk value call, so a staged read has to
+name the secrets and fetch each one — which needs a listing that returns *names
+without values*. The interface is now `Get(ctx, name, stage)`, `List(ctx, prefix)`
+and `Names(ctx, prefix)`, which is a faithful reflection of the three things the
+service actually offers rather than two methods with a hidden mode.
+
+**`NewSecret` takes the codec as a parameter, not an option.** D3 listed
+`NewSecret(api, name, opts...)`. In single-secret mode the secret's value is one
+opaque string, so without a codec there is nothing to build a layer from — the
+codec is not optional there, and expressing that as an `Option` would only move
+the failure from compile time to run time. The signature is
+`NewSecret(api, name, codec, opts...)`. In prefix mode the codec stays optional
+(`WithValueCodec`), because there the names supply the structure. The asymmetry
+is deliberate and is the same reasoning that makes an undecodable value an error
+in one mode and a scalar in the other.
+
+### R2 (2026-07-25) — pin the current `config`, not the bare floor (qualifies D1)
+
+D1 sets the floor at `config` **v0.7.0**, the release whose `backendconformance`
+requires a sensitive read-only backend to refuse the routed-beneath write. That
+remains the correct *floor* — below it the adapter is tested against a superseded
+contract.
+
+Building at exactly that floor turned out to be a different mistake. `go.mod`
+pins what the module is built and tested against, and at v0.7.0 the conformance
+suite ran **five** subtests where the current suite runs six: v0.9.1 added
+`apply_tolerated_beside_absent_source`. Nothing failed — the contract simply was
+not exercised, which is the quietest way for coverage to be wrong.
+
+So the module pins the current release (**v0.9.2**), as its siblings do, and the
+floor in D1 stands as the statement of what the adapter *needs*. The general
+lesson, worth carrying to the remaining Phase B adapters: **pinning the bare
+minimum version silently tests against an older conformance suite.** Check the
+subtest count against a sibling rather than trusting a green run.
+
 ## Rejected alternatives
 
 **Make prefix mode opt-in, for symmetry with `config-vault`.** Rejected (D3):
@@ -308,9 +355,9 @@ rather than assuming.
 ## Public API
 
 - `func New(api SecretsAPI, prefix string, opts ...Option) config.Backend`
-- `func NewSecret(api SecretsAPI, name string, opts ...Option) config.Backend`
+- `func NewSecret(api SecretsAPI, name string, codec config.Codec, opts ...Option) config.Backend` (R1)
 - `func FromClient(client *secretsmanager.Client, prefix string, opts ...Option) config.Backend`
-- `func FromClientSecret(client *secretsmanager.Client, name string, opts ...Option) config.Backend`
+- `func FromClientSecret(client *secretsmanager.Client, name string, codec config.Codec, opts ...Option) config.Backend` (R1)
 - `func Wrap(client *secretsmanager.Client) SecretsAPI`
 - `func WithValueCodec(codec config.Codec) Option` (D4)
 - `func WithPollInterval(d time.Duration) Option` (D9)
