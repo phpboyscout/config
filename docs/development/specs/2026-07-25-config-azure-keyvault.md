@@ -140,7 +140,9 @@ this", and turning that into a startup failure for every application sharing the
 vault would punish the wrong party.
 
 **Expired secrets** are the surprise, and are covered separately in D6 because
-the service disagrees: it serves them, and the adapter still does not.
+the service disagrees: it serves them, and the adapter still does not. Key
+Vault's other informational attribute, `nbf`, is deliberately *not* a skip — see
+R1.
 
 ### D6 — An expired secret is skipped, and the layer is "secrets fit to use"
 
@@ -302,6 +304,30 @@ adapter holds to it.
 logic behind a narrow injected interface, whose wired-together contract is
 `backendconformance`. The core's own sensitive-leak scenarios landed separately
 and cover the guard this adapter relies on.
+
+## Revisions
+
+### R1 (2026-07-25) — `NotBefore` is deliberately not acted on (extends D6)
+
+D6 settled expiry and named the rule the three skips share — the layer holds the
+secrets fit to use — but said nothing about `nbf`, the other attribute Key Vault
+treats as informational. Building Phase 1 surfaced the omission: the skip rule
+checked `exp` and silently ignored `nbf`, which would have been an accident of
+implementation rather than a decision, and the next person to read the rule would
+reasonably have "fixed" it.
+
+**`nbf` is ignored.** A not-yet-valid secret loads normally.
+
+The two attributes look symmetrical and are not. An expiry is an operator
+retiring a credential: the value is finished, and continuing to serve it is the
+thing D6 refuses. A start date is a credential being *prepared* — and since this
+adapter reads each secret's **current version**, a future `nbf` on that version
+does not mean the value is unusable, it means someone set a date. Withholding a
+working secret on that basis would produce the disappearing-key failure D6 already
+warns about, for no safety gain.
+
+Pinned by `TestLoad_NotYetValidSecretIsKept`, and falsified against a rule that
+skips both, so the asymmetry is a recorded decision rather than an untested gap.
 
 ## Rejected alternatives
 
