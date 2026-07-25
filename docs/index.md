@@ -49,6 +49,7 @@ hide:
   <a class="cfg-pill" href="how-to/azure-appconfig/">Azure App Config</a>
   <a class="cfg-pill" href="how-to/gcp-parameter/">GCP Parameter</a>
   <a class="cfg-pill" href="how-to/vault/">Vault</a>
+  <a class="cfg-pill" href="how-to/aws-secrets/">AWS Secrets</a>
   <a class="cfg-pill cfg-pill--more" href="explanation/adapters/#roadmap">+ roadmap →</a>
 </div>
 
@@ -186,9 +187,10 @@ cloud **parameter stores** are released now at v0.1.0:
 
 - **Parameter stores** — [AWS SSM](how-to/aws-ssm.md), [Azure App Configuration](how-to/azure-appconfig.md)
   and [GCP Parameter Manager](how-to/gcp-parameter.md), Consul's siblings.
-- **Secrets managers** — [Vault](how-to/vault.md) is released and read-only; a value it provides can
-  never be written into a plainer layer beneath, because the core refuses that. AWS Secrets Manager,
-  Azure Key Vault and GCP Secret Manager follow *(roadmap)*.
+- **Secrets managers** — [Vault](how-to/vault.md) and [AWS Secrets
+  Manager](how-to/aws-secrets.md) are released and read-only; a value either provides can never be
+  written into a plainer layer beneath, because the core refuses that. Azure Key Vault and GCP
+  Secret Manager follow *(roadmap)*.
 - **Cloud-native key–value** *(roadmap)* — etcd and Kubernetes ConfigMaps, with native change-watch.
 
 **[→ The full adapter ecosystem, with status and roadmap](explanation/adapters.md)**

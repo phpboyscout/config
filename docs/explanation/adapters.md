@@ -168,6 +168,12 @@ tool writing a secret is a rarer and riskier act than reading one.
   secret's field colliding with a child secret is [refused rather than
   guessed](dynamic-backends.md#ambiguous-structure-is-refused-not-guessed). Unlike the byte-valued
   stores it needs no value codec — Vault returns already-structured JSON.
+- [**`config-aws-secrets`**](../how-to/aws-secrets.md) — AWS Secrets Manager. Read-only, statically
+  sensitive, polled. Reads a **prefix by default** — the reversal of Vault's shape, because
+  `BatchGetSecretValue` returns a whole prefix in one request — or one secret as a whole document,
+  the RDS-managed shape. A partial read is refused rather than served with keys missing; a staging
+  label can be selected, at the cost of the bulk read. Its SDK is **five modules**, the leanest
+  backend adapter in the toolkit.
 
 ### Roadmap
 
@@ -182,7 +188,7 @@ before it is built**. The grouping is a planned order, not a commitment date.
 | [`config-azure-appconfig`](../how-to/azure-appconfig.md) | Azure App Configuration | A | **Released · v0.1.0** |
 | [`config-gcp-parameter`](../how-to/gcp-parameter.md) | GCP Parameter Manager | A | **Released · v0.1.0** *(read-only)* |
 | [`config-vault`](../how-to/vault.md) | HashiCorp Vault | B — secrets managers | **Released · v0.2.0** *(read-only)* |
-| `config-aws-secrets` | AWS Secrets Manager | B | Planned *(read-only by default)* |
+| [`config-aws-secrets`](../how-to/aws-secrets.md) | AWS Secrets Manager | B | **Released · v0.1.0** *(read-only)* |
 | `config-azure-keyvault` | Azure Key Vault | B | Planned *(read-only by default)* |
 | `config-gcp-secret` | GCP Secret Manager | B | Planned *(read-only by default)* |
 | `config-etcd` | etcd | C — cloud-native key–value | Planned *(native watch)* |

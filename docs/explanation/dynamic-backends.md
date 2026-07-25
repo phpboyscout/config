@@ -68,6 +68,26 @@ could be written safely — it is read-only because writing a secret from a conf
 tool is a riskier act than reading one, and that needs justifying per adapter rather than
 inheriting. Capability is what the system permits; what an adapter ships is a separate decision.
 
+## The same abstraction costs different amounts
+
+Two adapters in this family read a tree of secrets, and they **default to opposite modes** — which
+looks like an inconsistency until you look at what each one charges.
+
+[Vault](../how-to/vault.md) makes its prefix walk opt-in. It has no recursive list, so walking costs
+one request per directory plus one per secret, and needs a `list` capability least-privilege
+policies routinely withhold. [AWS Secrets Manager](../how-to/aws-secrets.md) makes the prefix the
+*default*, because `BatchGetSecretValue` accepts a name-prefix filter and returns every matching
+secret's value in a single request.
+
+The principle is worth stating because it will keep recurring: **the family shares naming and safety
+conventions, not costs.** Copying an adapter's shape while discarding the measurement that produced
+it would give Secrets Manager consumers a worse default for no reason. Where an adapter diverges
+from its siblings, its spec says what it measured.
+
+The same asymmetry shows up inside one adapter. Selecting a staging label on Secrets Manager turns
+its one-request read into one request per secret, because the bulk API has no staging parameter —
+so the option exists, and documents its price at the point of use.
+
 ## Ambiguous structure is refused, not guessed
 
 A remote store's shape does not always map cleanly onto a config tree, and where two things claim
@@ -99,9 +119,11 @@ backend, a routed-beneath write being **refused** is the correct behaviour, not 
 [`backendconformance`](adapters.md) suite asserts exactly that — a sensitive read-only backend
 refuses the write with `ErrSensitiveLeak`, where a non-sensitive one routes it beneath.
 
-[`config-vault`](../how-to/vault.md) is the first backend to be **statically** sensitive — every
+[`config-vault`](../how-to/vault.md) was the first backend to be **statically** sensitive — every
 value in Vault is a secret, so the flag is unconditional — and therefore the first to exercise that
-branch of the suite in anger. The rest of the Phase-B secrets managers inherit the same shape. AWS
+branch of the suite in anger. [`config-aws-secrets`](../how-to/aws-secrets.md) is the second, which
+is what turns a contract written for one adapter into a family invariant. The remaining Phase-B
+secrets managers inherit the same shape. AWS
 SSM is the in-between case: it reports `Sensitive` only when a decrypted `SecureString` is actually
 in the loaded prefix, because it is a mixed store where most parameters are ordinary
 configuration, so an all-plain prefix routes normally.

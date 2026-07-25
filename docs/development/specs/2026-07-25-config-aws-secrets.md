@@ -2,8 +2,9 @@
 title: config-aws-secrets — the AWS Secrets Manager backend adapter
 date: 2026-07-25
 author: matt.cockayne
-status: approved
+status: implemented
 approved: 2026-07-25
+implemented: 2026-07-25
 ---
 
 # config-aws-secrets
