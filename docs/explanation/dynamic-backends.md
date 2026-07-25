@@ -55,12 +55,36 @@ family genuinely diverges:
 | Azure App Configuration | per-key ETag (`If-Match`) | full read+write; conflict refused |
 | AWS SSM | **none** (`PutParameter` overwrites) | **read-only** — a write can't be made safe |
 | GCP Parameter Manager | **none** (immutable versions) | **read-only** |
+| Vault | KV v2 check-and-set | capable, but **read-only by policy** — see below |
 
 Read-only is a first-class outcome, not a failure: a write to a key a read-only backend defines
 routes to the writable layer beneath and is reported shadowed, so the module still tells you the
 write did not take effect where you might have expected. Write support for the no-CAS stores is a
 tracked follow-on — the honest answer today is that a config tool cannot compare-and-swap them, and
 those parameters are usually provisioned by IaC anyway.
+
+Vault is the row that shows the two axes are independent. It *has* a real compare-and-swap, so it
+could be written safely — it is read-only because writing a secret from a configuration-consuming
+tool is a riskier act than reading one, and that needs justifying per adapter rather than
+inheriting. Capability is what the system permits; what an adapter ships is a separate decision.
+
+## Ambiguous structure is refused, not guessed
+
+A remote store's shape does not always map cleanly onto a config tree, and where two things claim
+the same key the family **refuses the load** rather than picking one.
+
+Vault is the case that makes this concrete. A Vault path is simultaneously a secret *and* a
+directory — listing a prefix returns both `app` and `app/` for the same name — so when a whole tree
+is read, a secret's own fields merge with its child secrets into one node. A field named `db` and a
+child secret `app/db` both claim `db`. Either resolution silently discards a value an operator can
+see in the store, and for a secrets manager "the password quietly wasn't the one you set" is the
+worst failure available. So `config-vault` refuses it with a named error identifying the path and
+the segment.
+
+This is the same reasoning the file adapters use — `config-xml` refuses an attribute colliding with
+a child element, `config-hcl` an attribute colliding with a block type. An ambiguous merge is a
+defect in the source, and a startup failure that names it is cheaper than a value that silently
+disappeared.
 
 ## Sensitive read-only backends
 
@@ -73,10 +97,14 @@ there.
 This has a consequence worth naming, because it is counter-intuitive: for a sensitive read-only
 backend, a routed-beneath write being **refused** is the correct behaviour, not a bug. The shared
 [`backendconformance`](adapters.md) suite asserts exactly that — a sensitive read-only backend
-refuses the write with `ErrSensitiveLeak`, where a non-sensitive one routes it beneath. The Phase-B
-secrets managers are all statically sensitive read-only backends and inherit this. (AWS SSM is the
-in-between case: it reports `Sensitive` only when a decrypted `SecureString` is actually in the
-loaded prefix, so an all-plain prefix routes normally.)
+refuses the write with `ErrSensitiveLeak`, where a non-sensitive one routes it beneath.
+
+[`config-vault`](../how-to/vault.md) is the first backend to be **statically** sensitive — every
+value in Vault is a secret, so the flag is unconditional — and therefore the first to exercise that
+branch of the suite in anger. The rest of the Phase-B secrets managers inherit the same shape. AWS
+SSM is the in-between case: it reports `Sensitive` only when a decrypted `SecureString` is actually
+in the loaded prefix, because it is a mixed store where most parameters are ordinary
+configuration, so an all-plain prefix routes normally.
 
 ## Testing them without the cloud
 

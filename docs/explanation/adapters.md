@@ -155,6 +155,20 @@ explains. In short: they **poll** rather than watch natively, and they split on 
 - [**`config-gcp-parameter`**](../how-to/gcp-parameter.md) — GCP Parameter Manager. Read-only, in
   two shapes: one parameter as a whole document, or a prefix of many parameters.
 
+### Secrets managers — Vault released
+
+Phase B holds the secrets managers, and they differ from the parameter stores in one way that
+changes how they behave: they are **`Sensitive`**, so the core refuses to write a value they
+provide into a plainer layer beneath ([sensitive read-only
+backends](dynamic-backends.md#sensitive-read-only-backends)). They ship **read-only** — a config
+tool writing a secret is a rarer and riskier act than reading one.
+
+- [**`config-vault`**](../how-to/vault.md) — HashiCorp Vault KV v2. Read-only, statically
+  sensitive, polled at 60 seconds. Reads **one secret** by default, or walks a whole prefix; a
+  secret's field colliding with a child secret is [refused rather than
+  guessed](dynamic-backends.md#ambiguous-structure-is-refused-not-guessed). Unlike the byte-valued
+  stores it needs no value codec — Vault returns already-structured JSON.
+
 ### Roadmap
 
 Each adapter below carries its own SDK, its own authentication and its own consistency and
@@ -167,7 +181,7 @@ before it is built**. The grouping is a planned order, not a commitment date.
 | [`config-aws-ssm`](../how-to/aws-ssm.md) | AWS SSM Parameter Store | A | **Released · v0.1.0** *(read-only)* |
 | [`config-azure-appconfig`](../how-to/azure-appconfig.md) | Azure App Configuration | A | **Released · v0.1.0** |
 | [`config-gcp-parameter`](../how-to/gcp-parameter.md) | GCP Parameter Manager | A | **Released · v0.1.0** *(read-only)* |
-| `config-vault` | HashiCorp Vault | B — secrets managers | Planned *(read-only by default)* |
+| [`config-vault`](../how-to/vault.md) | HashiCorp Vault | B — secrets managers | **Released · v0.2.0** *(read-only)* |
 | `config-aws-secrets` | AWS Secrets Manager | B | Planned *(read-only by default)* |
 | `config-azure-keyvault` | Azure Key Vault | B | Planned *(read-only by default)* |
 | `config-gcp-secret` | GCP Secret Manager | B | Planned *(read-only by default)* |
