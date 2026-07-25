@@ -209,6 +209,7 @@ not need; it cannot infer one it was never given.
 
 | Spec | Status |
 |---|---|
+| [config-azure-keyvault adapter](2026-07-25-config-azure-keyvault.md) | approved |
 | [config-aws-secrets adapter](2026-07-25-config-aws-secrets.md) | implemented |
 | [config-vault adapter](2026-07-22-config-vault.md) | implemented |
 | [config-iofs adapter](2026-07-22-config-iofs.md) | approved |
