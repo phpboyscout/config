@@ -138,6 +138,34 @@ store with a local emulator (Consul, or AWS via LocalStack) runs it in a Docker-
 while Azure App Configuration and GCP Parameter Manager have no emulator, so their integration
 tests are real-service-only and gated to run where credentials exist.
 
+## What "tested" means when there is no emulator
+
+Every adapter here is tested three ways — a fake for units, `backendconformance` for the layer
+contract, and an integration suite against the real service. The third is the one that keeps
+finding things: it caught Vault rounding integers above 2^53, and the exact boundary of a name
+prefix filter. The reason is structural rather than lucky. A unit fake is built from what the
+author believes the service does, so if that belief is wrong the fake is wrong *identically*, and
+every unit test still passes.
+
+That makes the emulator question a real one rather than a convenience. Where a service has a
+credible local stand-in — Consul, Vault, LocalStack for AWS, Azurite and fake-gcs-server for the
+object stores — the suite runs in CI on every change. Where it does not, the family does not
+pretend otherwise:
+
+- [Azure App Configuration](../how-to/azure-appconfig.md), [GCP Parameter
+  Manager](../how-to/gcp-parameter.md) and [Azure Key Vault](../how-to/azure-keyvault.md) have no
+  official emulator, so their integration suites are **real-service only** and skip cleanly without
+  credentials.
+- An unofficial emulator whose fidelity nobody has checked is **not** a substitute. A green run
+  against it would be weaker evidence than an honestly acknowledged gap, because it looks like
+  proof.
+
+For `config-azure-keyvault` the consequence is written into its plan: several of its behaviours are
+documented rather than observed, each is listed in its spec as a **claim** with a test that asserts
+it directly, and the release waits on running that suite against a real vault. If a claim turns out
+false it becomes a dated revision before v0.1.0 — which is the point of recording them as claims
+instead of assumptions.
+
 ## Related
 
 - [How the Consul backend works](consul-backend.md) — the reference backend, in depth
