@@ -1,9 +1,10 @@
 # .gitlab-ci.yml — pipeline assembled from phpboyscout/cicd components.
 #
-#   merge_request_event → lint, test, security   (the merge gate)
-#   default branch      → releaser-pleaser, zensical-pages deploy
+#   merge_request_event → lint, test, security, canary-subset  (the merge gate)
+#   default branch      → releaser-pleaser, zensical-pages deploy, canary-full
+#   Release MR          → + canary-full (the pre-release gate)
 #   tag v*.*.*          → zensical-pages docs for the release
-#   schedule            → renovate
+#   schedule            → renovate, canary-full
 #
 # This is a library (no binaries), so there is no goreleaser component and no
 # release-asset signing — module integrity is provided by go.sum + the Go
@@ -31,6 +32,7 @@ stages:
   - lint
   - test
   - security
+  - canary
   - release
   - pages
   - renovate
@@ -46,3 +48,140 @@ workflow:
 
 variables:
   GIT_DEPTH: "0"
+
+# ----------------------------------------------------------------------
+# Cross-repo adapter canary
+#
+# WHY. config is consumed by 19 independent single-purpose adapter repos
+# (each isolates one cloud SDK / backend / codec dependency tree, so the
+# 19-repo split is permanent and intentional — NOT a staging area for
+# consolidation). Each adapter pins a *released* config tag, so a breaking
+# change to config core is invisible in config's own pipeline: it only
+# surfaces later, in an adapter's or a downstream consumer's build, after
+# the offending config tag has already shipped.
+#
+# This canary inverts that failure surface. For each adapter in scope it
+# checks out the adapter's default branch, rewrites its `go/config`
+# require to a filesystem `replace` pointing at *this MR's* config
+# checkout ($CI_PROJECT_DIR = config HEAD, not the released tag), then
+# runs `go build` + `go vet` + `go test`. A config change that breaks an
+# adapter now fails HERE, in config's pipeline, before the tag is cut.
+#
+# Cloud-backed adapters (aws-*, gcp-*, azure-*, vault, consul, sftp) still
+# build + vet + compile their tests here even though their live-credential
+# tests self-skip in CI via their own INT_TEST_* env gates — the point of
+# the canary is catching *compile* breaks across the whole family, which
+# needs every adapter to at least build and vet against config HEAD.
+#
+# CADENCE (resolved default for spec Q3 — "canary trigger scope"):
+#   * canary-subset — a fast representative slice (one filesystem adapter,
+#     one KV backend, one format codec) runs on EVERY config MR, so the
+#     common breakages are caught on the feature branch.
+#   * canary-full — all 19 adapters run on the pre-release surfaces:
+#     the releaser-pleaser Release MR, default-branch pipelines, and the
+#     nightly schedule. This is where a break is caught before a release
+#     is cut, without paying 19 checkouts on every routine MR.
+#
+# GATING. Both jobs are gating (allow_failure omitted → false): a red
+# canary blocks the merge / release, which is the whole point of catching
+# a break before it ships. If adapter-side flake ever makes this noisy,
+# flip an individual job to `allow_failure: true` to downgrade it to
+# advisory (as the spec's initial-rollout note suggests) without removing
+# the signal.
+# ----------------------------------------------------------------------
+.canary:
+  stage: canary
+  image: "registry.gitlab.com/phpboyscout/images/dev-tools:v0.3.2"
+  interruptible: true
+  variables:
+    GOPATH: "$CI_PROJECT_DIR/.go"
+    GOCACHE: "$CI_PROJECT_DIR/.go/cache"
+  cache:
+    key: "${CI_PROJECT_PATH_SLUG}-go"
+    paths:
+      - .go/pkg/mod/
+      - .go/cache/
+    policy: pull
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+  before_script:
+    - mkdir -p "$GOPATH/pkg/mod" "$GOCACHE"
+  script:
+    - |
+      set -e
+      echo "canary — building ${ADAPTER} against config HEAD (${CI_COMMIT_SHORT_SHA})"
+      SRC="/tmp/canary/${ADAPTER}"
+      rm -rf "${SRC}"; mkdir -p /tmp/canary
+      git clone --depth 1 "https://gitlab.com/phpboyscout/go/${ADAPTER}.git" "${SRC}"
+      cd "${SRC}"
+      # Filesystem replace → build against config HEAD, not the pinned tag.
+      # A path replace needs no go.sum entry, so no checksum churn.
+      go mod edit -replace "gitlab.com/phpboyscout/go/config=${CI_PROJECT_DIR}"
+      echo "::group::${ADAPTER} — go build ./..."
+      if ! go build ./...; then echo "CANARY FAIL[${ADAPTER}]: go build broke against config HEAD"; exit 1; fi
+      echo "::endgroup::"
+      echo "::group::${ADAPTER} — go vet ./..."
+      if ! go vet ./...; then echo "CANARY FAIL[${ADAPTER}]: go vet broke against config HEAD"; exit 1; fi
+      echo "::endgroup::"
+      echo "::group::${ADAPTER} — go test ./... (live-cred tests self-skip via INT_TEST_* gates)"
+      if ! go test ./...; then echo "CANARY FAIL[${ADAPTER}]: go test broke against config HEAD"; exit 1; fi
+      echo "::endgroup::"
+      echo "CANARY OK[${ADAPTER}]: builds, vets and tests clean against config HEAD"
+
+# Fast subset — one filesystem adapter + one KV backend + one codec.
+# Runs on every ordinary config MR (skips the Release MR, which gets the
+# full matrix below). Change-gated to Go/module/CI edits — a docs-only
+# config MR cannot break an adapter's build.
+canary-subset:
+  extends: .canary
+  parallel:
+    matrix:
+      - ADAPTER:
+          - config-afero
+          - config-consul
+          - config-toml
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "releaser-pleaser--branches--main"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - "**/*.go"
+        - "go.mod"
+        - "go.sum"
+        - ".gitlab-ci.yml"
+
+# Full matrix — all 19 adapters. Runs on the pre-release surfaces only:
+# the Release MR, default-branch pipelines, and the nightly schedule.
+canary-full:
+  extends: .canary
+  parallel:
+    matrix:
+      - ADAPTER:
+          - config-afero
+          - config-billy
+          - config-iofs
+          - config-dotenv
+          - config-hcl
+          - config-ini
+          - config-json
+          - config-properties
+          - config-toml
+          - config-xml
+          - config-vault
+          - config-consul
+          - config-aws-s3
+          - config-aws-ssm
+          - config-gcp-gcs
+          - config-gcp-parameter
+          - config-azure-blob
+          - config-azure-appconfig
+          - config-sftp
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "releaser-pleaser--branches--main"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
