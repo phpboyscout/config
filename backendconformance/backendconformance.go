@@ -403,6 +403,15 @@ func (s Suite) renderableScalarsAndHostileKeys(t *testing.T) {
 // foreignChangeReachesObservers confirms a watchable backend feeds hot-reload: a
 // change made to the backing store by another client reaches the Store's
 // observers.
+//
+// The watch is opened with an explicit fast poll interval, not the default. A
+// backend that must be polled may advertise a slow cadence through
+// [config.PollIntervalHinter] — minutes, for a billed remote read — which a
+// default Store.Watch would adopt, so a foreign change would not surface inside
+// this case's window and the case would flake or time out through no fault of
+// the backend. An explicit [config.WithPollInterval] overrides the hint (the
+// poll-interval contract), so the case measures that a change propagates, not
+// how eagerly the backend chose to poll.
 func (s Suite) foreignChangeReachesObservers(t *testing.T) {
 	backend, ctrl := s.newBackend(t, s.Seed)
 	store := newStore(t, config.WithBackend(backend))
@@ -416,8 +425,13 @@ func (s Suite) foreignChangeReachesObservers(t *testing.T) {
 	})
 
 	// Settling disabled: a real change signal has no burst to coalesce, so the
-	// test should not wait on a timer.
-	stop, err := store.Watch(context.Background(), config.WithSettleInterval(0))
+	// test should not wait on a timer. The explicit poll interval overrides any
+	// slow PollIntervalHinter cadence so a polled backend still surfaces the
+	// change within watchTimeout.
+	stop, err := store.Watch(context.Background(),
+		config.WithSettleInterval(0),
+		config.WithPollInterval(conformancePoll),
+	)
 	if err != nil {
 		t.Fatalf("Watch: %v", err)
 	}
@@ -538,6 +552,12 @@ const observerBuffer = 4
 // reach observers before declaring the signal lost. A native change signal
 // arrives in microseconds; this is slack for a loaded CI runner.
 const watchTimeout = 3 * time.Second
+
+// conformancePoll is the explicit poll cadence the watch case opens Store.Watch
+// with, well inside watchTimeout, so a polled backend advertising a slow
+// PollIntervalHinter cadence is still measured for propagation rather than eager
+// polling. An explicit WithPollInterval overrides the hint.
+const conformancePoll = 5 * time.Millisecond
 
 func write(t *testing.T, fsys config.FS, name string, data []byte) {
 	t.Helper()
