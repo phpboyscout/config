@@ -879,6 +879,52 @@ logic behind a narrow injected interface, whose wired-together contract is
 `backendconformance`. The core's sensitive-leak scenarios landed separately and
 cover the guard this adapter relies on.
 
+## Revisions
+
+### R1 (2026-07-27) — the observer is fed by the poll, and a fallback is itself a change (amends D5, D10)
+
+D5 specified `WithFallbackObserver` as called "synchronously during `Load`". Building
+Phases 1–2 showed that description is right about *where* the callback fires and
+wrong about *when the situation arises*. In a long-running process it is almost
+never `Load` that meets a half-completed rotation — it is a **poll**, minutes or
+hours later. A `Load`-only observer would have reported the fallbacks present at
+startup and gone quiet for exactly the events it exists to surface.
+
+The contract is preserved rather than changed: the poll **collects** fallbacks
+into its snapshot, and `Load` emits them. The callback still runs on the Store's
+goroutine during `Load`, so a consumer's expectations hold.
+
+The more serious half is a defect the spec as approved would have shipped. **A
+fallback appearing does not move the served version.** Version 8 is created and
+disabled; `latest` becomes unreadable; the adapter falls back to version 7 — which
+is the version it was already serving. A change comparison over served versions
+alone sees nothing, reports nothing, and the rotation stays silent for the life of
+the process. That is precisely the failure the observer was added to prevent.
+
+So change detection compares **the fallback set as well as the served versions**.
+Both halves are needed: the served versions catch an ordinary rotation, and the
+fallback set catches one that failed without moving anything.
+
+### R2 (2026-07-27) — `Load` must consume the poll's snapshot (amends D10)
+
+D10's cost table is correct only under an assumption it does not state: that a
+`Load` following a poll **reuses what the poll already read**. Without that, a
+detected change costs the poll's `n + f + k + 1` calls and then a further `n + 1`
+payload reads to build the layer — which restores the DATA_READ traffic per tick
+that the metadata poll was chosen to avoid, and undoes the decision.
+
+Snapshot reuse is therefore part of D10 rather than an implementation detail, and
+is pinned by a test asserting the call counts rather than only the values.
+
+### R3 (2026-07-27) — version ordering is derived, not assumed (closes a D13 row)
+
+D13 listed as a claim to verify that `ListSecretVersions` returns versions in a
+resolvable order, which the fallback walk depends on. That row is now closed
+without needing a real project: version IDs are integers starting at 1 and
+incrementing, so `Wrap` **sorts by version number** rather than trusting the
+service's ordering. Newest-first is then definitional rather than observed, and
+one unverified claim leaves the release gate.
+
 ## Rejected alternatives
 
 **Map `-` or `_` to `.` for nesting.** Rejected (D3): both are legal in ordinary

@@ -168,6 +168,13 @@ tool writing a secret is a rarer and riskier act than reading one.
   secret's field colliding with a child secret is [refused rather than
   guessed](dynamic-backends.md#ambiguous-structure-is-refused-not-guessed). Unlike the byte-valued
   stores it needs no value codec — Vault returns already-structured JSON.
+- [**`config-gcp-secret`**](../how-to/gcp-secret.md) — GCP Secret Manager. Read-only, statically
+  sensitive, polled on version *metadata* so a quiet poll stays out of the data-access audit
+  stream. Flat IDs verbatim, or one secret as a document. Its distinctive behaviour is version
+  states: `latest` means most recently *created*, so a disabled newest version makes it unreadable
+  and the adapter falls back to the newest enabled one — reporting that through a callback, because
+  provenance cannot carry a per-key resolution. **The heaviest adapter here at 39 modules.** *Built;
+  release gated on verification against a real project.*
 - [**`config-azure-keyvault`**](../how-to/azure-keyvault.md) — Azure Key Vault. Read-only,
   statically sensitive, polled at five minutes. The one store here with **no hierarchy at all**:
   names allow only letters, digits and hyphens, so a name is a key verbatim and structure comes
@@ -196,7 +203,7 @@ before it is built**. The grouping is a planned order, not a commitment date.
 | [`config-vault`](../how-to/vault.md) | HashiCorp Vault | B — secrets managers | **Released · v0.2.0** *(read-only)* |
 | [`config-aws-secrets`](../how-to/aws-secrets.md) | AWS Secrets Manager | B | **Released · v0.1.0** *(read-only)* |
 | [`config-azure-keyvault`](../how-to/azure-keyvault.md) | Azure Key Vault | B | **Built** · release pending verification *(read-only)* |
-| `config-gcp-secret` | GCP Secret Manager | B | Planned *(read-only by default)* |
+| [`config-gcp-secret`](../how-to/gcp-secret.md) | GCP Secret Manager | B | **Built** · release pending verification *(read-only)* |
 | `config-etcd` | etcd | C — cloud-native key–value | Planned *(native watch)* |
 | `config-k8s` | Kubernetes ConfigMaps | C | Planned *(native watch)* |
 
