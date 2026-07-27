@@ -74,6 +74,26 @@ type Suite struct {
 	// The value must read back after the write.
 	WriteKey   string
 	WriteValue string
+
+	// BoundedKeySpace declares that the backend accepts writes only to keys it
+	// was configured with, rather than to any key routed at it.
+	//
+	// Almost every backend takes arbitrary keys: a file, a Consul prefix or an
+	// object store will hold whatever it is given. Some cannot. A keychain has
+	// no way to enumerate itself, so an adapter over one is given an explicit
+	// map of config path to keychain account, and a key outside that map has no
+	// account to be written to — inventing one would put a secret somewhere no
+	// read would ever look for it.
+	//
+	// Setting this skips the hostile-KEY cases, which invent key names the
+	// backend cannot have been configured with. The hostile-VALUE cases still
+	// run against WriteKey, because a bounded key space says nothing about what
+	// values a backend must survive.
+	//
+	// Leave it false unless the backend genuinely refuses unconfigured keys. It
+	// removes coverage, and a backend that merely finds a key inconvenient
+	// should fail closed instead.
+	BoundedKeySpace bool
 }
 
 // Control stands in for another client of the same backing store. It is how the
@@ -360,14 +380,24 @@ func (s Suite) renderableScalarsAndHostileKeys(t *testing.T) {
 		name  string
 		key   string
 		value string
+		// inventsKey marks a case that writes to a key the backend was never
+		// configured with, which a bounded key space cannot accept.
+		inventsKey bool
 	}{
-		{"control bytes in value", s.WriteKey, "a\x01b\x07c\x1bd"},
-		{"bidi override in value", s.WriteKey, "before\u202eafter"},
-		{"numeric key", "0", "numeric-key-value"},
-		{"gjson metacharacters in key", `a*b?c#d\e`, "meta-key-value"},
+		{name: "control bytes in value", key: s.WriteKey, value: "a\x01b\x07c\x1bd"},
+		{name: "bidi override in value", key: s.WriteKey, value: "before\u202eafter"},
+		{name: "numeric key", key: "0", value: "numeric-key-value", inventsKey: true},
+		{name: "gjson metacharacters in key", key: `a*b?c#d\e`, value: "meta-key-value", inventsKey: true},
 	}
 
 	for _, tc := range cases {
+		if tc.inventsKey && s.BoundedKeySpace {
+			// The backend was never given an account, path or slot for this
+			// key, so refusing it is correct rather than a failure. Asserting
+			// otherwise would require it to invent a destination.
+			continue
+		}
+
 		t.Run(tc.name, func(t *testing.T) {
 			backend, _ := s.newBackend(t, s.Seed)
 			store := newStore(t, config.WithBackend(backend))

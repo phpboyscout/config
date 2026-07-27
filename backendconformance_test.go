@@ -2,6 +2,8 @@ package config_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io/fs"
 	"testing"
 
@@ -136,4 +138,62 @@ func (b *readOnlyBackend) Load(ctx context.Context, _ []config.Layer) ([]config.
 		},
 		Values: values,
 	}}, nil
+}
+
+// boundedKeyBackend is a writable backend that accepts writes only to the keys
+// it was configured with — the shape config-keychain has, because a keychain
+// cannot be enumerated and an adapter over one is given an explicit map of
+// config path to account.
+//
+// It exists to prove Suite.BoundedKeySpace does something. Without a backend
+// that genuinely refuses an unconfigured key, setting the field would skip
+// cases that were passing anyway and the flag would be indistinguishable from
+// no flag at all.
+type boundedKeyBackend struct {
+	config.WritableBackend
+
+	// owned is the only key this backend will accept a write for.
+	owned string
+}
+
+// errNotOwned is deliberately NOT ErrBackendUnsafe or ErrBackendParse: the key
+// is neither unsafe nor unparseable, it simply belongs to no slot here. That
+// distinction is the whole reason BoundedKeySpace exists — the suite's
+// fail-closed allowance does not cover it.
+var errNotOwned = errors.New("backendconformance_test: key not owned by this backend")
+
+func (b boundedKeyBackend) Prepare(ctx context.Context, edits []config.Edit) (config.Pending, error) {
+	for _, edit := range edits {
+		if edit.Path != b.owned {
+			return nil, fmt.Errorf("%w: %q", errNotOwned, edit.Path)
+		}
+	}
+
+	return b.WritableBackend.Prepare(ctx, edits)
+}
+
+// TestBackendConformance_BoundedKeySpace runs the suite against a backend that
+// refuses unconfigured keys.
+//
+// It is the regression guard for the field: run the same backend WITHOUT
+// BoundedKeySpace and the hostile-key cases fail, because refusing them is
+// reported as a contract breach rather than as correct behaviour.
+func TestBackendConformance_BoundedKeySpace(t *testing.T) {
+	t.Parallel()
+
+	backendconformance.Run(t, backendconformance.Suite{
+		NewBackend: func(_ *testing.T, seed map[string]any) (config.Backend, backendconformance.Control) {
+			remote := newFakeRemote(seed)
+
+			return boundedKeyBackend{WritableBackend: newRemoteBackend(remote, "app/"), owned: "level"},
+				&suiteControl{remote: remote, reopen: func(r *fakeRemote) config.Backend {
+					return boundedKeyBackend{WritableBackend: newRemoteBackend(r, "app/"), owned: "level"}
+				}}
+		},
+		Seed:            conformanceSeed(),
+		Defines:         conformanceDefines(),
+		WriteKey:        "level",
+		WriteValue:      "debug",
+		BoundedKeySpace: true,
+	})
 }
