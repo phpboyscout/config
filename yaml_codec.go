@@ -38,9 +38,10 @@ func NewFileBackend(filesystem FS, path string) Backend {
 // yamldoc; documents never come from the value parser.
 type YAMLCodec struct{}
 
-// preservesComments reports that YAML edits retain comments and formatting,
-// which is what backs the file backend's PreservesComments capability.
-func (YAMLCodec) preservesComments() bool { return true }
+// PreservesComments reports that YAML edits retain comments and formatting,
+// which is what backs the file backend's PreservesComments capability. It
+// satisfies [CommentPreservingCodec].
+func (YAMLCodec) PreservesComments() bool { return true }
 
 // Decode decodes every YAML document in a source into its own map.
 //

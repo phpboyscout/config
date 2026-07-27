@@ -1001,6 +1001,30 @@ func TestObserveSection_ConcurrentDeliveriesSettleOnTheNewest(t *testing.T) {
 	}
 }
 
+// Two backends answering to the same ID is a routing hazard: backendByID
+// returns the first match, so a write routed at the second silently lands on the
+// first. adoptBackend rejects it at runtime; NewStore used to append unchecked,
+// so the same collision was accepted when the sources were declared up front.
+func TestNewStore_RejectsDuplicateBackendIDs(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewStore(context.Background(),
+		WithReaders(NamedSource{Name: "dup", Content: []byte("a: 1\n")}),
+		WithReaders(NamedSource{Name: "dup", Content: []byte("b: 2\n")}),
+	)
+	if !errors.Is(err, ErrInvalidTarget) {
+		t.Errorf("err = %v, want ErrInvalidTarget for two sources sharing an ID", err)
+	}
+
+	// Distinct IDs still build.
+	if _, err := NewStore(context.Background(),
+		WithReaders(NamedSource{Name: "one", Content: []byte("a: 1\n")}),
+		WithReaders(NamedSource{Name: "two", Content: []byte("b: 2\n")}),
+	); err != nil {
+		t.Errorf("two distinctly named sources were refused: %v", err)
+	}
+}
+
 // externalBackend stands in for a backend defined outside this package, which
 // is the case the seam exists for and the one the concrete type assertion made
 // impossible.

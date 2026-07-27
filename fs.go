@@ -112,6 +112,11 @@ type LinkReader interface {
 // Implement this only when the filesystem genuinely wants a non-default cadence;
 // a local or in-memory filesystem should not, so it keeps the responsive
 // default.
+//
+// A [WatchableBackend] may implement this too, and [Store.Watch] consults it the
+// same way: a backend polling a remote store (a parameter store, a KV service)
+// declares a slower cadence than the local-file default, and an explicit
+// [WithPollInterval] still overrides it.
 type PollIntervalHinter interface {
 	PollInterval() time.Duration
 }

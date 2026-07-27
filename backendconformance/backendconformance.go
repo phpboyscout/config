@@ -103,8 +103,11 @@ type Control interface {
 // load and commit with [config.ErrConflict] checked; a read-only backend instead
 // has its layer confirmed skipped by write routing — or, when it is sensitive
 // (a secrets backend), the routed-beneath write confirmed refused with
-// [config.ErrSensitiveLeak]. A [config.WatchableBackend] has a foreign change
-// confirmed to reach observers.
+// [config.ErrSensitiveLeak]. A writable backend also has a set of rendering and
+// path-addressing hazards — control bytes, a bidi character, a numeric key, and
+// gjson path metacharacters — confirmed to either round-trip exactly or fail
+// closed with [config.ErrBackendUnsafe] or [config.ErrBackendParse]. A
+// [config.WatchableBackend] has a foreign change confirmed to reach observers.
 func Run(t *testing.T, s Suite) {
 	t.Helper()
 
@@ -136,6 +139,7 @@ func Run(t *testing.T, s Suite) {
 
 		t.Run("write_round_trips", s.writeRoundTrips)
 		t.Run("conflict_detected", s.conflictDetected)
+		t.Run("renderable_scalars_and_hostile_keys", s.renderableScalarsAndHostileKeys)
 	} else {
 		t.Run("read_only_skipped_by_routing", s.readOnlySkippedByRouting)
 	}
@@ -335,6 +339,64 @@ func (s Suite) conflictDetected(t *testing.T) {
 	if !errors.Is(err, config.ErrConflict) {
 		t.Errorf("Apply after a foreign change = %v, want ErrConflict — the version must be "+
 			"captured at Load, not at Prepare", err)
+	}
+}
+
+// renderableScalarsAndHostileKeys confirms a write that carries a rendering or
+// path-addressing hazard either round-trips the exact key and value, or fails
+// closed with [config.ErrBackendUnsafe] or [config.ErrBackendParse] — never a
+// silent success that reads back as something else.
+//
+// The hazards are the ones an editing codec or a path-addressing store gets
+// wrong: control bytes and a bidirectional-override character in a value (which
+// an emitter must escape rather than pass through raw), a key literally named
+// "0" (which a store using gjson/sjson path syntax would read as an array
+// index), and gjson path metacharacters in a key ("*", "?", "#", "\", which
+// carry meta-meaning in that syntax). A backend that mis-addresses any of these
+// silently corrupts configuration; the core YAML codec escapes them and this
+// case is what will catch a sibling adapter that does not.
+func (s Suite) renderableScalarsAndHostileKeys(t *testing.T) {
+	cases := []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{"control bytes in value", s.WriteKey, "a\x01b\x07c\x1bd"},
+		{"bidi override in value", s.WriteKey, "before\u202eafter"},
+		{"numeric key", "0", "numeric-key-value"},
+		{"gjson metacharacters in key", `a*b?c#d\e`, "meta-key-value"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			backend, _ := s.newBackend(t, s.Seed)
+			store := newStore(t, config.WithBackend(backend))
+
+			_, err := store.Apply(context.Background(), config.Set(tc.key, tc.value))
+			if err != nil {
+				// Fail-closed is an acceptable outcome: refusing a construct it
+				// cannot represent is exactly the guarantee. A codec may refuse it
+				// up front as unsafe (ErrBackendUnsafe), or a value it cannot render
+				// may be caught when the staged content is re-decoded before commit
+				// (ErrBackendParse) — a raw control byte no text format can hold
+				// surfaces that way. Both mean the write was refused rather than
+				// silently mangled. Any other error is a real failure.
+				if errors.Is(err, config.ErrBackendUnsafe) || errors.Is(err, config.ErrBackendParse) {
+					return
+				}
+
+				t.Fatalf("Apply(Set(%q, ...)) = %v, want success with an exact round-trip "+
+					"or a fail-closed ErrBackendUnsafe/ErrBackendParse", tc.key, err)
+			}
+
+			// The write succeeded, so the value must read back exactly. Anything
+			// else is the silent mis-addressing or mangling this case exists to
+			// catch.
+			if got := store.View().GetString(tc.key); got != tc.value {
+				t.Errorf("%q round-tripped as %q, want %q — the write succeeded but "+
+					"mis-addressed or mangled it", tc.key, got, tc.value)
+			}
+		})
 	}
 }
 

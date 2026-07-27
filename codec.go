@@ -219,28 +219,38 @@ func (b *codecBackend) Watch(
 	return w.Watch(ctx, []string{b.path}, onChange)
 }
 
-// watchErrorReporter is a backend that can be told where to send the errors
-// raised when watching one of its sources degrades. The Store asks by interface
-// rather than concrete type, so a consumer's own backend can opt in the same
-// way a file backend does.
-type watchErrorReporter interface {
-	setWatchErrorHandler(func(error))
+// WatchErrorReporter is an optional interface a [WatchableBackend] may satisfy
+// to be told where to send the errors raised when watching one of its sources
+// degrades and the fallback cannot be established either.
+//
+// The Store asks by interface rather than concrete type, so a backend defined
+// outside this package can route its watch-degradation errors to
+// [Store.OnReloadError] the same way the built-in file backend does. Satisfy it
+// only when the backend genuinely has a watch that can degrade — a backend that
+// cannot lose its watch has nothing to report and should not implement it.
+type WatchErrorReporter interface {
+	SetWatchErrorHandler(func(error))
 }
 
-// watchPathReporter is a backend reading a filesystem path, which an injected
-// watcher needs named up front. A backend with no filesystem path — an
-// in-memory source — does not implement it and contributes no path.
-type watchPathReporter interface {
-	watchPath() (string, bool)
+// WatchPathReporter is an optional interface a [Backend] reading a filesystem
+// path may satisfy so an injected [Watcher] can be handed the set of paths up
+// front.
+//
+// The Store asks by interface rather than concrete type, so a file-like backend
+// defined outside this package is watched by an injected watcher the same way
+// the built-in file backend is. A backend with no filesystem path — an in-memory
+// or remote source — does not implement it and contributes no path.
+type WatchPathReporter interface {
+	WatchPath() (string, bool)
 }
 
-// setWatchErrorHandler routes this backend's watch-degradation errors, so the
+// SetWatchErrorHandler routes this backend's watch-degradation errors, so the
 // Store can wire them to its notifier without reaching into a concrete type.
-func (b *codecBackend) setWatchErrorHandler(fn func(error)) { b.onWatchError = fn }
+func (b *codecBackend) SetWatchErrorHandler(fn func(error)) { b.onWatchError = fn }
 
-// watchPath reports the filesystem path this backend reads, for an injected
+// WatchPath reports the filesystem path this backend reads, for an injected
 // watcher that expects the set of paths up front.
-func (b *codecBackend) watchPath() (string, bool) { return b.path, true }
+func (b *codecBackend) WatchPath() (string, bool) { return b.path, true }
 
 // editingBackend is a codecBackend whose codec can edit, so it can persist a
 // write. It is a distinct type rather than a flag, so [WritableBackend] is
@@ -302,16 +312,23 @@ func (b *editingBackend) Prepare(ctx context.Context, edits []Edit) (Pending, er
 	}, nil
 }
 
-// preservesComments reports whether a codec retains comments and formatting
-// through an edit.
+// CommentPreservingCodec is an optional interface a [Codec] may satisfy to
+// declare that its edits retain comments and formatting.
 //
-// It is an optional capability: a codec that preserves comments says so, and one
-// that does not — or cannot, having no comments to lose — simply does not, and
-// reads as false. Kept unexported until a format with comments meets a codec
-// that cannot preserve them, which is the point the distinction starts to matter
-// (see D8 of the format-adapters spec).
-func preservesComments(c Codec) bool {
-	cp, ok := c.(interface{ preservesComments() bool })
+// It is asked by interface rather than concrete type, so a codec defined outside
+// this package — a sibling TOML or HCL adapter that genuinely round-trips
+// comments — has its [Capabilities] PreservesComments reported truthfully. A
+// codec that does not preserve comments, or has none to lose (a key-value
+// format), simply does not implement it and reads as false.
+type CommentPreservingCodec interface {
+	PreservesComments() bool
+}
 
-	return ok && cp.preservesComments()
+// preservesComments reports whether a codec retains comments and formatting
+// through an edit, by asking it through [CommentPreservingCodec]. A codec that
+// does not implement the interface reads as false.
+func preservesComments(c Codec) bool {
+	cp, ok := c.(CommentPreservingCodec)
+
+	return ok && cp.PreservesComments()
 }

@@ -80,6 +80,23 @@ type WatchableBackend interface {
 	Watch(ctx context.Context, interval time.Duration, onChange func()) (stop func(), err error)
 }
 
+// SourceKindDeclarer is an optional interface a [Backend] may satisfy to name
+// the [SourceKind] its layers carry.
+//
+// It matters only for a writable backend that has not contributed a layer yet:
+// the Store must synthesise a source entry for it so a write can be routed at a
+// target that does not exist yet, and without this declaration that entry
+// defaults to [SourceFile] — so an empty Consul prefix or parameter path would
+// present with file semantics in [Plan] output and [Operation] targets. A
+// backend that reports a layer names its kind in the layer's [Source] and need
+// not implement this; it is the empty-backend case the interface exists for.
+//
+// A backend that does not implement it keeps the [SourceFile] default, which is
+// right for the built-in file backend.
+type SourceKindDeclarer interface {
+	SourceKind() SourceKind
+}
+
 // Capabilities describes what a backend supports.
 //
 // Declaring them is what lets a heterogeneous set of backends coexist without

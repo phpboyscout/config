@@ -191,6 +191,15 @@ func NewStore(ctx context.Context, opts ...StoreOption) (*Store, error) {
 		return nil, ErrNoSources
 	}
 
+	// Two backends answering to the same ID is a routing hazard, not a
+	// diagnostic nuisance: backendByID returns the first match, so a write
+	// routed at the second silently lands on the first. adoptBackend already
+	// rejects this at runtime; construction must too, or the same collision that
+	// is refused on AddLayer is accepted when the sources are declared up front.
+	if err := ensureUniqueIDs(s.backends); err != nil {
+		return nil, err
+	}
+
 	if err := s.Reload(ctx); err != nil {
 		if errors.Is(err, ErrInvalidConfig) {
 			return s, err
@@ -949,44 +958,94 @@ func (s *Store) sourceOrder() []Source {
 		}
 
 		if _, ok := bl.backend.(WritableBackend); ok {
-			out = append(out, Source{
-				Kind:     SourceFile,
-				Name:     bl.backend.ID(),
-				Writable: true,
-			})
+			out = append(out, synthesisedSource(bl.backend))
 		}
 	}
 
 	return out
 }
 
+// synthesisedSource is the source entry for a writable backend that has not
+// contributed a layer yet, so a write can be routed at a target that does not
+// exist on disk yet. Its kind is what the backend declares through
+// [SourceKindDeclarer], defaulting to [SourceFile] — routing and provenance must
+// present an empty Consul prefix or parameter path with its own semantics, not a
+// file's. It must be built identically wherever it is needed, or the leak guard
+// and the router would key on different structs for the same target.
+func synthesisedSource(b Backend) Source {
+	kind := SourceFile
+	if d, ok := b.(SourceKindDeclarer); ok {
+		kind = d.SourceKind()
+	}
+
+	return Source{
+		Kind:     kind,
+		Name:     b.ID(),
+		Writable: true,
+	}
+}
+
 // sensitiveSources reports which sources came from a backend that declares
 // itself sensitive, keyed the same way routing sees them, so the leak guard can
 // ask "is this source sensitive?" without re-consulting capabilities per change.
 //
-// Only sources that actually contributed a layer are marked. A sensitive
-// backend that defines nothing owns no key to leak, and the sensitive backends
-// this guards are read-only (secrets are provisioned elsewhere), so none is ever
-// a write target — the case a synthesised entry would cover cannot arise until a
-// writable secrets backend is specified, which will bring its own routing rules.
+// A sensitive backend that contributed layers marks each of them. A sensitive
+// backend that is writable but empty is marked through its synthesised source —
+// the same entry [sourceOrder] routes a write at — so a write landing in an
+// empty secrets backend is recognised as sensitive rather than being mistaken
+// for a plain layer the leak guard then refuses to write a secret into.
 func (s *Store) sensitiveSources() map[Source]bool {
 	var out map[Source]bool
+
+	mark := func(src Source) {
+		if out == nil {
+			out = map[Source]bool{}
+		}
+
+		out[src] = true
+	}
 
 	for _, bl := range s.loaded {
 		if !bl.backend.Capabilities().Sensitive {
 			continue
 		}
 
-		for _, l := range bl.layers {
-			if out == nil {
-				out = map[Source]bool{}
+		if len(bl.layers) == 0 {
+			// An empty writable sensitive backend owns its synthesised target,
+			// which must carry the guard: routing a write there is writing into a
+			// secrets store, and the guard consults this map to know the target is
+			// sensitive.
+			if _, ok := bl.backend.(WritableBackend); ok {
+				mark(synthesisedSource(bl.backend))
 			}
 
-			out[l.Source] = true
+			continue
+		}
+
+		for _, l := range bl.layers {
+			mark(l.Source)
 		}
 	}
 
 	return out
+}
+
+// ensureUniqueIDs rejects a set of backends in which two answer to the same ID,
+// mirroring adoptBackend's runtime check so the same collision is refused
+// whether the sources are declared at construction or added later.
+func ensureUniqueIDs(backends []Backend) error {
+	seen := make(map[string]bool, len(backends))
+
+	for _, b := range backends {
+		id := b.ID()
+		if seen[id] {
+			return fmt.Errorf("%w: a source named %q is already loaded", ErrInvalidTarget, id)
+		}
+
+		seen[id] = true
+	}
+
+	return nil
 }
 
 func (s *Store) backendByID(id string) (Backend, bool) {
@@ -1014,6 +1073,12 @@ func (s *Store) backendByID(id string) (Backend, bool) {
 // A watcher that cannot function fails here rather than silently doing
 // nothing: an application that believes it will hear about changes and never
 // does is worse off than one that knows it must restart.
+//
+// The poll cadence honours a backend's own [PollIntervalHinter] when the caller
+// left the default: a backend polling a remote store where every check is a
+// billed call declares a slower cadence, and an explicit [WithPollInterval]
+// still overrides it. A [WatchableBackend] may implement [PollIntervalHinter]
+// directly, just as a filesystem may.
 func (s *Store) Watch(ctx context.Context, opts ...WatchOption) (stop func(), err error) {
 	cfg := watchConfig{interval: DefaultPollInterval, settle: DefaultSettleInterval}
 	for _, opt := range opts {
@@ -1062,15 +1127,15 @@ func (s *Store) Watch(ctx context.Context, opts ...WatchOption) (stop func(), er
 	var stops []func()
 
 	for _, b := range watchable {
-		if h, ok := b.(watchErrorReporter); ok {
+		if h, ok := b.(WatchErrorReporter); ok {
 			// A watch that degrades and cannot fall back is a failure of the
 			// hot-reload contract, so it travels on the channel already meant
 			// for one. Asked by interface rather than concrete type, so a
 			// consumer's own backend can route its watch errors the same way.
-			h.setWatchErrorHandler(s.notifier.notifyError)
+			h.SetWatchErrorHandler(s.notifier.notifyError)
 		}
 
-		stop, err := b.Watch(ctx, cfg.interval, onChange)
+		stop, err := b.Watch(ctx, s.watchInterval(cfg, b), onChange)
 		if err != nil {
 			// One source that cannot be watched makes the set incomplete, and
 			// reporting success would leave the caller believing it will hear
@@ -1087,6 +1152,28 @@ func (s *Store) Watch(ctx context.Context, opts ...WatchOption) (stop func(), er
 	return func() { settle.stop(); stopAll(stops) }, nil
 }
 
+// watchInterval decides the poll cadence a backend is watched at.
+//
+// When the caller left the default, a backend may declare its own cadence
+// through [PollIntervalHinter] — a remote store where every poll is a billed
+// call wants minutes, not the 2-second default suited to a local file. The hint
+// fills in only where the caller left the default; an explicit
+// [WithPollInterval] always wins, mirroring [NewWatcher]'s own logic so the two
+// entry points agree.
+func (s *Store) watchInterval(cfg watchConfig, b WatchableBackend) time.Duration {
+	if cfg.interval != DefaultPollInterval {
+		return cfg.interval
+	}
+
+	if hinter, ok := b.(PollIntervalHinter); ok {
+		if hinted := hinter.PollInterval(); hinted > 0 {
+			return hinted
+		}
+	}
+
+	return cfg.interval
+}
+
 // watchedPaths lists the paths of file-backed sources, for an injected watcher
 // that expects them.
 func (s *Store) watchedPaths() []string {
@@ -1096,8 +1183,8 @@ func (s *Store) watchedPaths() []string {
 	var out []string
 
 	for _, b := range s.backends {
-		if p, ok := b.(watchPathReporter); ok {
-			if path, exists := p.watchPath(); exists {
+		if p, ok := b.(WatchPathReporter); ok {
+			if path, exists := p.WatchPath(); exists {
 				out = append(out, path)
 			}
 		}
