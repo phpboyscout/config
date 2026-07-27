@@ -280,6 +280,65 @@ The how-to carries one thing beyond the usual: a **migration section for
 collapsing into one declared mapping is the adapter's main practical benefit, and
 a consumer will not derive the equivalence unaided.
 
+## Revisions
+
+### R1 (2026-07-27) — `Available()` is not the interesting failure; a hang is (corrects D6)
+
+D6 treated `Available() == false` as the dangerous state and resolved that `Load`
+should fail on it. Probing the real thing before building showed that premise is
+the wrong way round.
+
+**Observed on a headless host:** `org.freedesktop.secrets` was running, so
+`Available()` returned **true**; the login collection was **locked** (confirmed
+over the bus); and a `Store` **blocked past two minutes** rather than returning,
+waiting on an unlock prompt nobody could answer. The `credentials` keychain
+backend discarded its context, so no deadline could recover it.
+
+So the state D6 guards against — a backend that says it is unavailable — is the
+*clean* one. It is detectable, it is honest, and failing on it is easy. The state
+that actually hurts is **available and hangs**, and this adapter would have
+inherited it: a `Load` that never returns hangs application startup, which is
+worse than the plaintext problem the module exists to fix.
+
+D6's resolution stands as written — an unavailable backend still fails the Load.
+What changes is that it is no longer sufficient:
+
+- The fix belongs one layer down and has been made there
+  ([`credentials`, keychain honours its context](https://gitlab.com/phpboyscout/go/credentials/-/merge_requests/17)),
+  because both existing consumers of that module were exposed too. This adapter
+  requires the `credentials` release carrying it.
+- Honouring a context only helps a caller who sets a deadline. **This adapter
+  must set one**, rather than passing the Store's context through untouched: a
+  `Load` on a startup path typically carries no deadline of its own, and the
+  whole point is that the layer must not be able to hang the application. The
+  timeout is an option with a sane default; the value is Phase 1's to choose and
+  document.
+
+The general lesson is worth keeping: *"the backend reports unavailable"* is the
+failure that gets designed for, and *"the backend answers and then never
+returns"* is the one that gets shipped.
+
+### R2 (2026-07-27) — implement `SourceKindDeclarer` (amends D5)
+
+The core gained `SourceKindDeclarer` after this spec was approved, and it lands
+squarely on D5's routing argument.
+
+D5 turns on a first-ever token routing into the keychain because it is the
+highest-precedence **writable** layer even when it holds nothing. That is exactly
+the case the new interface exists for: for a writable backend that has not
+contributed a layer yet, the Store must synthesise a source entry so a write can
+be routed at a target that does not exist yet — and **without the declaration
+that entry defaults to `SourceFile`**.
+
+So an empty keychain would have presented with *file* semantics in `Plan` output
+and `Operation` targets: a consumer inspecting where a token was about to go
+would have been told a file. For an adapter whose entire purpose is keeping
+secrets out of files, that is precisely the wrong answer.
+
+`config-keychain` therefore implements `SourceKindDeclarer`, returning its
+`SourceKind`. Phase 1 asserts it against an empty keychain — the state where it
+matters and the state a test is least likely to cover by accident.
+
 ## Rejected alternatives
 
 **Wrap `credentials/keychain` directly rather than the interface.** Simpler by
