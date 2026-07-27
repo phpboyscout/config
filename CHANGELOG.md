@@ -1,5 +1,17 @@
 # Changelog
 
+## [v0.10.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.10.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.9.3...v0.10.0)
+
+### Features
+
+- **backendconformance**: let a backend declare a bounded key space ([5a2afad](https://gitlab.com/phpboyscout/go/config/-/commit/5a2afad6e5d6d00880692da32045d9dbecfced72))
+
+### Bug Fixes
+
+- **config**: drive backendconformance watch case with an explicit poll interval ([f33d225](https://gitlab.com/phpboyscout/go/config/-/commit/f33d2256b916fb20179219bd6d548c9efee8ec0f))
+
 ## [v0.9.3](https://gitlab.com/phpboyscout/go/config/-/releases/v0.9.3)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.9.2...v0.9.3)
