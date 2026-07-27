@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.9.3](https://gitlab.com/phpboyscout/go/config/-/releases/v0.9.3)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.9.2...v0.9.3)
+
+### Bug Fixes
+
+- **config**: harden core capability seams from the architectural review ([ed015e3](https://gitlab.com/phpboyscout/go/config/-/commit/ed015e34c7cd502c2c20ee61e452fe8114517bbd))
+
 ## [v0.9.2](https://gitlab.com/phpboyscout/go/config/-/releases/v0.9.2)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.9.1...v0.9.2)
