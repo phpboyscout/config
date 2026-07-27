@@ -4,7 +4,7 @@ date: 2026-07-21
 author: matt.cockayne
 status: approved
 approved: 2026-07-21
-revised: 2026-07-22
+revised: 2026-07-27
 issue: phpboyscout/go/config#4
 ---
 
@@ -329,3 +329,57 @@ routing-beneath as before. This closes the D5/D11 interaction once, in the share
 Phase-B secrets backend has to rediscover it. (config-aws-ssm dodged it another way — dynamic
 sensitivity, its R1 — but the statically-sensitive backends cannot, which is why this belongs in
 the suite.)
+
+### R3 (2026-07-27) — the "no change feed" category is wrong; there is a third kind of feed (corrects D6)
+
+D6 splits the systems in two: those with a **native change signal** (Consul blocking queries, etcd
+watch, Kubernetes informers) and those with **no change feed**, naming *"the cloud parameter and
+secrets stores (SSM, App Configuration, Parameter Manager, Secrets Manager, Key Vault, Secret
+Manager)"* and concluding these *"have nothing to subscribe to"*.
+
+**That is factually wrong for five of the six systems it names.** It was caught while specifying
+[config-gcp-secret](2026-07-27-config-gcp-secret.md) (its D11), which found that GCP Secret Manager
+carries a Pub/Sub notification mechanism on the secret resource itself. Rather than correct only the
+system that happened to be caught, the claim was checked against the rest of the list:
+
+| System | Feed | Established |
+|---|---|---|
+| GCP Secret Manager | `Secret.Topics` — up to 10 Pub/Sub topics, published to on control-plane operations on the secret *or its versions* | **measured** on `secretmanagerpb.Secret` v1.21.0 |
+| AWS Secrets Manager | native `Secret Label Updated` event on EventBridge, fired when `AWSCURRENT` moves — **enabled by default** for all secrets, on the default event bus | **documented** (AWS) |
+| Azure Key Vault | Event Grid, `Microsoft.KeyVault.*` — new version available, near expiry, expired; *"you must first subscribe to the event on your key vault"* | **documented** (Microsoft) |
+| AWS SSM Parameter Store | EventBridge `aws.ssm` / `Parameter Store Change`, operations `Create`/`Update`/`Delete`/`LabelParameterVersion`, *"emitted on a best effort basis"* | **documented** (AWS) |
+| Azure App Configuration | Event Grid, `Microsoft.AppConfiguration.KeyValueModified` / `KeyValueDeleted`, carrying the key, label and etag | **documented** (Microsoft) |
+| GCP Parameter Manager | **not re-checked.** [config-gcp-parameter](2026-07-22-config-gcp-parameter.md) D7 asserts it exposes no first-class change topic; that claim stands here **unverified** rather than being restated as fact | — |
+
+So the binary split is the error, not merely the GCP entry. **D6 is corrected to three categories:**
+
+1. **Native change signal** — the change arrives through the same client and connection the reads
+   use, with no other infrastructure. Consul blocking queries, etcd watch, Kubernetes informers.
+   These implement `WatchableBackend` with `NativeWatch: true`. Unchanged.
+2. **Out-of-band feed** — the system genuinely publishes changes, but to a *separate messaging
+   service* the consumer must provision and subscribe to: an EventBridge rule and target, an Event
+   Grid subscription, a Pub/Sub topic and subscription with its own IAM. The five systems above.
+3. **No change feed** — nothing to subscribe to by any route. GCP Parameter Manager is the only
+   candidate on the current list, and it is unverified.
+
+**The default for category 2 remains polling, and that is a decision rather than an oversight.** An
+out-of-band feed is not a drop-in substitute for a native watch, for three reasons that hold across
+all five systems. The subscription is **infrastructure the consumer owns** — a topic, a rule, a
+subscription, IAM to read it — so a backend that required one would be dictating how the consumer's
+account is provisioned, which umbrella D3 places entirely outside the adapter. It brings a **second
+client library** with its own delivery semantics — acknowledgement, redelivery, ordering,
+dead-lettering — none of which the `Backend` contract has a place for. And the feed is a
+notification, not a value: every event still costs a read to act on, so it changes *latency*, not
+work.
+
+What changes is what the specs may claim. **No adapter spec may say its system "has no change
+feed" without checking** — for five of six, that sentence would be false. A spec choosing to poll
+should say the system has an out-of-band feed and that polling was chosen anyway, with the reasons
+above. `config-gcp-secret` D11 is the worked example, and it also records the measurement that
+weakens the usual dependency objection: adding `cloud.google.com/go/pubsub/v2` beside
+`cloud.google.com/go/secretmanager` costs **four** modules, not a second SDK, because the two share
+the Google client stack. The argument for polling is ownership and contract, not footprint.
+
+An opt-in event-driven watch remains a legitimate follow-on for any category-2 system, per adapter,
+each with its own spec (D2), and each most likely in its **own module** so consumers who poll do not
+carry the messaging client. None is in scope for the adapters specified so far.
