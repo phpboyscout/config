@@ -48,14 +48,65 @@ type Change struct {
 	Target *Source
 }
 
+// ChangeOption adjusts a single [Change] at the point it is written.
+//
+// A function type rather than an interface, matching StoreOption and
+// WatchOption. The set of things a change can carry is closed by Change's own
+// fields, so there is nothing for a third party to add that this package could
+// still validate.
+type ChangeOption func(*Change)
+
+// To pins a change to the layer with the given name, overriding routing.
+//
+// Reach for it sparingly. Routing's default — edit where the key already lives,
+// create where it will be visible — is right far more often than a hand-picked
+// target, and pinning is how an edit ends up written somewhere nobody reads.
+// [Plan] will say where a change is going, and [Operation.ShadowedBy] will say
+// whether anything still outranks it, so a pin can be checked before it lands.
+//
+// The name is matched against the writable layers that exist, and an unmatched
+// one is [ErrInvalidTarget] rather than a silent fall back to routing. Where
+// more than one layer carries the name, the highest-precedence one wins: the
+// one whose value the caller can read back.
+//
+// A caller names a layer rather than building a [Source] because only Name and
+// Document are matched — a Source built by hand invites filling in Kind or
+// Writable and believing they select something.
+func To(name string) ChangeOption {
+	return func(c *Change) { c.Target = &Source{Name: name} }
+}
+
+// ToDocument pins a change to one document of a multi-document file.
+//
+// Every document in such a file shares a name, so [To] alone cannot address any
+// but the first. Separate from To rather than a variadic index on it, because
+// To(name, 0) and To(name) would have to mean the same thing while reading as a
+// choice.
+func ToDocument(name string, doc int) ChangeOption {
+	return func(c *Change) { c.Target = &Source{Name: name, Document: doc} }
+}
+
 // Set returns a change that assigns a value.
-func Set(path string, value any) Change {
-	return Change{Path: path, Value: value}
+func Set(path string, value any, opts ...ChangeOption) Change {
+	return newChange(Change{Path: path, Value: value}, opts)
 }
 
 // Remove returns a change that deletes a key and its subtree.
-func Remove(path string) Change {
-	return Change{Path: path, Remove: true}
+//
+// Takes the same options as [Set]: the two route identically, so an option that
+// reached only one of them would be a trap.
+func Remove(path string, opts ...ChangeOption) Change {
+	return newChange(Change{Path: path, Remove: true}, opts)
+}
+
+// newChange applies options to a change, so Set and Remove cannot drift on how
+// they are handled.
+func newChange(c Change, opts []ChangeOption) Change {
+	for _, opt := range opts {
+		opt(&c)
+	}
+
+	return c
 }
 
 // Operation is one routed change: what to do, and where it will land.

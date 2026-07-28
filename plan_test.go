@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -335,5 +336,89 @@ func TestMatchTarget_PrefersTheHighestPrecedenceLayerWithThatName(t *testing.T) 
 	if got := p.Operations[0].Target; got != upper {
 		t.Errorf("pinned target = %+v, want the highest-precedence layer of that "+
 			"name (%+v) — the lower copy is the one nobody reads", got, upper)
+	}
+}
+
+// To is the ergonomic form of pinning: one expression instead of three
+// statements and a pointer, and reachable inside the batch Apply is built
+// around. It must produce exactly what setting Change.Target by hand produces —
+// if the two can diverge, the option has become a second router.
+func TestTo_MatchesHandBuiltTarget(t *testing.T) {
+	t.Parallel()
+
+	snap := routingSnapshot()
+	base := Source{Name: "base.yaml"}
+
+	byHand := planFor(t, snap, Change{Path: "server.port", Value: 1, Target: &base})
+	byOption := planFor(t, snap, Set("server.port", 1, To("base.yaml")))
+
+	if !reflect.DeepEqual(byHand.Operations[0], byOption.Operations[0]) {
+		t.Errorf("To produced a different operation from the hand-built target:\n"+
+			" hand: %+v\n  opt: %+v", byHand.Operations[0], byOption.Operations[0])
+	}
+}
+
+func TestTo_UnknownNameIsInvalidTarget(t *testing.T) {
+	t.Parallel()
+
+	_, err := route(routingSnapshot(), writableOf(routingSnapshot()), sourcesOf(routingSnapshot()),
+		nil, []Change{Set("server.port", 1, To("nope.yaml"))})
+
+	if !errors.Is(err, ErrInvalidTarget) {
+		t.Fatalf("err = %v, want ErrInvalidTarget", err)
+	}
+
+	if !strings.Contains(err.Error(), "nope.yaml") {
+		t.Errorf("error %q does not name the target the caller asked for", err)
+	}
+}
+
+// A read-only layer is a different fault from having nowhere to write: the
+// caller named something specific, and it was the wrong thing.
+func TestTo_ReadOnlyLayerIsInvalidTargetNotNoWritableLayer(t *testing.T) {
+	t.Parallel()
+
+	snap := routingSnapshot()
+
+	_, err := route(snap, writableOf(snap), sourcesOf(snap), nil,
+		[]Change{Set("server.host", "x", To("APP_SERVER_HOST"))})
+
+	if !errors.Is(err, ErrInvalidTarget) {
+		t.Fatalf("err = %v, want ErrInvalidTarget for a read-only layer", err)
+	}
+}
+
+// Remove takes options too. Setting and removing route identically, so an
+// option that reached only one of them would be a trap.
+func TestRemove_AcceptsTo(t *testing.T) {
+	t.Parallel()
+
+	p := planFor(t, routingSnapshot(), Remove("server.port", To("base.yaml")))
+
+	if got := p.Operations[0].Target.Name; got != "base.yaml" {
+		t.Errorf("target = %q, want the pinned base.yaml", got)
+	}
+}
+
+// The second document of a multi-document file cannot be addressed by name
+// alone, because every document in it shares one.
+func TestToDocument_AddressesASpecificDocument(t *testing.T) {
+	t.Parallel()
+
+	snap := newSnapshot(1, []Layer{
+		{Source: fileSource("multi.yaml", 0), Values: map[string]any{"a": 1}},
+		{Source: fileSource("multi.yaml", 1), Values: map[string]any{"b": 2}},
+	})
+
+	p := planFor(t, snap, Set("a", 9, ToDocument("multi.yaml", 1)))
+
+	if got := p.Operations[0].Target.Document; got != 1 {
+		t.Errorf("document = %d, want 1", got)
+	}
+
+	// To alone means document 0, rather than "any document of that file".
+	q := planFor(t, snap, Set("a", 9, To("multi.yaml")))
+	if got := q.Operations[0].Target.Document; got != 0 {
+		t.Errorf("To(name) document = %d, want 0", got)
 	}
 }
