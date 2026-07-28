@@ -424,10 +424,26 @@ func (p *nestedPending) Verify(ctx context.Context) error {
 	return nil
 }
 
+// Commit writes each inner backend's staged edits, undoing its own partial work
+// if one of them fails.
+//
+// Rolling back here rather than leaving it to the Store is not belt-and-braces.
+// commitAll rolls back the pendings that already SUCCEEDED and discards the rest,
+// so a pending that fails midway is never asked to roll back — which is correct
+// for a backend whose Commit is all-or-nothing, and wrong for this one, whose
+// Commit is several. Without this, an aggregate spanning two inner backends
+// would leave the first one's write in place and report failure.
 func (p *nestedPending) Commit(ctx context.Context) error {
 	for i, staged := range p.staged {
 		if err := staged.Commit(ctx); err != nil {
-			return p.wrap(i, err)
+			commitErr := p.wrap(i, err)
+
+			if rollbackErr := p.Rollback(ctx); rollbackErr != nil {
+				return fmt.Errorf("%w (rolling back the inner writes that had "+
+					"already landed also failed: %w)", commitErr, rollbackErr)
+			}
+
+			return commitErr
 		}
 
 		p.committed = append(p.committed, staged)

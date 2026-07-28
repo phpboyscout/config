@@ -3,6 +3,7 @@ package config_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -520,5 +521,137 @@ func TestNested_PromotionReachesTheNamedInnerLayerNotJustAnyOfThem(t *testing.T)
 
 	if src.Name != "base.yaml" {
 		t.Errorf("promoted landed in %q, want base.yaml — the layer the write named", src.Name)
+	}
+}
+
+// failingCommit is a writable backend whose commit fails, so a batch spanning
+// two inner backends leaves the first committed and the second not.
+type failingCommit struct{ name string }
+
+func (b failingCommit) ID() string { return b.name }
+
+func (b failingCommit) Capabilities() config.Capabilities { return config.Capabilities{} }
+
+func (b failingCommit) Load(context.Context, []config.Layer) ([]config.Layer, error) {
+	return []config.Layer{{
+		Source: config.Source{Kind: config.SourceKind("fake"), Name: b.name, Writable: true},
+		Values: map[string]any{"boom": "before"},
+	}}, nil
+}
+
+func (b failingCommit) Prepare(context.Context, []config.Edit) (config.Pending, error) {
+	return failingPending{}, nil
+}
+
+type failingPending struct{}
+
+func (failingPending) Layers() []config.Layer       { return nil }
+func (failingPending) Verify(context.Context) error { return nil }
+func (failingPending) Commit(context.Context) error {
+	return errors.New("the remote refused the write")
+}
+func (failingPending) Rollback(context.Context) error { return nil }
+func (failingPending) Discard(context.Context) error  { return nil }
+
+// A failure inside a composed store must name the path to it, not only the
+// leaf. "the remote refused the write" is not actionable when the caller aimed
+// at a layer two levels away and has never heard of the backend that refused.
+func TestNested_CommitFailureNamesTheChain(t *testing.T) {
+	t.Parallel()
+
+	inner, err := config.NewStore(context.Background(),
+		config.WithBackend(failingCommit{name: "inner-backend"}))
+	if err != nil {
+		t.Fatalf("NewStore(inner): %v", err)
+	}
+
+	store, err := config.NewStore(context.Background(),
+		config.WithBackend(config.Nested(inner, "global", config.NestedPromotable)))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	_, err = store.Apply(context.Background(),
+		config.Set("boom", "after", config.To("inner-backend")))
+	if err == nil {
+		t.Fatal("Apply succeeded, want the inner commit failure to surface")
+	}
+
+	for _, want := range []string{"global", "inner-backend", "the remote refused the write"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q — the chain must name the path, not just the leaf", err, want)
+		}
+	}
+}
+
+// recordingPending commits successfully and remembers whether it was rolled
+// back, so a partial commit inside an aggregate can be observed.
+type recordingBackend struct {
+	name       string
+	rolledBack *atomic.Bool
+}
+
+func (b recordingBackend) ID() string { return b.name }
+
+func (b recordingBackend) Capabilities() config.Capabilities { return config.Capabilities{} }
+
+func (b recordingBackend) Load(context.Context, []config.Layer) ([]config.Layer, error) {
+	return []config.Layer{{
+		Source: config.Source{Kind: config.SourceKind("fake"), Name: b.name, Writable: true},
+		Values: map[string]any{"first": "before"},
+	}}, nil
+}
+
+func (b recordingBackend) Prepare(context.Context, []config.Edit) (config.Pending, error) {
+	return recordingPending{rolledBack: b.rolledBack}, nil
+}
+
+type recordingPending struct{ rolledBack *atomic.Bool }
+
+func (recordingPending) Layers() []config.Layer       { return nil }
+func (recordingPending) Verify(context.Context) error { return nil }
+func (recordingPending) Commit(context.Context) error { return nil }
+func (p recordingPending) Rollback(context.Context) error {
+	p.rolledBack.Store(true)
+
+	return nil
+}
+func (recordingPending) Discard(context.Context) error { return nil }
+
+// A batch spanning two inner backends, where the second fails to commit, must
+// not leave the first one's write in place.
+//
+// The Store cannot do this for us: commitAll rolls back the pendings that
+// already succeeded and discards the rest, so a pending that fails midway is
+// never asked to roll back. That is right for a backend whose Commit is
+// all-or-nothing and wrong for an aggregate, whose Commit is several.
+func TestNested_PartialInnerCommitIsRolledBack(t *testing.T) {
+	t.Parallel()
+
+	var rolledBack atomic.Bool
+
+	inner, err := config.NewStore(context.Background(),
+		config.WithBackend(recordingBackend{name: "first-backend", rolledBack: &rolledBack}),
+		config.WithBackend(failingCommit{name: "second-backend"}))
+	if err != nil {
+		t.Fatalf("NewStore(inner): %v", err)
+	}
+
+	store, err := config.NewStore(context.Background(),
+		config.WithBackend(config.Nested(inner, "global", config.NestedPromotable)))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	_, err = store.Apply(context.Background(),
+		config.Set("first", "after", config.To("first-backend")),
+		config.Set("boom", "after", config.To("second-backend")),
+	)
+	if err == nil {
+		t.Fatal("Apply succeeded, want the second backend's commit failure")
+	}
+
+	if !rolledBack.Load() {
+		t.Error("the first inner backend's committed write was left in place after the second failed")
 	}
 }
