@@ -192,11 +192,16 @@ func NewStore(ctx context.Context, opts ...StoreOption) (*Store, error) {
 	}
 
 	// Two backends answering to the same ID is a routing hazard, not a
-	// diagnostic nuisance: backendByID returns the first match, so a write
-	// routed at the second silently lands on the first. adoptBackend already
-	// rejects this at runtime; construction must too, or the same collision that
-	// is refused on AddLayer is accepted when the sources are declared up front.
+	// diagnostic nuisance: a write routed at one could be prepared against the
+	// other. adoptBackend already rejects this at runtime; construction must
+	// too, or the same collision that is refused on AddLayer is accepted when
+	// the sources are declared up front.
 	if err := ensureUniqueIDs(s.backends); err != nil {
+		return nil, err
+	}
+
+	// Composition is a tree, so a store cannot appear in the graph twice.
+	if err := ensureTree(s, s.backends); err != nil {
 		return nil, err
 	}
 
@@ -359,6 +364,13 @@ func (s *Store) reload(ctx context.Context) (next *Snapshot, changed bool, err e
 		// Fail-closed: the previous configuration stands, so observers are not
 		// told of a change that did not happen. The rejection travels on the
 		// error channel instead.
+		return nil, false, err
+	}
+
+	// Two indistinguishable layers cannot both be represented — the routing
+	// index is keyed by Source — so this is fail-closed too rather than a
+	// validation the Store can publish around.
+	if err := ensureDistinctLayers(loaded); err != nil {
 		return nil, false, err
 	}
 
@@ -587,6 +599,15 @@ func (s *Store) publish(loaded []backendLayers) *Snapshot {
 	s.current.Store(next)
 
 	return next
+}
+
+// loadedBackends returns the backends this store was built from, for a nested
+// aggregate to reduce their capabilities into its own.
+func (s *Store) loadedBackends() []Backend {
+	out := make([]Backend, 0, len(s.backends))
+	out = append(out, s.backends...)
+
+	return out
 }
 
 // WritableTargets returns the layers a change may be pinned to with [To], in
