@@ -10,11 +10,12 @@ status: draft
 Deliberate shadowing — writing a key into a layer other than the one routing
 would pick — is already supported. This spec is about making it reachable.
 
-It is the first of three related specs. [Backend key
-filtering](2026-07-28-backend-key-filtering.md) and [store
-aggregation](2026-07-28-store-aggregation.md) both change what "a layer" can be,
-and both make target selection harder; settling the surface here first means
-neither has to invent one.
+It is the first of three related specs, and the least independent of them:
+[store aggregation](2026-07-28-store-aggregation.md) needs this surface to
+express **promotion** — moving a setting from a project config up into a user's
+global one — which is the concrete need the whole group came from. [Backend key
+filtering](2026-07-28-backend-key-filtering.md) also changes what "a layer" can
+be. Settling the surface here first means neither has to invent one.
 
 ## Problem
 
@@ -153,8 +154,15 @@ written somewhere nobody reads."* Making pinning a one-liner makes that warning
 more necessary, not less, so it moves up next to the new form rather than
 staying below the old one.
 
-The page should also state the two cases that actually justify it, so the
-guidance is falsifiable rather than merely discouraging. **Open question O2.**
+The page should also state the cases that actually justify it, so the guidance
+is falsifiable rather than merely discouraging. The first is settled:
+**promoting a setting between composed stores**. With [store
+aggregation](2026-07-28-store-aggregation.md), moving a value from a project
+config up into the user's global CLI config is
+`Set(path, value, To("~/.krites/config.yaml"))` — the same write mechanism,
+conflict detection and plan as any other write, rather than a manual
+read-from-one-write-to-the-other. That is the worked example the page should
+lead the section with.
 
 ## Public API
 
@@ -210,11 +218,11 @@ version.
   way to say so. That may be a real need (a tool with an optional user-scope
   file) or may be exactly the ambiguity D2 removes. Leaning: leave it out until
   something asks.
-- **O2 — Which two cases justify pinning?** D7 wants the documentation to name
-  them rather than only discourage. Candidates: writing to a base file
-  deliberately so an overlay keeps winning (staging a default), and forcing a
-  value into a specific store when the same key exists in several. Wants Matt's
-  actual cases, since the whole feature came from them.
+- **O2 — Are there justifying cases beyond promotion?** Promotion between
+  composed stores is settled (D7) and is the motivating one. A second candidate
+  is writing to a base file deliberately so an overlay keeps winning — staging a
+  default that the user's own layer is expected to override. Worth naming only
+  if it is a case anyone actually has.
 - **O3 — Should `WritableTargets` exclude targets a filter has emptied?** Only
   meaningful once [backend key filtering](2026-07-28-backend-key-filtering.md)
   exists. Recorded here so the two specs do not answer it differently.

@@ -7,22 +7,37 @@ status: draft
 
 # Store aggregation
 
-Composing stores, so a resolved configuration can be a layer in another
-configuration.
+Composing stores, so one configuration can carry another's layers as its own —
+with precedence and provenance unbroken across the join, and writes that reach
+any layer in the composed graph.
 
-Third and largest of three related specs, and the one that should be implemented
-last. It depends on [write-target
-options](2026-07-28-write-target-options.md) for addressing and on [backend key
-filtering](2026-07-28-backend-key-filtering.md) for bounding what a nested store
-exposes.
+Third and largest of three related specs, and the one to implement last. It
+depends on [write-target options](2026-07-28-write-target-options.md), which is
+how a promotion is expressed, and on [backend key
+filtering](2026-07-28-backend-key-filtering.md), which is how a nested store is
+bounded.
 
 ## Problem
 
-A `Store` resolves layers into one configuration with provenance. A `Backend`
-contributes layers to a store. The two shapes are close enough that composing
-them looks like it should already work — a shared organisational configuration
-as the base of a project configuration, a plugin's settings nested inside a
-host's, a team default beneath a personal override.
+Two stores end up being passed around together.
+
+[keryx](https://gitlab.com/phpboyscout/keryx) and krites both hit it: a
+**project-level** store for the project's own configuration, and a **global**
+store for the user's CLI-wide settings. Every function that needs either ends up
+taking both, every constructor threads both, and the precedence between them —
+which is a real, ordered relationship — exists only as a convention in the
+reading code, differently applied each time somebody needs it.
+
+Two things would fall out of composing them instead:
+
+- **One store travels through the code.** The project store carries the global
+  one as a layer beneath it, so the call sites take one argument and the
+  precedence is declared once, where the store is built.
+- **Promotion becomes an ordinary write.** Moving a setting from the project
+  config up into the global CLI config is currently a manual read-from-one,
+  write-to-the-other. With the global store's layers reachable from the project
+  store, it is `Set(path, value, To("<global file>"))` — the same write
+  mechanism, the same conflict detection, the same plan.
 
 It does not work today. `Store` implements none of `Backend`:
 
@@ -33,27 +48,27 @@ It does not work today. `Store` implements none of `Backend`:
 | `Capabilities() Capabilities` | — |
 | *(`WatchableBackend`)* `Watch(ctx, interval, onChange)` | `Watch(ctx, ...WatchOption)` — different signature |
 
-So this needs a real adapter, and the adapter has to answer questions the
-`Backend` seam has not had to answer before.
+## The write-path constraint, and why it is small
 
-## The constraint everything else follows from
+The write path finds a backend by matching `Source.Name` against `Backend.ID()`:
+`prepare` groups a plan's operations by `op.Target.Name` and calls
+`backendByID` (`store.go:724`, `store.go:1051`), whose error says so outright —
+*"a writable backend's ID() must equal the Source.Name of the layers its Load
+returns"*.
 
-**The write path finds a backend by matching `Source.Name` against
-`Backend.ID()`.** `Store.prepare` groups a plan's operations by
-`op.Target.Name`, then calls `backendByID` with that string (`store.go:724-758`).
-The error when it fails is unusually explicit:
+Every backend today satisfies that trivially, returning one layer or several
+sharing a name. An aggregate contributes layers under **other** names, by design
+(D2), so it breaks the assumption.
 
-> no backend answers to %q. A writable backend's ID() must equal the Source.Name
-> of the layers its Load returns
+The fix is not a new interface. `loadAll` already returns `[]backendLayers`,
+pairing each backend with the layers it produced (`store.go:71`, `store.go:515`).
+The store can build a **layer-name → backend map** at load time and have
+`prepare` consult that instead of walking `ID()`s. Synthesised sources for empty
+writable backends map to their backend the same way.
 
-Every existing backend satisfies this trivially: it returns one layer, or several
-sharing a name and distinguished by `Document`. An aggregate is the first backend
-that would naturally want to contribute layers with *different* names — the inner
-store's own layers, `base.yaml` and `overrides.yaml`, each with its own
-provenance.
-
-It cannot. Not without either flattening those layers into one name, or changing
-the write path. That fork is D2, and it is the whole spec.
+So the core change is one lookup, replacing a linear scan that was already doing
+the wrong thing for any backend contributing more than one distinctly-named
+layer. No adapter changes, no new optional interface, no contract change.
 
 ## Decisions
 
@@ -63,159 +78,174 @@ the write path. That fork is D2, and it is the whole spec.
 func Nested(s *Store, id string, opts ...NestedOption) Backend
 ```
 
-Rather than adding `ID`, `Load` and `Capabilities` methods to `Store` itself.
+Rather than adding the methods to `Store` itself. A `Store` has no natural ID —
+it is built from options, not from a named source — so one must be supplied, and
+a method cannot take an argument. `Store.Watch` already exists with an
+incompatible signature. And making every `Store` implicitly a `Backend` gives
+every store a contract it mostly cannot honour.
 
-Three reasons. A `Store` has no natural ID — it is constructed from options, not
-from a source with a name — so one must be supplied, and a method cannot take an
-argument. `Store.Watch` already exists with a different signature, so `Store`
-satisfying `WatchableBackend` would require either renaming a public method or
-living with two watches. And making every `Store` implicitly a `Backend` means
-every `Store` gains a contract it mostly cannot honour.
+It lives **in the core package**, not a sibling module, because it needs
+`prepare`, `Pending` composition and the layer map — all unexported. This is the
+one composition that cannot be an adapter.
 
-The adapter also gives the options in D3 and D5 somewhere to live.
+### D2 — The inner store's layers pass through, as a contiguous block
 
-### D2 — The inner store contributes **one** layer, flattened *(provisional — see O1)*
+**Resolves O1.**
 
-The fork. Two coherent designs:
+The aggregate contributes the inner store's layers as its own, each keeping its
+own `Source` — so `Explain` on a value from the global config says
+`~/.krites/config.yaml`, not `nested:global`.
 
-**One flattened layer.** The aggregate resolves the inner store and contributes
-its effective values as a single layer named after the aggregate's `ID()`.
+They occupy a **contiguous block** at the position the aggregate was declared:
 
-- Write routing works with no core change (the constraint above is satisfied).
-- The inner store's precedence is atomic relative to the outer — the outer
-  store's layers cannot interleave with the inner one's, which is almost
-  certainly what "aggregate a store" means.
-- **Provenance collapses.** `Explain` says `nested:shared`, not
-  `shared/base.yaml`. For a module whose central claim is answering "where did
-  this value come from", that is a real loss.
+```
+config.NewStore(ctx,
+    config.WithBackend(config.Nested(global, "global")),  // ─┐ block
+    config.WithFiles(fsys, ".krites.yaml"),               //  │
+    config.WithEnv("KRITES"),                             //  │
+)
 
-**N layers, passed through.** The aggregate returns the inner store's layers as
-its own.
-
-- Provenance survives intact.
-- Write routing breaks, per the constraint, unless the core changes.
-- Precedence interleaves: an inner layer could outrank an outer one, which makes
-  "nest this store beneath mine" mean something much harder to predict.
-
-Choosing flattening, provisionally, because interleaving is the wrong semantics
-independently of the routing problem — and because a design whose selling point
-is provenance should not adopt one where precedence is unpredictable.
-
-But the provenance loss is severe enough to want a mitigation rather than
-acceptance. See D4.
-
-### D3 — Read-only by default; writable is opt-in and shallow
-
-```go
-config.Nested(inner, "shared")                        // read-only
-config.Nested(inner, "shared", config.NestedWritable) // writes reach the inner store
+resolved order (lowest → highest):
+    global: /etc/krites/defaults.yaml    ─┐
+    global: ~/.krites/config.yaml         ├─ the nested block, inner order kept
+    .krites.yaml
+    env KRITES_*
 ```
 
-Read-only is the safe default and covers the motivating cases — a shared base, a
-team default — where the outer store should not be editing the inner source at
-all.
+Inner layers keep their relative order among themselves; the block sits where
+the user put it. **Ordering is entirely user-driven** — declared by the order of
+`WithBackend`/`WithFiles` in each store, never inferred by this module.
 
-When writable, the aggregate implements `WritableBackend` by routing the edits
-*through the inner store's own router*. That is the honest implementation: the
-inner store knows its own layers and its own conflict rules, and reimplementing
-that in the adapter would be a second router that can disagree with the first.
+An earlier draft of this spec framed the choice as *flatten to one layer
+(predictable precedence, lost provenance)* versus *pass through (intact
+provenance, interleaved and unpredictable precedence)*. That was a false
+dichotomy: interleaving is not a property of passing layers through, it is what
+would happen if the layers were merged by some rule other than position.
+Splicing a contiguous block has neither problem, and flattening was rejected
+once that was clear — it discards provenance to solve a problem that does not
+exist.
 
-**Reads recurse to any depth** — a nested store containing a nested store
-resolves naturally, and nothing in the read path needs to know how deep it went.
+### D3 — Writes cascade through the composed order, exactly as reads resolve
 
-Whether a *write* may route deeper than one level is **open question O2**, and
-it is a narrower question than it looks: see the note there.
+Routing does not change and does not need to know a nested store is involved.
+`findTarget` walks writable targets in reverse precedence looking for one that
+already defines the path; with the block spliced in, inner layers are simply
+part of that walk. A key defined only in the global config routes to the global
+config's file, through the aggregate, without a special case.
 
-### D4 — Provenance carries the inner source in the layer, even when flattened
+That is what makes promotion an ordinary write:
 
-D2's cost is mitigable. The flattened layer is one `Source`, but the aggregate
-knows which inner layer each key came from, because the inner store's snapshot
-records it.
+```go
+// where it would go by default — the project file, because that is the
+// highest-precedence writable layer for a new key
+store.Apply(ctx, config.Set("theme", "dark"))
 
-Proposal: the aggregate's layer names itself, and the adapter exposes a lookup —
-`Origin(path) (Source, bool)` on the returned backend, or a richer `Explain`
-integration — so a caller who wants the inner detail can get it, while the
-routing and precedence model stays flat.
+// promoted to the user's global config, named explicitly
+store.Apply(ctx, config.Set("theme", "dark",
+    config.To("~/.krites/config.yaml")))
+```
 
-The shape of that is **open question O3**. It may want a new optional interface
-on `Backend` (`ProvenanceDeclarer`?) so the store's own `Explain` can consult it,
-which would make this useful to any backend that aggregates something.
+The second form is [write-target options](2026-07-28-write-target-options.md)
+doing its job. That spec's O2 asked which real cases justify pinning; **this is
+one**, and it should be its worked example.
 
-### D5 — Cycles are detected at construction, and refused
+Mechanically the aggregate implements `WritableBackend` by delegating: its
+`Prepare` hands each edit to the inner backend that owns the targeted layer, and
+returns a `Pending` composing the inner `Pending`s. `Verify`, `Commit`,
+`Rollback` and `Discard` fan out in declared order. The two-phase protocol
+composes without modification — which is the payoff for `Pending` being an
+interface rather than a struct.
 
-`Nested(a, ...)` added to `a` is infinite recursion at `Load`, terminating in a
-stack overflow with a trace that names nothing useful.
+### D4 — Nesting is a DAG, enforced at construction
 
-Detection: each `Store` carries an identity, and `Nested` walks the inner store's
-backend list for an aggregate whose inner store is the outer one. Cheap, done
-once, at the point where the mistake was made.
+Cycles are refused, hard. `Nested(a, …)` reachable from `a` is unbounded
+recursion at `Load`, terminating in a stack overflow whose trace names nothing
+useful.
 
-`ErrCyclicStore`, a new sentinel. Refusing at construction rather than at load
-matters because a cycle is always a programming error, never a runtime
-condition.
+Detection walks the inner store's backend graph transitively at construction —
+not at load — because a cycle is always a programming error, never a runtime
+condition, and the construction site is where the mistake was made.
 
-### D5a — A broken inner store propagates its error and stays usable
+`ErrCyclicStore`, naming both ends of the edge that would close the cycle.
 
-A `Store` can be constructed alongside `ErrInvalidConfig` and remain usable —
-deliberately, because a config tool must be able to open a broken config in
-order to fix it (`store.go:106`, and the same reasoning in keryx's
-`openProjectStore`).
+Whether the rule is "no cycles" (a DAG, where one store may legitimately appear
+twice) or "no store already in the graph" (a tree) is **open question O1** — see
+there, because they differ in a case that is not obviously wrong.
 
-The aggregate does the same: it contributes whatever did resolve, and returns
-the error alongside those layers rather than instead of them. The outer store is
-already built to hand back a usable store next to an error, so this composes
-without a new mechanism.
+### D5 — Depth is unbounded, for reads and for writes
 
-Refusing was rejected because one unparseable nested file would hide every key
-that parsed fine, which is a worse outcome than the broken one. Swallowing was
-rejected because it is exactly the silent degradation this module refuses
-everywhere else — and because the outer store would have no way to tell a user
-why a value they expected is missing.
+Infinite nesting is supported and documented as *not recommended*. Reads recurse
+naturally. Writes cascade through each nested store's own layers in its declared
+order, at every level.
 
-`fs.ErrNotExist` keeps its existing contract: an absent inner source is not an
-error, it is a layer that contributes nothing.
+**Resolves the write half of the previous O2.** The earlier draft proposed
+refusing writes below the first level to keep conflict scopes and rollback
+boundaries tractable. That is a real cost but it is not a reason to refuse: each
+level's `Pending` already carries its own `Verify` and `Rollback`, so a deep
+graph composes the same protocol repeatedly rather than needing a new one. What
+it genuinely costs is atomicity, which D7 declares honestly, and error legibility,
+which D6 addresses.
 
-### D6 — The aggregate declares its own `SourceKind`
+### D6 — An error names the layer, and the path to it
 
-`SourceKind("nested")`, via the existing `SourceKindDeclarer` optional interface,
-so a synthesised target for an empty writable aggregate presents with its own
-semantics rather than defaulting to `SourceFile` (`store.go:966`).
+A conflict two levels down is reported against a file the caller may never have
+heard of. So an error from a nested write names the full chain —
+`global → ~/.krites/config.yaml` — rather than only the leaf.
 
-### D7 — Capabilities are the inner store's, reduced
+This matters more as depth grows, and it is the concrete cost of D5 that
+documentation must be honest about: *you can nest arbitrarily, and the deeper you
+go the further an error is from the code that caused it.*
 
-- `Sensitive` — **true if any** inner backend is sensitive. Conservative on
-  purpose: flattening loses the per-layer distinction, so a false negative here
-  is a secret written into a plain layer, and a false positive is a write
-  refused that could have been allowed. The asymmetry is not close.
-- `AtomicMultiKey` — **false**, always. The inner store's `Apply` may touch
-  several inner backends; the outer store cannot make that indivisible with its
-  own writes.
-- `NativeWatch` — true if any inner backend natively watches.
-- `PreservesComments` — false. The flattened layer is values, not a document.
+### D7 — Capabilities, and what composition cannot promise
+
+- **`Sensitive` stays per layer**, which passthrough gets for free and flattening
+  could not: an inner Vault layer keeps its own flag, so the leak guard has
+  exactly the precision it has in a flat store. This is a substantive argument
+  for D2 beyond provenance.
+- **`AtomicMultiKey` is false**, always. A write spanning the project file and
+  the global file spans two backends in two stores; nothing can make that
+  indivisible. Declared rather than pretended.
+- **`NativeWatch`** is true if any inner backend natively watches.
+- **`PreservesComments`** is per layer, unchanged — a nested YAML file still
+  round-trips its comments.
 
 ### D8 — Watching bridges the two signatures
 
 The aggregate implements `WatchableBackend.Watch(ctx, interval, onChange)` by
-starting the inner store's own `Watch` and calling `onChange` when it fires. The
-`interval` is passed to the inner store as its poll interval where that is
-meaningful.
+running the inner store's own `Watch` and calling `onChange` when it fires. The
+inner store already decides whether a reload changed anything before notifying,
+so the outer store is not woken for no-op reloads.
 
-The inner store already decides whether a change actually changed anything before
-notifying, so the outer store is not woken for reloads that resolve to the same
-values.
+This also covers the inner store being mutated directly — by `AddLayer`, or by
+its own `Apply` from code that still holds it — which would otherwise leave the
+outer store silently stale.
 
 ### D9 — Filtering is how a nested store is bounded
 
-Exposing a subtree of a shared store is [backend key
+Exposing part of a global store is [backend key
 filtering](2026-07-28-backend-key-filtering.md) applied to the aggregate:
 
 ```go
 config.WithBackend(config.Filtered(
-    config.Nested(shared, "shared"),
-    config.Allow("defaults.**")))
+    config.Nested(global, "global"),
+    config.Allow("theme.**", "editor.**")))
 ```
 
-No aggregation-specific filtering surface. This is the reason the two were split.
+No aggregation-specific filtering surface. This is why the two were split, and
+it is the shape the motivating case asked for — the project store reading a
+*filtered* view of the CLI config.
+
+### D10 — A broken inner store propagates its error and stays usable
+
+A `Store` can be constructed alongside `ErrInvalidConfig` and remain usable —
+deliberately, because a config tool must be able to open a broken config to fix
+it. The aggregate does the same: it contributes whatever resolved and returns the
+error alongside those layers.
+
+Refusing would hide every key that parsed fine behind one that did not.
+Swallowing is the silent degradation this module refuses everywhere else.
+`fs.ErrNotExist` keeps its contract: an absent inner source contributes nothing
+and is not an error.
 
 ## Public API
 
@@ -223,67 +253,85 @@ No aggregation-specific filtering surface. This is the reason the two were split
 type NestedOption func(*nestedConfig)
 
 func Nested(s *Store, id string, opts ...NestedOption) Backend
-func NestedWritable(*nestedConfig)      // shape provisional
 
 var ErrCyclicStore = errors.New("config: nested store would form a cycle")
-
-const SourceNested = SourceKind("nested")
+var ErrDuplicateLayer = errors.New("config: two layers in the composed store share a name")
 ```
+
+No `SourceKind` for the aggregate: it contributes no layer of its own, only the
+inner store's, each carrying the kind it already had. `id` names the aggregate
+for error messages and for the D6 chain, not for a layer.
 
 ## Testing strategy
 
-- `backendconformance` against an aggregate over a store of in-memory readers,
-  read-only and writable. **This is the gate**, as it was for every backend
-  adapter — and this is the first backend whose layers are themselves resolved,
-  so if the suite has an assumption about that, this is where it surfaces. Fixes
-  belong in the core, as `Suite.BoundedKeySpace` did for `config-keychain`.
-- Precedence: an outer layer outranks the whole nested store regardless of the
-  inner ordering. Watched to fail.
-- A write routed into a writable aggregate lands in the inner store's correct
-  layer, verified by reading the inner file rather than the outer view.
-- Cycle detection at construction, direct (`a` in `a`) and indirect
-  (`a` → `b` → `a`).
-- `Sensitive` propagation: a nested store containing Vault makes the aggregate
-  sensitive, and a write of a Vault-defined key to a plain outer layer is refused
-  with `ErrSensitiveLeak`. **This is the assertion most worth watching to fail**,
-  because D7's reduction is where it could silently stop being true.
-- Conflict: an out-of-band change to an inner source is detected through the
-  aggregate.
-
-## Resolved
-
-**2026-07-28 — O2 (reads).** Reads recurse to any depth (D3). The write half
-remains open.
-
-**2026-07-28 — O4, a broken inner store.** Propagate the error and stay usable
-(D5a), matching the store's own existing behaviour rather than inventing a
-second policy for nested sources.
+- **`backendconformance` against an aggregate**, read-only and writable. The
+  gate, as for every backend. This is the first backend whose layers are
+  themselves resolved, so an assumption baked into the suite surfaces here — and
+  the fix belongs in the core, as `Suite.BoundedKeySpace` did for
+  `config-keychain`.
+- **Precedence**: the nested block sits contiguously at its declared position;
+  an outer layer declared above it outranks every inner layer, one declared
+  below is outranked by all of them. Watched to fail by reordering.
+- **Provenance**: `Explain` on a value from an inner layer names that layer, not
+  the aggregate. This is the whole reason for D2 and must be able to fail.
+- **Promotion**: `Set(…, To(innerLayerName))` lands in the inner file, verified
+  by reading that file, not the composed view.
+- **Depth**: a three-level graph resolves, and a write to the deepest layer
+  reaches it (D5).
+- **DAG enforcement**: direct (`a` in `a`), indirect (`a → b → a`), and whichever
+  of the diamond cases O1 settles on.
+- **`Sensitive` precision**: a nested store containing Vault refuses a write of a
+  Vault-defined key into a plain outer layer, and *permits* a write of an
+  unrelated key to the same outer layer. The second half is what proves D7 kept
+  per-layer precision rather than smearing sensitivity across the block.
+- **Conflict**: an out-of-band change to an inner source is detected through the
+  aggregate, and the error names the chain (D6).
 
 ## Migration & compatibility
 
-Additive — new constructor, new sentinel, new source kind. Nothing existing
-changes unless O1 resolves towards passing layers through, which would require a
-change to the write path's backend lookup and would be a larger, breaking-shaped
-piece of work.
+Additive for consumers. Internally it changes `prepare`'s backend lookup from an
+`ID()` scan to a layer-name map — a behaviour fix in its own right, since the
+scan was already wrong for any backend contributing distinctly-named layers, but
+one no existing backend can observe.
+
+A minor version.
+
+## Resolved
+
+**2026-07-28 — O1, flatten or pass through.** Pass through, as a contiguous
+block (D2). The original framing was a false dichotomy: interleaved precedence
+is not a consequence of passing layers through, and once the block is spliced at
+its declared position, provenance and predictable ordering are both available.
+Flattening was rejected.
+
+**2026-07-28 — O2, write depth.** Unbounded (D5). The `Pending` protocol
+composes, so depth costs atomicity and error legibility rather than correctness.
+
+**2026-07-28 — O4, broken inner store.** Propagate and stay usable (D10).
 
 ## Open questions
 
-- **O1 — Flatten to one layer, or pass N layers through?** D2 chooses flattening
-  provisionally. Passing through preserves provenance, which is this module's
-  central claim, but needs the write path to let one backend answer to several
-  names, and brings interleaved precedence with it. **This decides the shape of
-  everything else and should be settled first.**
-- **O2 — May a *write* route deeper than one nested level?** Reads at any depth
-  are settled (D3). Writes are the open half: a write routed into an aggregate
-  is re-routed by the inner store, and if that inner routing selects a further
-  aggregate the process repeats. Each hop adds a conflict-detection scope and a
-  rollback boundary that the outer store cannot make atomic, and an error two
-  levels down has to be reported in terms the caller recognises.
-- **O3 — How does inner provenance surface?** D4 wants the flattened layer to
-  keep the detail. A method on the returned backend is easy; a new optional
-  `Backend` interface that `Explain` consults is more useful and more surface.
-- **O5 — Does the inner store's `AddLayer` invalidate the aggregate?** `AddLayer`
-  replaces the inner backend list wholesale. The aggregate holds a pointer to the
-  store, so it would see the change on next `Load` — but nothing tells the outer
-  store to reload. Probably wants the aggregate to observe the inner store, which
-  is D8's mechanism doing double duty.
+- **O1 — Tree or DAG?** The instinct is "hard error if a store is already in the
+  graph", which forbids a store appearing **twice**, not merely cyclically. That
+  is a tree, and it rules out a diamond: a single global store nested into two
+  project stores that are themselves composed together. A tool holding several
+  projects open at once — keryx studio — plausibly wants exactly that, and it is
+  not a cycle. Note the two rules also differ in cost: a tree can be enforced by
+  identity alone, a DAG needs a proper reachability walk. **Leaning: enforce a
+  DAG (refuse cycles only), and let a shared node be legal.**
+- **O2 — What happens when two layers in the composed graph share a name?**
+  Layer names are usually absolute paths, so genuine collisions are rarer than
+  they look — but two stores over the same file, or a diamond under O1, produce
+  one. It breaks `To(name)` addressing and would make `prepare`'s layer map
+  ambiguous. Options: hard error at construction (`ErrDuplicateLayer`, consistent
+  with the DAG strictness), or qualify inner names with the aggregate's `id`
+  (`global:~/.krites/config.yaml`), which keeps them addressable at the cost of
+  changing what `Explain` prints. **Leaning: hard error**, because qualification
+  silently changes provenance strings that users and tests may depend on.
+- **O3 — Does the aggregate need to observe the inner store's `Apply`?** D8
+  covers foreign change via `Watch`. But code that still holds the inner store
+  and calls `Apply` on it directly bypasses the watcher entirely — `Apply`
+  notifies its own observers without going through the watch path
+  (`store.go:1063`). The outer store would not hear about it. Probably wants the
+  aggregate registered as an observer of the inner store, which is a different
+  mechanism from D8 and worth being explicit about.
