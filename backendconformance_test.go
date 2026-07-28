@@ -225,3 +225,74 @@ func TestBackendConformance_Filtered(t *testing.T) {
 		WriteKey: "level", WriteValue: "debug",
 	})
 }
+
+// multiNameBackend contributes layers named differently from its own ID, which
+// no backend has needed to do until now: a file backend names its layers after
+// the path, a remote one after its prefix, and both match ID() by construction.
+//
+// A store aggregate does not. It contributes the layers of the store it wraps,
+// each keeping its own name so provenance survives the join, and none of them
+// is the aggregate's ID. The write path has to be able to find it again anyway.
+type multiNameBackend struct {
+	id string
+	// One inner backend, not one per call: it captures the version at Load,
+	// which is what its Verify compares against. Building a fresh one in
+	// Prepare would compare against a version it never read.
+	inner *remoteBackend
+}
+
+func newMultiNameBackend(id string, remote *fakeRemote) *multiNameBackend {
+	return &multiNameBackend{id: id, inner: newRemoteBackend(remote, "app/")}
+}
+
+func (b *multiNameBackend) ID() string { return b.id }
+
+func (b *multiNameBackend) Capabilities() config.Capabilities { return b.inner.Capabilities() }
+
+func (b *multiNameBackend) Load(ctx context.Context, below []config.Layer) ([]config.Layer, error) {
+	layers, err := b.inner.Load(ctx, below)
+	if err != nil {
+		return nil, err
+	}
+
+	// Renamed, so the layers are named after neither this backend nor anything
+	// the Store could have guessed — the shape an aggregate produces.
+	for i := range layers {
+		layers[i].Source = config.Source{
+			Kind: config.SourceKind("inner"), Name: "inner/app.yaml", Writable: true,
+		}
+	}
+
+	return layers, nil
+}
+
+func (b *multiNameBackend) Prepare(ctx context.Context, edits []config.Edit) (config.Pending, error) {
+	return b.inner.Prepare(ctx, edits)
+}
+
+// A write routed at a layer must reach the backend that produced it, even when
+// the layer's name is not the backend's ID.
+//
+// Before this, prepare() looked a backend up by scanning ID()s for the target's
+// NAME, so such a backend could contribute layers, serve reads and be routed
+// at — and then fail at apply with ErrInternal, blaming the module for
+// something the Backend contract permits.
+func TestApply_ReachesABackendWhoseLayersAreNamedDifferently(t *testing.T) {
+	t.Parallel()
+
+	remote := newFakeRemote(map[string]any{"level": "info"})
+
+	store, err := config.NewStore(t.Context(),
+		config.WithBackend(newMultiNameBackend("aggregate", remote)))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	if _, err := store.Apply(t.Context(), config.Set("level", "debug")); err != nil {
+		t.Fatalf("Apply: %v — the write could not find the backend that owns the layer", err)
+	}
+
+	if got := store.View().GetString("level"); got != "debug" {
+		t.Errorf("level = %q, want debug", got)
+	}
+}

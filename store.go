@@ -747,13 +747,35 @@ func (s *Store) apply(ctx context.Context, changes []Change) (*Snapshot, bool, e
 // many changes target it. Editing per change would reparse the same document
 // repeatedly, and a settings screen saving fifty fields would pay for it.
 func (s *Store) prepare(ctx context.Context, plan *Plan) (map[string]Pending, []string, error) {
+	owners := s.backendBySource()
+
+	// Grouped by the owning backend rather than by the target's name, so a
+	// backend contributing several distinctly-named layers is still prepared
+	// once. Its ID is the group key because IDs are unique within a store
+	// (ensureUniqueIDs) and because rebuild looks the result up by the same key.
 	grouped := map[string][]Edit{}
+	backends := map[string]Backend{}
 	order := []string{}
 
 	for _, op := range plan.Operations {
-		id := op.Target.Name
+		backend, ok := owners[op.Target]
+		if !ok {
+			// Reachable from a custom backend, not only from a bug here: a
+			// layer the Store recorded no owner for cannot be written to.
+			// Saying "internal invariant" and nothing else sent the one person
+			// who could fix it looking in the wrong codebase.
+			return nil, nil, fmt.Errorf(
+				"%w: no backend owns the layer %q. A routed target must be a layer "+
+					"some backend's Load returned, or the synthesised target of a "+
+					"writable backend that returned none",
+				ErrInternal, op.Target)
+		}
+
+		id := backend.ID()
 		if _, seen := grouped[id]; !seen {
 			order = append(order, id)
+
+			backends[id] = backend
 		}
 
 		grouped[id] = append(grouped[id], Edit{
@@ -767,23 +789,7 @@ func (s *Store) prepare(ctx context.Context, plan *Plan) (map[string]Pending, []
 	pending := make(map[string]Pending, len(grouped))
 
 	for _, id := range order {
-		backend, ok := s.backendByID(id)
-		if !ok {
-			discardAll(ctx, pending)
-
-			// Reachable from a custom backend, not only from a bug here: write
-			// routing finds a backend by matching a layer's Source.Name against
-			// ID(), so a backend whose Load reports a different name than it
-			// answers to cannot be found again. Saying "internal invariant" and
-			// nothing else sent the one person who could fix it looking in the
-			// wrong codebase.
-			return nil, nil, fmt.Errorf(
-				"%w: no backend answers to %q. A writable backend's ID() must equal "+
-					"the Source.Name of the layers its Load returns",
-				ErrInternal, id)
-		}
-
-		writable, ok := backend.(WritableBackend)
+		writable, ok := backends[id].(WritableBackend)
 		if !ok {
 			discardAll(ctx, pending)
 
@@ -1127,14 +1133,37 @@ func ensureUniqueIDs(backends []Backend) error {
 	return nil
 }
 
-func (s *Store) backendByID(id string) (Backend, bool) {
-	for _, b := range s.backends {
-		if b.ID() == id {
-			return b, true
+// backendBySource maps every source in the current layer set to the backend
+// that produced it, so a write routed at a layer can find its owner.
+//
+// Built from the pairing recorded at load rather than by matching names against
+// ID(), which is what the scan this replaced did. That scan worked only for a
+// backend whose layers are named after itself — true of a file, a prefix and a
+// bucket, and false of anything contributing layers it did not name, which a
+// store aggregate does by design. Such a backend could contribute layers, serve
+// reads and be routed at, then fail at apply with ErrInternal blaming the module
+// for something the Backend contract permits.
+//
+// Keyed by the whole Source rather than by name, because two layers may share a
+// name while differing in kind and belong to different backends.
+func (s *Store) backendBySource() map[Source]Backend {
+	out := make(map[Source]Backend, len(s.loaded))
+
+	for _, bl := range s.loaded {
+		for _, l := range bl.layers {
+			out[l.Source] = bl.backend
+		}
+
+		// A writable backend that contributed nothing is still a routing
+		// target, through the source sourceOrder synthesises for it.
+		if len(bl.layers) == 0 {
+			if _, ok := bl.backend.(WritableBackend); ok {
+				out[synthesisedSource(bl.backend)] = bl.backend
+			}
 		}
 	}
 
-	return nil, false
+	return out
 }
 
 // Watch begins reacting to changes made outside this process.
