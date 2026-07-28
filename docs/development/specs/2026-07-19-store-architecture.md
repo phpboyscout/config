@@ -365,7 +365,7 @@ file updated, the second not yet.
 Measured before being fixed: two files written 5ms apart gave two notifications with the first
 showing the half-applied state, and only writes landing inside the same reload window (0ms
 apart, by luck) gave one. The behaviour was documented as a caveat before it was recognised as
-a divergence from an approved decision, which is the same failure mode as [R1](#r1--2026-07-19-viper-is-removed-not-retained)
+a divergence from an approved decision, which is the same failure mode as [R1](#r1--2026-07-19-viper-is-removed-outright-superseding-d6)
 — documenting what the code does rather than checking it against what was agreed.
 
 **Why the removed debounce was right to remove, and why this is not it.** D8 rejected the
