@@ -641,10 +641,11 @@ func (s *Store) Plan(changes ...Change) (*Plan, error) {
 	order := s.sourceOrder()
 	targets := writableOnly(order)
 	sensitive := s.sensitiveSources()
+	withheld := s.sensitiveWithheld()
 	snap := s.current.Load()
 	s.mu.Unlock()
 
-	return route(snap, targets, order, sensitive, changes)
+	return route(snap, targets, order, sensitive, withheld, changes)
 }
 
 // Apply routes changes, writes them, and publishes the resulting snapshot.
@@ -696,7 +697,7 @@ func (s *Store) apply(ctx context.Context, changes []Change) (*Snapshot, bool, e
 
 	sources := s.sourceOrder()
 
-	plan, err := route(current, writableOnly(sources), sources, s.sensitiveSources(), changes)
+	plan, err := route(current, writableOnly(sources), sources, s.sensitiveSources(), s.sensitiveWithheld(), changes)
 	if err != nil {
 		return nil, false, err
 	}
@@ -1018,6 +1019,60 @@ func synthesisedSource(b Backend) Source {
 // the same entry [sourceOrder] routes a write at — so a write landing in an
 // empty secrets backend is recognised as sensitive rather than being mistaken
 // for a plain layer the leak guard then refuses to write a secret into.
+// sensitiveWithheld collects the sensitive paths a backend is hiding but still
+// owns, mapped to the source that owns them.
+//
+// A filtered secrets backend removes a denied key from its layers, so nothing
+// in the snapshot records that the key exists — and the leak guard works by
+// asking which source DEFINES a key. Without this, denying db.password on Vault
+// would make a write of db.password route into the plain file beneath and NOT
+// be refused: the filter would silently re-open the hole ErrSensitiveLeak
+// exists to close.
+//
+// Keyed by dotted path rather than by source, because the guard's question is
+// about the path. The Source is carried so the refusal can name what owns it.
+func (s *Store) sensitiveWithheld() map[string]Source {
+	var out map[string]Source
+
+	for _, bl := range s.loaded {
+		hider, ok := bl.backend.(sensitiveWithholder)
+		if !ok || !bl.backend.Capabilities().Sensitive {
+			continue
+		}
+
+		paths := hider.withheldSensitive()
+		if len(paths) == 0 {
+			continue
+		}
+
+		// The source to blame is one this backend contributed, falling back to
+		// the synthesised entry when the filter hid everything it had — which
+		// is exactly the case where no layer exists to name.
+		owner := synthesisedSource(bl.backend)
+		if len(bl.layers) > 0 {
+			owner = bl.layers[0].Source
+		}
+
+		if out == nil {
+			out = map[string]Source{}
+		}
+
+		for _, path := range paths {
+			out[path] = owner
+		}
+	}
+
+	return out
+}
+
+// sensitiveWithholder is a backend that withholds keys it owns and considers
+// sensitive. Unexported: this is a collaboration between [Filtered] and the
+// Store, not a contract for backend authors, and a third-party implementation
+// could claim paths it does not own.
+type sensitiveWithholder interface {
+	withheldSensitive() []string
+}
+
 func (s *Store) sensitiveSources() map[Source]bool {
 	var out map[Source]bool
 

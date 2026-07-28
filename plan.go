@@ -211,7 +211,7 @@ func (p *Plan) String() string {
 // value set is the value read back. Writing to the base instead would leave
 // the edit immediately shadowed by an overlay, which looks to the user like
 // the write silently failed.
-func route(snap *Snapshot, targets, order []Source, sensitive map[Source]bool, changes []Change) (*Plan, error) {
+func route(snap *Snapshot, targets, order []Source, sensitive map[Source]bool, withheld map[string]Source, changes []Change) (*Plan, error) {
 	if len(changes) == 0 {
 		return nil, ErrNoChanges
 	}
@@ -228,7 +228,7 @@ func route(snap *Snapshot, targets, order []Source, sensitive map[Source]bool, c
 	values := indexLayers(snap)
 
 	for _, change := range changes {
-		op, err := routeOne(snap, targets, order, values, sensitive, change)
+		op, err := routeOne(snap, targets, order, values, sensitive, withheld, change)
 		if err != nil {
 			return nil, err
 		}
@@ -239,7 +239,7 @@ func route(snap *Snapshot, targets, order []Source, sensitive map[Source]bool, c
 	return plan, nil
 }
 
-func routeOne(snap *Snapshot, targets, order []Source, values map[Source]map[string]any, sensitive map[Source]bool, change Change) (Operation, error) {
+func routeOne(snap *Snapshot, targets, order []Source, values map[Source]map[string]any, sensitive map[Source]bool, withheld map[string]Source, change Change) (Operation, error) {
 	segs := splitPath(change.Path)
 	if segs == nil {
 		return Operation{}, fmt.Errorf("%w: %q", ErrInvalidPath, change.Path)
@@ -276,6 +276,15 @@ func routeOne(snap *Snapshot, targets, order []Source, values map[Source]map[str
 		if leaker, ok := sensitiveDefiner(values, order, sensitive, segs); ok {
 			return Operation{}, fmt.Errorf("%w: %q is defined by the sensitive source %q, so it "+
 				"cannot be written to %q", ErrSensitiveLeak, change.Path, leaker, target)
+		}
+
+		// A key a sensitive backend holds but a filter is hiding defines
+		// nothing in the snapshot, so the check above cannot see it. Refusing
+		// here is what stops a deny list quietly turning a secret into a
+		// plaintext write.
+		if owner, hidden := withheld[change.Path]; hidden {
+			return Operation{}, fmt.Errorf("%w: %q is held by the sensitive source %q and hidden "+
+				"by a filter, so it cannot be written to %q", ErrSensitiveLeak, change.Path, owner, target)
 		}
 	}
 

@@ -197,3 +197,31 @@ func TestBackendConformance_BoundedKeySpace(t *testing.T) {
 		BoundedKeySpace: true,
 	})
 }
+
+// A decorated backend must still satisfy the contract, or the decoration has
+// quietly changed what the Store can rely on. This is also the only place the
+// writable wrapper's Prepare delegation and its ID forwarding are exercised
+// together: the write path finds a backend by matching a layer's Source.Name
+// against ID(), so a filter that renamed itself would pass every unit test
+// about filtering and fail every write.
+func TestBackendConformance_Filtered(t *testing.T) {
+	t.Parallel()
+
+	backendconformance.Run(t, backendconformance.Suite{
+		NewBackend: func(_ *testing.T, seed map[string]any) (config.Backend, backendconformance.Control) {
+			remote := newFakeRemote(seed)
+
+			wrap := func(r *fakeRemote) config.Backend {
+				// Allows everything the suite touches, so the filter is present
+				// and doing work without hiding what is under test.
+				return config.Filtered(newRemoteBackend(r, "app/"),
+					config.Allow("server.**", "level"))
+			}
+
+			return wrap(remote), &suiteControl{remote: remote, reopen: wrap}
+		},
+		Seed:     conformanceSeed(),
+		Defines:  conformanceDefines(),
+		WriteKey: "level", WriteValue: "debug",
+	})
+}
