@@ -2,8 +2,9 @@
 title: Store aggregation — a Store as a backend of another Store
 date: 2026-07-28
 author: matt.cockayne
-status: approved
+status: implemented
 approved: 2026-07-28
+implemented: 2026-07-28
 ---
 
 # Store aggregation
@@ -598,6 +599,60 @@ Flattening was rejected.
 composes, so depth costs atomicity and error legibility rather than correctness.
 
 **2026-07-28 — O4, broken inner store.** Propagate and stay usable (D10).
+
+## Revisions
+
+### R1 — 2026-07-28: the conformance suite carried two assumptions this broke
+
+Running `backendconformance` against an aggregate found both, and both were
+fixed in the core rather than worked around in the adapter — the precedent
+`Suite.BoundedKeySpace` set for `config-keychain`.
+
+**Provenance no longer has to name the backend's ID.** The suite required a
+layer's `Source.Name` to equal `Backend.ID()`, which was the rule while routing
+scanned IDs for a target's name. It is not the rule now, and a backend whose
+layers are resolved elsewhere necessarily breaks it. The assertion instead
+requires provenance to name a layer the backend actually contributed.
+
+**Writable no longer implies routable.** The suite's write cases relied on
+routing to find the backend, which a pin-only backend must never let it do.
+`Suite.PinOnlyTargets` declares the exception and the cases name their target.
+
+### R2 — 2026-07-28: an aggregate needs its own conflict trap
+
+D3 said the aggregate delegates conflict detection to the inner backends,
+because they know their own rules. That is true and insufficient.
+
+Each inner backend compares against the version *it* captured at the **inner**
+store's load. If the inner store reloaded after the outer store did — which is
+the ordinary way it notices a foreign change — every inner check passes, and the
+outer store's write lands on top of a change it never saw. The lost update
+`ErrConflict` exists to prevent, invisible from inside the inner backends.
+
+So the aggregate applies the family's version-at-Load rule one level up,
+comparing the inner store's snapshot version against the one recorded when this
+store loaded it. Found by the conformance suite, not by reasoning.
+
+### R3 — 2026-07-28: an aggregate must undo its own partial commit
+
+`commitAll` rolls back the pendings that already succeeded and discards the
+rest, so a pending failing midway is never asked to roll back. Correct for a
+backend whose `Commit` is all-or-nothing — every backend before this one — and
+wrong for an aggregate, whose `Commit` is several in sequence. A batch spanning
+two inner backends where the second failed left the first one's write in place.
+
+The aggregate now rolls back its own committed inner writes before returning.
+Found by asking why `Rollback` had no coverage.
+
+### R4 — 2026-07-28: a promotion leaves the inner Store object stale
+
+Not anticipated, and the mirror of D11. A promotion writes through to the inner
+store's **backend**, which is what makes it durable, but a caller still holding
+the inner `Store` has its previous snapshot until it reloads.
+
+Left as a documented limit for D11's reasons: reloading the inner store from
+inside `Commit` would notify its observers on the outer store's schedule and can
+fail outright inside one. Worth revisiting if it bites.
 
 ## Open questions
 

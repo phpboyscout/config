@@ -2,8 +2,9 @@
 title: Write-target options — naming a layer at the point of the change
 date: 2026-07-28
 author: matt.cockayne
-status: approved
+status: implemented
 approved: 2026-07-28
+implemented: 2026-07-28
 ---
 
 # Write-target options
