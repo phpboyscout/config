@@ -134,8 +134,9 @@ not carry session-bus or keychain IPC code simply does not, and the linker drops
 ## Replacing a hand-rolled resolver
 
 If you already walk *environment → keychain → config file* per credential — as
-[keryx](https://gitlab.com/phpboyscout/keryx) does with `oauth.Store`, and `go-tool-base` does in
-`forge.ResolveToken` — that chain is a per-credential reimplementation of what a layer already is.
+[keryx](https://gitlab.com/phpboyscout/keryx) does with `oauth.Store`, and
+[go/forge](https://gitlab.com/phpboyscout/go/forge) does in `ResolveToken` — that chain is a
+per-credential reimplementation of what a layer already is.
 
 The equivalent is a layer order rather than a struct:
 
@@ -146,9 +147,17 @@ config.WithBackend(configkeychain.New(                       // was KeychainServ
 	configkeychain.Registered(), "myapp", keys)),
 ```
 
-Reads resolve in the same order, and `Explain` can now say which layer answered. The difference is
-the write: the fallback that put a token in the config file when no keychain was available is gone
-— the write either reaches the keychain or is refused.
+Reads resolve in the same order, and `Explain` can now say which layer answered.
+
+The write is where the two ladders differ, and it is worth checking which one you have. keryx's
+`Save` falls back to writing the token into the config file when no keychain is available; that
+fallback disappears, because the core refuses it. A ladder that already treats a failed keychain
+write as an error — as go-tool-base's setup wizard does — loses nothing here.
+
+One thing a layer does not reproduce for free: a ladder can be **lazy**, resolving a credential
+only when something asks for it, whereas a layer loads with the store. If a code path deliberately
+avoids touching the keychain — SSH-authenticated Git being the usual case — check that before
+replacing it.
 
 ## What it costs
 
