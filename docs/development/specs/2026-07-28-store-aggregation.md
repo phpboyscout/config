@@ -340,6 +340,69 @@ Swallowing is the silent degradation this module refuses everywhere else.
 `fs.ErrNotExist` keeps its contract: an absent inner source contributes nothing
 and is not an error.
 
+### D11 — The aggregate does **not** observe the inner store's `Apply`
+
+**Resolves O3.** A composed store does not hear about a write made directly to
+the inner store it wraps. That is a stated limit, not an oversight, and the
+reasoning is worth keeping because the question looks alarming until the write
+path is read.
+
+**What the watch bridge does not cover.** D8 bridges `Watch`, which catches
+*foreign* change — another process editing the file. It cannot catch the inner
+store's own `Apply`, because a store deliberately keeps its own writes off that
+path: *"Apply builds the next snapshot from what it just wrote and notifies
+directly, so a write cannot come back round through the watcher"*
+(`store.go:1063`). The inner store therefore never calls `onChange` for its own
+write, and the aggregate never hears.
+
+**What that costs, precisely.** Between an inner `Apply` and the next outer
+`Reload` or `Apply`:
+
+- The outer store's snapshot is **stale** for the inner layers.
+- `Plan` output can be **wrong in its reporting** — `ShadowedBy` and `Creates`
+  are computed from the stale index, so a dry run may say a write will take
+  effect when the inner store now shadows it.
+- The outer store's **observers do not fire**.
+
+**What it does not cost, which is the part that decides this.** `rebuild`
+re-reads every backend the write did not touch, on every `Apply`
+(`store.go:878`) — including the aggregate, which resolves the inner store
+afresh. That happens **before** `validateChange` and `verifyAll`, so:
+
+- the snapshot the outer store publishes after any write is **correct**, not
+  stale;
+- the schema judges fresh data;
+- conflict detection compares fresh fingerprints.
+
+So staleness is a **read-side reporting problem with a bounded window**, not a
+correctness problem, and **any write through the outer store heals it as a side
+effect**. D3a narrows it further: nested layers are not routing candidates, so
+stale nested values cannot misdirect a write in the first place — only the
+`ShadowedBy` and `Creates` fields of the report about it.
+
+**Why not do it anyway.** Two reasons beyond cost.
+
+The cascade guard does not obviously compose. `insideObserver` is per-store and
+keyed by goroutine (`notify.go:164`), so a notification chain crossing a store
+boundary is outside what `ErrWriteFromObserver` was built to catch. Whether a
+cross-store loop is genuinely reachable would need proving rather than
+assuming — and needing to prove that is itself a cost.
+
+And the shape of the feature argues against the case. Aggregation exists so that
+**one store travels through the code**. Holding the inner store separately *and*
+writing to it directly is the state this replaces; a caller doing both has not
+adopted the composition yet. The window is a migration artefact.
+
+**The escape hatch already exists**: `Reload` on the outer store. The
+documentation must say so plainly, in these words — *a store composed over
+another does not see writes made directly to the inner store; reload if you hold
+both.*
+
+**Revisit if** a real case appears of a long-lived process that must hold both —
+a studio server where a global-scope write travels a different code path. Even
+then the first answer is to route that write through the composed store with
+`To()`, which is what D3a exists for.
+
 ## Public API
 
 ```go
@@ -395,6 +458,11 @@ for error messages and for the D6 chain, not for a layer.
   per-layer precision rather than smearing sensitivity across the block.
 - **Conflict**: an out-of-band change to an inner source is detected through the
   aggregate, and the error names the chain (D6).
+- **Staleness is bounded** (D11): after a direct `Apply` on the inner store, the
+  outer store reads stale — and a subsequent outer `Apply` publishes a snapshot
+  containing *both* writes. The second half is what proves `rebuild`'s re-read
+  is doing the work the decision rests on, so it is watched to fail by carrying
+  the aggregate's layers over instead of re-reading them.
 
 ## Migration & compatibility
 
@@ -406,6 +474,12 @@ one no existing backend can observe.
 A minor version.
 
 ## Resolved
+
+**2026-07-28 — O3, observing the inner store's `Apply`.** No (D11). Investigated
+rather than assumed: `rebuild` re-reads untouched backends on every `Apply`,
+before validate and verify, so the cost is stale *reporting* in a window any
+outer write closes — not stale writes. Documented as a limit with `Reload` as
+the escape hatch.
 
 **2026-07-28 — O1 (second round), tree or DAG.** A tree: a store may appear at
 most once (D4). Refusing the diamond is deliberate — it resolves fine for reads,
@@ -428,13 +502,6 @@ composes, so depth costs atomicity and error legibility rather than correctness.
 
 ## Open questions
 
-- **O3 — Does the aggregate need to observe the inner store's `Apply`?** D8
-  covers foreign change via `Watch`. But code that still holds the inner store
-  and calls `Apply` on it directly bypasses the watcher entirely — `Apply`
-  notifies its own observers without going through the watch path
-  (`store.go:1063`). The outer store would not hear about it. Probably wants the
-  aggregate registered as an observer of the inner store, which is a different
-  mechanism from D8 and worth being explicit about.
 - **O4 — Should an ordinary backend be able to declare itself pin-only?** D3a's
   mechanism is not nesting-specific: "writable, but only when named" is a
   coherent thing for a system-wide `/etc/app.yaml` to want too. Nothing needs it
