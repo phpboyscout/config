@@ -123,7 +123,25 @@ refuses the write with `ErrSensitiveLeak`, where a non-sensitive one routes it b
 value in Vault is a secret, so the flag is unconditional — and therefore the first to exercise that
 branch of the suite in anger. [`config-aws-secrets`](../how-to/aws-secrets.md) is the second, which
 is what turns a contract written for one adapter into a family invariant. The remaining Phase-B
-secrets managers inherit the same shape. AWS
+secrets managers inherit the same shape.
+
+[`config-keychain`](../how-to/keychain.md) then bent the rule, and it is worth saying why it bent
+rather than broke. Secrets are read-only here because they are provisioned by a separate, audited
+process, and a config library writing to Vault would be a surprising power to hand it. A local
+keychain is not that: it holds a token the application itself just obtained, on the user's own
+machine. So it is the family's first **writable** sensitive backend — which the core permits,
+because the leak guard refuses a write whose target is *not* sensitive and says nothing about
+writing into one that is.
+
+That combination had never been exercised. The suite's write path had only met non-sensitive
+backends and its sensitive path only read-only ones, so running the gate against the first adapter
+in the intersection was where any hidden assumption would surface — and one did. The suite took for
+granted that a writable backend accepts arbitrary keys, which is true of a file, a prefix or a
+bucket and false of a keychain, whose key space is declared because it cannot be enumerated.
+`Suite.BoundedKeySpace` now lets a backend say so, and the fix went into the core rather than being
+papered over in the adapter.
+
+AWS
 SSM is the in-between case: it reports `Sensitive` only when a decrypted `SecureString` is actually
 in the loaded prefix, because it is a mixed store where most parameters are ordinary
 configuration, so an all-plain prefix routes normally.

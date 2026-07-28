@@ -52,6 +52,7 @@ hide:
   <a class="cfg-pill" href="how-to/aws-secrets/">AWS Secrets</a>
   <a class="cfg-pill" href="how-to/azure-keyvault/">Azure Key Vault</a>
   <a class="cfg-pill" href="how-to/gcp-secret/">GCP Secret</a>
+  <a class="cfg-pill" href="how-to/keychain/">OS keychain</a>
   <a class="cfg-pill cfg-pill--more" href="explanation/adapters/#roadmap">+ roadmap →</a>
 </div>
 

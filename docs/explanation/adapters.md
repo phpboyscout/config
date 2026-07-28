@@ -168,6 +168,12 @@ tool writing a secret is a rarer and riskier act than reading one.
   secret's field colliding with a child secret is [refused rather than
   guessed](dynamic-backends.md#ambiguous-structure-is-refused-not-guessed). Unlike the byte-valued
   stores it needs no value codec — Vault returns already-structured JSON.
+- [**`config-keychain`**](../how-to/keychain.md) — the local OS keychain, and the odd one out of
+  this group in two ways. It is **writable**, because the token it holds is one the application
+  just obtained on the user's own machine rather than something a separate audited process
+  provisioned — so a first token is written *into* it and one already there can never reach the
+  file beneath. And its key space is **declared** rather than discovered, because a keychain offers
+  no way to enumerate itself. It exists to stop tokens landing in plaintext config files.
 - [**`config-gcp-secret`**](../how-to/gcp-secret.md) — GCP Secret Manager. Read-only, statically
   sensitive, polled on version *metadata* so a quiet poll stays out of the data-access audit
   stream. Flat IDs verbatim, or one secret as a document. Its distinctive behaviour is version
@@ -204,6 +210,7 @@ before it is built**. The grouping is a planned order, not a commitment date.
 | [`config-aws-secrets`](../how-to/aws-secrets.md) | AWS Secrets Manager | B | **Released · v0.1.0** *(read-only)* |
 | [`config-azure-keyvault`](../how-to/azure-keyvault.md) | Azure Key Vault | B | **Built** · release pending verification *(read-only)* |
 | [`config-gcp-secret`](../how-to/gcp-secret.md) | GCP Secret Manager | B | **Built** · release pending verification *(read-only)* |
+| [`config-keychain`](../how-to/keychain.md) | OS keychain | — not in the umbrella | **Built** *(read **and** write)* |
 | `config-etcd` | etcd | C — cloud-native key–value | Planned *(native watch)* |
 | `config-k8s` | Kubernetes ConfigMaps | C | Planned *(native watch)* |
 
