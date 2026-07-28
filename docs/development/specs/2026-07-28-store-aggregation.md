@@ -120,9 +120,11 @@ When writable, the aggregate implements `WritableBackend` by routing the edits
 inner store knows its own layers and its own conflict rules, and reimplementing
 that in the adapter would be a second router that can disagree with the first.
 
-**Shallow** means one level: a write reaching the aggregate is routed once inside
-it. Whether that inner routing may itself land in a further nested store is
-**open question O2**.
+**Reads recurse to any depth** — a nested store containing a nested store
+resolves naturally, and nothing in the read path needs to know how deep it went.
+
+Whether a *write* may route deeper than one level is **open question O2**, and
+it is a narrower question than it looks: see the note there.
 
 ### D4 — Provenance carries the inner source in the layer, even when flattened
 
@@ -151,6 +153,27 @@ once, at the point where the mistake was made.
 `ErrCyclicStore`, a new sentinel. Refusing at construction rather than at load
 matters because a cycle is always a programming error, never a runtime
 condition.
+
+### D5a — A broken inner store propagates its error and stays usable
+
+A `Store` can be constructed alongside `ErrInvalidConfig` and remain usable —
+deliberately, because a config tool must be able to open a broken config in
+order to fix it (`store.go:106`, and the same reasoning in keryx's
+`openProjectStore`).
+
+The aggregate does the same: it contributes whatever did resolve, and returns
+the error alongside those layers rather than instead of them. The outer store is
+already built to hand back a usable store next to an error, so this composes
+without a new mechanism.
+
+Refusing was rejected because one unparseable nested file would hide every key
+that parsed fine, which is a worse outcome than the broken one. Swallowing was
+rejected because it is exactly the silent degradation this module refuses
+everywhere else — and because the outer store would have no way to tell a user
+why a value they expected is missing.
+
+`fs.ErrNotExist` keeps its existing contract: an absent inner source is not an
+error, it is a layer that contributes nothing.
 
 ### D6 — The aggregate declares its own `SourceKind`
 
@@ -227,6 +250,15 @@ const SourceNested = SourceKind("nested")
 - Conflict: an out-of-band change to an inner source is detected through the
   aggregate.
 
+## Resolved
+
+**2026-07-28 — O2 (reads).** Reads recurse to any depth (D3). The write half
+remains open.
+
+**2026-07-28 — O4, a broken inner store.** Propagate the error and stay usable
+(D5a), matching the store's own existing behaviour rather than inventing a
+second policy for nested sources.
+
 ## Migration & compatibility
 
 Additive — new constructor, new sentinel, new source kind. Nothing existing
@@ -241,19 +273,15 @@ piece of work.
   central claim, but needs the write path to let one backend answer to several
   names, and brings interleaved precedence with it. **This decides the shape of
   everything else and should be settled first.**
-- **O2 — May a nested store contain a nested store?** D3 says one level is
-  routed; it does not say deeper nesting is refused. Arbitrary depth is
-  conceptually clean and makes cycle detection and error messages considerably
-  harder. Leaning: allow reads at any depth, refuse writes below the first level
-  until something needs them.
+- **O2 — May a *write* route deeper than one nested level?** Reads at any depth
+  are settled (D3). Writes are the open half: a write routed into an aggregate
+  is re-routed by the inner store, and if that inner routing selects a further
+  aggregate the process repeats. Each hop adds a conflict-detection scope and a
+  rollback boundary that the outer store cannot make atomic, and an error two
+  levels down has to be reported in terms the caller recognises.
 - **O3 — How does inner provenance surface?** D4 wants the flattened layer to
   keep the detail. A method on the returned backend is easy; a new optional
   `Backend` interface that `Explain` consults is more useful and more surface.
-- **O4 — What happens when the inner store fails to load?** A `Store` can be
-  constructed alongside an error (`ErrInvalidConfig`) and remain usable, which is
-  deliberate — config tools must open a broken config to fix it. Should the
-  aggregate propagate that, swallow it, or refuse? Interacts with `fs.ErrNotExist`
-  meaning "absent source, decide for yourself" in the `Backend` contract.
 - **O5 — Does the inner store's `AddLayer` invalidate the aggregate?** `AddLayer`
   replaces the inner backend list wholesale. The aggregate holds a pointer to the
   store, so it would see the change on next `Load` — but nothing tells the outer

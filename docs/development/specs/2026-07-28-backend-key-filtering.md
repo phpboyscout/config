@@ -129,34 +129,41 @@ change at all.
 The consequence is that a denied write lands in the next writable layer down,
 which is what "this backend does not own this key" should mean.
 
-### D8 — Filtering a sensitive backend can disarm the leak guard, and this is the one real hazard
+### D8 — Filtering a sensitive backend hides the key from reads but keeps its sensitive marking
+
+The hazard first, because the decision only makes sense against it.
 
 If Vault is the only sensitive source defining `db.password`, and a filter denies
-`db.password`, then `sensitiveDefiner` no longer sees it — so a write of
-`db.password` routes to the plain file beneath **and is not refused**. The filter
-has re-opened the hole `ErrSensitiveLeak` exists to close.
+`db.password`, then a naive implementation removes the key from the layer —
+`sensitiveDefiner` no longer sees it, a write of `db.password` routes to the
+plain file beneath, and **it is not refused**. The filter has re-opened the hole
+`ErrSensitiveLeak` exists to close, silently.
 
-This is not hypothetical and it is not fixable by making the filter cleverer: a
-filtered-out key is, by construction, one the store does not know is sensitive.
+This is not fixable by making the filter cleverer. A filtered-out key is, by
+construction, one the store does not otherwise know is sensitive.
 
-Options, none yet chosen — **open question O1**:
+So filtering a **sensitive** backend is asymmetric, deliberately: a denied key is
+removed from the layer's values, but the backend's sensitive key set still
+carries it, and the leak guard still fires on a write. The key is invisible to
+reads and to routing; it is not invisible to the guard.
 
-1. **Refuse the combination.** `Filtered` over a backend whose `Capabilities()`
-   report `Sensitive: true` returns an error unless the caller passes an
-   explicit acknowledgement option. Loud, and possibly too loud.
-2. **Deny-only for sensitive backends.** A `Deny` on a sensitive backend removes
-   the key from *reads* but keeps it in the sensitive set, so the guard still
-   fires. Preserves safety; means "denied" means two different things depending
-   on the backend, which is exactly the kind of split the rest of this module
-   avoids.
-3. **Document it and move on.** Cheapest, and consistent with the module's habit
-   of stating limits plainly rather than preventing every misuse — but this
-   particular limit produces a silent secret leak, which is the failure class the
-   guard was added for.
+Consequences worth naming:
 
-Leaning towards (2), because it makes the safe thing automatic and the cost is
-a documented asymmetry rather than a silent hole. Wants a decision before
-implementation.
+- **"Denied" means slightly different things on a sensitive and a non-sensitive
+  backend.** That asymmetry is the price. It is worth paying because the failure
+  it prevents is a secret written to disk with no error, and because the safe
+  behaviour is the automatic one — a caller cannot forget to ask for it.
+- A denied key on a sensitive backend therefore becomes **unwritable anywhere**
+  rather than routing down: the guard refuses the plain target, and the backend
+  itself no longer offers the key. That is the correct outcome — "this store
+  should not expose that secret" should not mean "so write it somewhere worse".
+- This requires the sensitive key set to be tracked separately from layer values,
+  which the store does not do today. `sensitiveSources` currently marks whole
+  *sources*, not keys. **This is the one piece of core change the spec needs**,
+  and it is small: the filter must be able to say "I am sensitive, and I also own
+  these hidden paths".
+
+The two rejected options are recorded in [Rejected alternatives](#rejected-alternatives).
 
 ### D9 — Watchability and writability pass through
 
@@ -193,22 +200,47 @@ pass-through wrapper, so the zero configuration costs nothing.
 - A denied key is absent from the layer and resolves from the layer beneath.
 - A write to a denied key routes past the filtered backend (D7), asserted
   through `Plan` so the target is visible rather than inferred.
-- The D8 case, asserted **whichever way O1 resolves** — either the combination is
-  refused, or the guard still fires, or the leak is a documented and *tested*
-  behaviour. It must not be untested in any of the three outcomes.
+- **The D8 case.** A `Deny` on a sensitive backend hides the key from reads
+  *and* leaves the leak guard firing on a write of it. Watched to fail by
+  dropping the hidden path from the sensitive set — the resulting silent leak is
+  the exact failure this decision exists to prevent, so the test must be able to
+  catch it.
 - `backendconformance` run against a filtered backend whose filter allows the
   suite's key, confirming decoration does not break the contract.
 
+## Rejected alternatives
+
+**Refuse `Filtered` over a sensitive backend** unless the caller passes an
+acknowledgement option. Rejected as too loud: narrowing what a broadly-scoped
+Vault token exposes is a legitimate and desirable thing to do, and a design that
+makes the good practice require an opt-out teaches people to reach for the
+opt-out.
+
+**Document the hazard and let the caller own it.** Rejected despite being
+consistent with this module's habit of stating limits rather than preventing
+misuse. The limits stated elsewhere produce visible failures — a refused write,
+an error at load. This one produces a secret on disk with no error at all, which
+is the failure class the guard was added for, and a documented footgun is still
+a footgun.
+
+## Resolved
+
+**2026-07-28 — O1, how filtering interacts with `Sensitive`.** Deny hides the
+key from reads but keeps its sensitive marking, so the guard still fires (D8).
+Chosen because it makes the safe behaviour the automatic one; the cost is that
+"denied" is asymmetric between sensitive and non-sensitive backends, and a small
+piece of core change to track hidden sensitive paths per backend rather than per
+source.
+
 ## Migration & compatibility
 
-Additive. New exported functions, no change to existing behaviour, no change to
-routing. A minor version.
+Additive for consumers — new exported functions, no change to existing
+behaviour or routing. Internally it needs the sensitive set to be expressible
+per key rather than only per source (D8), which is a core change but not a
+breaking one. A minor version.
 
 ## Open questions
 
-- **O1 — How does filtering interact with `Sensitive`?** The three options in
-  D8. This is the only question that blocks implementation; the rest of the
-  spec stands whichever way it goes.
 - **O2 — Does a filter belong in provenance?** `Explain` currently names the
   source a value came from. It cannot currently say "and this backend also holds
   `db.password`, which is filtered out" — and arguably should not, since that
