@@ -174,7 +174,7 @@ one, so a consumer needing JSON does not pull a TOML parser into their `go.sum`:
 ```
 module gitlab.com/you/config-<format>
 
-require gitlab.com/phpboyscout/go/config v0.5.0
+require gitlab.com/phpboyscout/go/config v0.5.0 // the release the codec seam landed in
 ```
 
 Export a constructor that hides the codec, so a consumer writes

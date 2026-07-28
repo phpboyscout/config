@@ -164,7 +164,7 @@ for the reasoning. If a key needs to be writable, do not source it from Secrets 
 | | |
 |---|---|
 | Modules added | **14** — 5 for the AWS SDK, 9 for the `config` graph |
-| Requires | `config` **v0.9.2+** |
+| Requires | `config` **v0.7.0+** — the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
 
 Five modules for the SDK is the **leanest of any backend adapter in this toolkit**: the AWS SDK for
 Go v2 ships per service, so reading secrets does not drag in the rest of AWS. Note what is absent —

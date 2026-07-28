@@ -92,9 +92,9 @@ built and released independently.
 
 | Adapter | Store | Commit | Status | Source |
 |---|---|---|---|---|
-| [`config-aws-s3`](../how-to/aws-s3.md) | AWS S3 | copy-then-delete | **v0.1.0** | [repo](https://gitlab.com/phpboyscout/go/config-aws-s3) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-aws-s3) |
-| [`config-gcp-gcs`](../how-to/gcp-gcs.md) | GCP Cloud Storage | native `Move` | **v0.1.0** | [repo](https://gitlab.com/phpboyscout/go/config-gcp-gcs) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-gcp-gcs) |
-| [`config-azure-blob`](../how-to/azure-blob.md) | Azure Blob Storage | copy-then-delete | **v0.1.0** | [repo](https://gitlab.com/phpboyscout/go/config-azure-blob) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-azure-blob) |
+| [`config-aws-s3`](../how-to/aws-s3.md) | AWS S3 | copy-then-delete | **Released** | [repo](https://gitlab.com/phpboyscout/go/config-aws-s3) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-aws-s3) |
+| [`config-gcp-gcs`](../how-to/gcp-gcs.md) | GCP Cloud Storage | native `Move` | **Released** | [repo](https://gitlab.com/phpboyscout/go/config-gcp-gcs) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-gcp-gcs) |
+| [`config-azure-blob`](../how-to/azure-blob.md) | Azure Blob Storage | copy-then-delete | **Released** | [repo](https://gitlab.com/phpboyscout/go/config-azure-blob) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-azure-blob) |
 
 All three are read+write, poll at a 60-second default (a poll is a billed object read;
 `WithPollInterval` overrides), and are proven against a real emulator — LocalStack, fake-gcs-server
@@ -112,8 +112,8 @@ umbrella that governs the whole family.
 
 ### config-consul — the first
 
-[**`config-consul`**](https://gitlab.com/phpboyscout/go/config-consul) — released at
-**v0.1.0** ([API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-consul)) — reads and writes
+[**`config-consul`**](https://gitlab.com/phpboyscout/go/config-consul) — released
+([API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-consul)) — reads and writes
 configuration from [HashiCorp Consul](https://www.consul.io/) through `config`. You build and
 configure the Consul client — every address, token, TLS and datacenter decision stays yours —
 and hand it in with a prefix that scopes and is stripped from the keys:
@@ -142,8 +142,8 @@ works](consul-backend.md) for the data, conflict and watch models behind it.
 
 ### Parameter stores — released
 
-Consul's siblings, the cloud parameter stores, are all released at **v0.1.0**. They share Consul's
-shape — injected client, prefix-scoped nested tree, values decoded through an injected codec — and
+Consul's siblings, the cloud parameter stores, are all released too. They share Consul's shape —
+injected client, prefix-scoped nested tree, values decoded through an injected codec — and
 differ where the systems do, which is what [How dynamic backends work](dynamic-backends.md)
 explains. In short: they **poll** rather than watch natively, and they split on compare-and-swap.
 
@@ -155,13 +155,14 @@ explains. In short: they **poll** rather than watch natively, and they split on 
 - [**`config-gcp-parameter`**](../how-to/gcp-parameter.md) — GCP Parameter Manager. Read-only, in
   two shapes: one parameter as a whole document, or a prefix of many parameters.
 
-### Secrets managers — Vault released
+### Secrets managers
 
 Phase B holds the secrets managers, and they differ from the parameter stores in one way that
 changes how they behave: they are **`Sensitive`**, so the core refuses to write a value they
 provide into a plainer layer beneath ([sensitive read-only
-backends](dynamic-backends.md#sensitive-read-only-backends)). They ship **read-only** — a config
-tool writing a secret is a rarer and riskier act than reading one.
+backends](dynamic-backends.md#sensitive-read-only-backends)). The remote ones ship **read-only** —
+a config tool writing to an audited secrets store is a rarer and riskier act than reading from one.
+The local keychain is the exception, and the reason it is one is worth reading below.
 
 - [**`config-vault`**](../how-to/vault.md) — HashiCorp Vault KV v2. Read-only, statically
   sensitive, polled at 60 seconds. Reads **one secret** by default, or walks a whole prefix; a
@@ -202,12 +203,12 @@ before it is built**. The grouping is a planned order, not a commitment date.
 
 | Adapter | System | Phase | Status |
 |---|---|---|---|
-| [`config-consul`](../how-to/consul.md) | HashiCorp Consul | A — reference &amp; parameter stores | **Released · v0.1.0** |
-| [`config-aws-ssm`](../how-to/aws-ssm.md) | AWS SSM Parameter Store | A | **Released · v0.1.0** *(read-only)* |
-| [`config-azure-appconfig`](../how-to/azure-appconfig.md) | Azure App Configuration | A | **Released · v0.1.0** |
-| [`config-gcp-parameter`](../how-to/gcp-parameter.md) | GCP Parameter Manager | A | **Released · v0.1.0** *(read-only)* |
-| [`config-vault`](../how-to/vault.md) | HashiCorp Vault | B — secrets managers | **Released · v0.2.0** *(read-only)* |
-| [`config-aws-secrets`](../how-to/aws-secrets.md) | AWS Secrets Manager | B | **Released · v0.1.0** *(read-only)* |
+| [`config-consul`](../how-to/consul.md) | HashiCorp Consul | A — reference &amp; parameter stores | **Released** |
+| [`config-aws-ssm`](../how-to/aws-ssm.md) | AWS SSM Parameter Store | A | **Released** *(read-only)* |
+| [`config-azure-appconfig`](../how-to/azure-appconfig.md) | Azure App Configuration | A | **Released** |
+| [`config-gcp-parameter`](../how-to/gcp-parameter.md) | GCP Parameter Manager | A | **Released** *(read-only)* |
+| [`config-vault`](../how-to/vault.md) | HashiCorp Vault | B — secrets managers | **Released** *(read-only)* |
+| [`config-aws-secrets`](../how-to/aws-secrets.md) | AWS Secrets Manager | B | **Released** *(read-only)* |
 | [`config-azure-keyvault`](../how-to/azure-keyvault.md) | Azure Key Vault | B | **Built** · release pending verification *(read-only)* |
 | [`config-gcp-secret`](../how-to/gcp-secret.md) | GCP Secret Manager | B | **Built** · release pending verification *(read-only)* |
 | [`config-keychain`](../how-to/keychain.md) | OS keychain | — not in the umbrella | **Built** *(read **and** write)* |

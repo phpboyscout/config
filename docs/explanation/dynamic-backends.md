@@ -109,10 +109,10 @@ disappeared.
 ## Sensitive read-only backends
 
 A backend that holds secret material declares `Sensitive: true`, and the core enforces a rule:
-a value a sensitive layer defines must never be written into a layer that is not. Because secrets
-backends are read-only, a write to a key one owns routes *down* to the next writable layer — a
-plain file — and the core refuses that with `ErrSensitiveLeak` rather than let the secret land
-there.
+a value a sensitive layer defines must never be written into a layer that is not. Where the
+sensitive backend is read-only — which the remote secrets managers all are — a write to a key it
+owns routes *down* to the next writable layer, a plain file, and the core refuses that with
+`ErrSensitiveLeak` rather than let the secret land there.
 
 This has a consequence worth naming, because it is counter-intuitive: for a sensitive read-only
 backend, a routed-beneath write being **refused** is the correct behaviour, not a bug. The shared

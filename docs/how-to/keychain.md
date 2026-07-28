@@ -18,6 +18,11 @@ keychain — macOS Keychain, Windows Credential Manager, or a Secret Service imp
 go get gitlab.com/phpboyscout/go/config-keychain
 ```
 
+!!! info "Not yet tagged"
+
+    This adapter is built and its conformance suite passes; the first release follows shortly.
+    `go get` resolves it to a pseudo-version from `main` in the meantime.
+
 ```go
 import (
 	"gitlab.com/phpboyscout/go/config"
@@ -150,10 +155,11 @@ the write: the fallback that put a token in the config file when no keychain was
 | | |
 |---|---|
 | Modules added | **21** — 9 for the `config` graph, 12 for `credentials` |
-| Requires | `config` **v0.10.0+**, `credentials` **v0.2.2+** |
+| Requires | `config` **v0.10.0+** — the release adding `BoundedKeySpace`, which a declared-key backend needs — and `credentials` **v0.2.2+**, the release in which the keychain backend began honouring its context |
 
-`credentials` v0.2.2 is a hard floor rather than a preference: it is the release in which the
-keychain backend began honouring its context.
+Both floors are hard rather than preferences. Against an earlier `credentials` a locked keyring
+blocks with nothing able to recover it, and against an earlier `config` the conformance suite
+demands an invented account name this backend has no way to honour.
 
 ## Related
 

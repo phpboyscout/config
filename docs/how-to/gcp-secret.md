@@ -16,6 +16,13 @@ secrets from GCP takes it — and its SDK — and one who does not pays nothing.
 go get gitlab.com/phpboyscout/go/config-gcp-secret
 ```
 
+!!! info "Not yet tagged"
+
+    This adapter is built and its conformance suite passes, but the first release is held until it
+    has been verified against a real project — there is no emulator for Secret Manager, and the
+    version-state behaviour below is precisely the part a fake cannot prove. `go get` resolves it
+    to a pseudo-version from `main` in the meantime.
+
 You build the client — Application Default Credentials, a service account, workload identity — and
 hand it in with the project it should read:
 
@@ -160,7 +167,7 @@ _, err := store.Apply(ctx, config.Set("db-password", "rotated"))
 | | |
 |---|---|
 | Modules added | **39** — 31 for the Secret Manager SDK, 9 for the `config` graph |
-| Requires | `config` **v0.9.2+** |
+| Requires | `config` **v0.7.0+** — the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
 
 This is **the heaviest adapter in the toolkit** — roughly five times AWS Secrets Manager's five
 modules or Azure Key Vault's six, because the Google API client stack is large and shared. Worth

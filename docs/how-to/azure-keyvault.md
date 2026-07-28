@@ -16,6 +16,13 @@ who reads secrets from Key Vault takes it — and its SDK — and one who does n
 go get gitlab.com/phpboyscout/go/config-azure-keyvault
 ```
 
+!!! info "Not yet tagged"
+
+    This adapter is built and its conformance suite passes, but the first release is held until it
+    has been verified against a real vault — Key Vault has no emulator, so nothing short of the
+    service itself proves the client wiring. `go get` resolves it to a pseudo-version from `main`
+    in the meantime.
+
 You build the client — vault URL and credential both — and hand it in:
 
 ```go
@@ -160,7 +167,7 @@ for the reasoning. If a key needs to be writable, do not source it from Key Vaul
 | | |
 |---|---|
 | Modules added | **15** — 6 for the Key Vault SDK, 9 for the `config` graph |
-| Requires | `config` **v0.9.2+** |
+| Requires | `config` **v0.7.0+** — the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
 
 Pinned by an allowlist test in both directions, so a version bump that widens *or* narrows the graph
 fails the build rather than arriving quietly.

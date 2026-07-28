@@ -199,7 +199,7 @@ namespace-agnostic and takes no parameter for it.
 | | |
 |---|---|
 | Modules added | **26** — 17 for the Vault SDK, 9 for the `config` graph |
-| Requires | `config` **v0.7.0+** |
+| Requires | `config` **v0.7.0+** — the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
 
 A backend adapter carries its system's client, and the Vault SDK is the largest thing here. That
 cost is pinned by an allowlist test in the module, so a version bump that widens the graph fails

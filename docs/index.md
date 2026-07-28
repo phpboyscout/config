@@ -186,7 +186,7 @@ the file lives somewhere else. They compose with any format adapter.
 
 Fetch configuration at runtime from a remote system and give it full precedence, provenance and
 hot-reload, exactly as a file gets. The reference — [**config-consul**](how-to/consul.md) — and the
-cloud **parameter stores** are released now at v0.1.0:
+cloud **parameter stores** are released:
 
 - **Parameter stores** — [AWS SSM](how-to/aws-ssm.md), [Azure App Configuration](how-to/azure-appconfig.md)
   and [GCP Parameter Manager](how-to/gcp-parameter.md), Consul's siblings.
@@ -195,6 +195,9 @@ cloud **parameter stores** are released now at v0.1.0:
   written into a plainer layer beneath, because the core refuses that. [Azure Key
   Vault](how-to/azure-keyvault.md) and [GCP Secret Manager](how-to/gcp-secret.md) are built and
   awaiting verification against the real services.
+- **The OS keychain** — [config-keychain](how-to/keychain.md) makes macOS Keychain, Windows
+  Credential Manager or Secret Service a layer, and is the one secrets backend that *writes*: a
+  token this application just obtained belongs there rather than in the config file.
 - **Cloud-native key–value** *(roadmap)* — etcd and Kubernetes ConfigMaps, with native change-watch.
 
 **[→ The full adapter ecosystem, with status and roadmap](explanation/adapters.md)**
