@@ -76,6 +76,10 @@ layer. No adapter changes, no new optional interface, no contract change.
 
 ```go
 func Nested(s *Store, id string, opts ...NestedOption) Backend
+
+// NestedPromotable makes the nested store's writable layers valid targets for
+// an explicitly named write, without making them candidates for routing (D3a).
+func NestedPromotable(*nestedConfig)
 ```
 
 Rather than adding the methods to `Store` itself. A `Store` has no natural ID —
@@ -133,21 +137,12 @@ already defines the path; with the block spliced in, inner layers are simply
 part of that walk. A key defined only in the global config routes to the global
 config's file, through the aggregate, without a special case.
 
-That is what makes promotion an ordinary write:
+The routing rule is *edit where it already lives, create where it will be seen*:
+`findTarget` walks the writable targets backwards for the first that **already
+defines the path**, and falls back to the highest-precedence writable target only
+when nothing does.
 
-```go
-// where it would go by default — the project file, because that is the
-// highest-precedence writable layer for a new key
-store.Apply(ctx, config.Set("theme", "dark"))
-
-// promoted to the user's global config, named explicitly
-store.Apply(ctx, config.Set("theme", "dark",
-    config.To("~/.krites/config.yaml")))
-```
-
-The second form is [write-target options](2026-07-28-write-target-options.md)
-doing its job. That spec's O2 asked which real cases justify pinning; **this is
-one**, and it should be its worked example.
+That second clause is the one that matters here, and it is why D3a exists.
 
 Mechanically the aggregate implements `WritableBackend` by delegating: its
 `Prepare` hands each edit to the inner backend that owns the targeted layer, and
@@ -155,6 +150,74 @@ returns a `Pending` composing the inner `Pending`s. `Verify`, `Commit`,
 `Rollback` and `Discard` fan out in declared order. The two-phase protocol
 composes without modification — which is the payoff for `Pending` being an
 interface rather than a struct.
+
+### D3a — A writable nested layer is **pinnable but not routable**
+
+The consequence D3's routing rule has for composition, and the reason
+`NestedWritable` as first drafted was a footgun.
+
+`findTarget` prefers a writable layer that already defines the key. So if
+`theme` is defined in the nested global config and the nested layers route like
+any other, then:
+
+```go
+store.Apply(ctx, config.Set("theme", "dark"))   // in a project store
+```
+
+…walks past the project file, finds `theme` in `~/.krites/config.yaml`, and
+**writes there** — silently editing the value every other project inherits. That
+is demotion by default, and it is the opposite of what a project-scoped edit
+means.
+
+keryx already found this and already solved it, by making the inherited global
+subtrees non-writable in-memory readers so that *"a write can never route into
+either"* (`openProjectStore`, spec 0042 D2). The forking behaviour that gives —
+a project edit creating a project-owned file rather than mutating the shared one
+— is the behaviour to preserve, not to regress.
+
+But read-only nested layers cannot be promoted *into*, which is half the point
+of the exercise. So a writable nested layer gets a third state:
+
+| | routed to by default | reachable via `To()` |
+|---|---|---|
+| nested, read-only *(default)* | no | no |
+| **nested, promotable** | **no** | **yes** |
+| ordinary writable layer | yes | yes |
+
+An ordinary write therefore always forks into the project's own layers, and
+reaching the global config requires naming it. Explicit, and impossible to do by
+accident:
+
+```go
+// forks into the project file, whether or not the global config defines it
+store.Apply(ctx, config.Set("theme", "dark"))
+
+// promotes — named, so it cannot happen by accident
+store.Apply(ctx, config.Set("theme", "dark",
+    config.To("~/.krites/config.yaml")))
+```
+
+A promotion usually wants the project's own copy gone too, or the promoted value
+is immediately shadowed by it — which `Operation.ShadowedBy` will correctly
+report. Both halves are one batch:
+
+```go
+store.Apply(ctx,
+    config.Set("theme", "dark", config.To("~/.krites/config.yaml")),
+    config.Remove("theme"),
+)
+```
+
+**Routability is tracked by the store, not by a new `Source` field.** A file
+inside the nested store genuinely *is* writable and routable — within its own
+store. It is only non-routable *as seen from the outer store*, so it is a
+property of the composition rather than of the source. The store already builds
+a layer-name → backend map at load (see the constraint section); it records
+routability alongside, and `route` receives the routable subset for
+`findTarget` while `matchTarget` keeps the full writable set.
+
+No public struct changes, no new obligation on backend authors, and a `Source`
+does not mean different things depending on which store is looking at it.
 
 ### D4 — The composed graph is a tree: a store may appear at most once
 
@@ -284,6 +347,10 @@ type NestedOption func(*nestedConfig)
 
 func Nested(s *Store, id string, opts ...NestedOption) Backend
 
+// NestedPromotable makes the nested store's writable layers valid targets for
+// an explicitly named write, without making them candidates for routing (D3a).
+func NestedPromotable(*nestedConfig)
+
 var ErrCyclicStore = errors.New("config: store is already present in this graph")
 ```
 
@@ -303,8 +370,16 @@ for error messages and for the D6 chain, not for a layer.
   below is outranked by all of them. Watched to fail by reordering.
 - **Provenance**: `Explain` on a value from an inner layer names that layer, not
   the aggregate. This is the whole reason for D2 and must be able to fail.
-- **Promotion**: `Set(…, To(innerLayerName))` lands in the inner file, verified
-  by reading that file, not the composed view.
+- **Promotion, and the absence of demotion** (D3a). Three assertions, and the
+  middle one is the point:
+  1. `Set(…, To(innerLayerName))` on a promotable nested store lands in the
+     inner file, verified by reading that file rather than the composed view.
+  2. **An unpinned `Set` of a key the nested store already defines forks into
+     the outer store's own layer** — asserted through `Plan` so the target is
+     named, and watched to fail by making nested layers routable, which is
+     precisely the regression this decision prevents.
+  3. `To(innerLayerName)` against a nested store *without* `NestedPromotable`
+     returns `ErrInvalidTarget`.
 - **Depth**: a three-level graph resolves, and a write to the deepest layer
   reaches it (D5).
 - **Tree enforcement** (D4): direct (`a` in `a`), indirect (`a → b → a`), and
@@ -360,3 +435,12 @@ composes, so depth costs atomicity and error legibility rather than correctness.
   (`store.go:1063`). The outer store would not hear about it. Probably wants the
   aggregate registered as an observer of the inner store, which is a different
   mechanism from D8 and worth being explicit about.
+- **O4 — Should an ordinary backend be able to declare itself pin-only?** D3a's
+  mechanism is not nesting-specific: "writable, but only when named" is a
+  coherent thing for a system-wide `/etc/app.yaml` to want too. Nothing needs it
+  yet, so nothing is exposed — but the internal representation should not
+  preclude it, and this is worth revisiting the first time a backend asks.
+- **O5 — Is `NestedPromotable` the right name?** It names the intent rather than
+  the mechanism, which is usually right, but "promotion" is domain language
+  borrowed from the motivating case. `NestedPinnable` names the mechanism and
+  ties to `To`. Weak preference for the former.

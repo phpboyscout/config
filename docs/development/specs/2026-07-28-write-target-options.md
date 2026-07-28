@@ -127,10 +127,21 @@ and inspecting it, which is backwards and allocates a plan the caller discards.
 func (s *Store) WritableTargets() []Source
 ```
 
-Returns exactly what `matchTarget` will match against, in precedence order —
-including the synthesised entry for a writable backend that has not contributed
-a layer yet (`sourceOrder`, `store.go:947`), because that is a legitimate target
-and omitting it would make the list lie about what `To` accepts.
+Returns exactly what `matchTarget` will match against, in precedence order.
+That includes two things easy to leave out:
+
+- **The synthesised entry for a writable backend that has not contributed a
+  layer yet** (`sourceOrder`, `store.go:947`) — a legitimate target, and
+  omitting it would make the list lie about what `To` accepts.
+- **Pin-only layers.** [Store aggregation](2026-07-28-store-aggregation.md) D3a
+  introduces layers that are valid `To` targets but are never routed to. They
+  belong in this list precisely because they are unreachable any other way: a
+  caller cannot discover a promotion target by planning an unpinned write,
+  because an unpinned write will never select one.
+
+So the contract is "everything `To` accepts", not "everything a write might
+land in". Those are the same set today and stop being so the moment a nested
+store is promotable.
 
 `Sources()` is left alone. It answers a different question — "what is in this
 store, readable or not" — and narrowing it would break callers.
@@ -225,6 +236,10 @@ Unit, table-driven — this is routing, not I/O, so there is nothing to fake:
 - `To` naming a real but read-only layer returns `ErrInvalidTarget`, not
   `ErrNoWritableLayer` — the caller named something specific and wrong, which is
   a different fault from having nowhere to write.
+- **Every name `WritableTargets` returns is accepted by `To`**, asserted by
+  feeding each one back through it. This is the only test that stops the
+  discovery list and the matcher drifting apart, and it becomes load-bearing
+  once pin-only layers exist, since those appear in no plan.
 - `ToDocument` addresses the second document of a multi-document file, and
   `To` on the same file resolves to document 0.
 - **Two layers sharing a name**: `To` selects the highest-precedence one (D8),
@@ -233,12 +248,9 @@ Unit, table-driven — this is routing, not I/O, so there is nothing to fake:
 - A pinned write of a key a sensitive source defines, into a non-sensitive
   target, returns `ErrSensitiveLeak` (D4). **Watched to fail** by removing the
   guard, since this is the assertion most likely to rot.
-- `WritableTargets` returns every entry `matchTarget` accepts and nothing it
-  rejects — asserted by feeding each returned name back through `To` and
-  requiring no error.
-
-The last one is the important one: it is the only test that stops the discovery
-list and the matcher drifting apart.
+The equivalence assertions are the important ones: they are what stop `To`
+becoming a second router, and the discovery list becoming a second answer to
+"where can this be written".
 
 ## Migration & compatibility
 
@@ -269,3 +281,8 @@ A minor version.
 - **O3 — Should `WritableTargets` exclude targets a filter has emptied?** Only
   meaningful once [backend key filtering](2026-07-28-backend-key-filtering.md)
   exists. Recorded here so the two specs do not answer it differently.
+- **O4 — Should the returned `Source` say whether a target is routable?**
+  `WritableTargets` now mixes layers a write may reach on its own with pin-only
+  ones that it never will (D5). A UI offering "where should this be saved?"
+  arguably wants to distinguish them. Deliberately not answered here: it depends
+  on whether pin-only stays nesting-specific, which is that spec's O4.
