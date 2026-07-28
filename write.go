@@ -44,13 +44,25 @@ func (c Change) asEdit() Edit {
 	return Edit{Path: c.Path, Value: c.Value, Remove: c.Remove}
 }
 
-// Edit is one change addressed at a specific document of a backend.
+// Edit is one change addressed at a specific layer of a backend.
 type Edit struct {
 	// Document is the document index within the source.
 	Document int
-	Path     string
-	Value    any
-	Remove   bool
+	// Target is the layer this edit was routed at.
+	//
+	// Almost every backend can ignore it: a backend names its layers after
+	// itself, so receiving an edit at all identifies the source and Document
+	// distinguishes the documents of it. A backend contributing several
+	// DISTINCTLY NAMED layers cannot infer it — a store aggregate carries the
+	// layers of the store it wraps — and needs to know which one a write was
+	// aimed at.
+	//
+	// Target.Document and Document are the same value; Document predates this
+	// field and is kept because backends already read it.
+	Target Source
+	Path   string
+	Value  any
+	Remove bool
 }
 
 // WritableBackend is a backend that can persist changes.

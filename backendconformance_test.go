@@ -296,3 +296,69 @@ func TestApply_ReachesABackendWhoseLayersAreNamedDifferently(t *testing.T) {
 		t.Errorf("level = %q, want debug", got)
 	}
 }
+
+// The family's contract suite against a composed store — the Phase 5 gate, and
+// the first backend whose layers are themselves resolved by another Store.
+//
+// Control.Mutate reloads the inner store as well as changing the fake beneath
+// it. That is not the test working around the implementation: an aggregate
+// reads the inner store's SNAPSHOT rather than reloading it, deliberately, so a
+// foreign change reaches the outer store only once the inner store has noticed
+// it. Whoever holds the inner store is responsible for that, exactly as they are
+// for any other store they own.
+func TestBackendConformance_Nested(t *testing.T) {
+	t.Parallel()
+
+	backendconformance.Run(t, backendconformance.Suite{
+		NewBackend: func(t *testing.T, seed map[string]any) (config.Backend, backendconformance.Control) {
+			t.Helper()
+
+			remote := newFakeRemote(seed)
+
+			inner, err := config.NewStore(t.Context(),
+				config.WithBackend(newRemoteBackend(remote, "app/")))
+			if err != nil {
+				t.Fatalf("NewStore(inner): %v", err)
+			}
+
+			return config.Nested(inner, "aggregate", config.NestedPromotable),
+				&nestedControl{remote: remote, inner: inner}
+		},
+		Seed:     conformanceSeed(),
+		Defines:  conformanceDefines(),
+		WriteKey: "level", WriteValue: "debug",
+
+		// A composed store's layers are pin-only by design (D3a): routing must
+		// never choose one, or an ordinary edit would rewrite the configuration
+		// it inherited the value from.
+		PinOnlyTargets: true,
+	})
+}
+
+// nestedControl stands in for another client of the inner store's backing
+// store, and for the inner store noticing.
+type nestedControl struct {
+	remote *fakeRemote
+	inner  *config.Store
+}
+
+func (c *nestedControl) Mutate(t *testing.T) {
+	t.Helper()
+
+	c.remote.set("level", "externally-changed")
+
+	if err := c.inner.Reload(t.Context()); err != nil {
+		t.Fatalf("inner Reload after a foreign change: %v", err)
+	}
+}
+
+func (c *nestedControl) Reopen(t *testing.T) config.Backend {
+	t.Helper()
+
+	inner, err := config.NewStore(t.Context(), config.WithBackend(newRemoteBackend(c.remote, "app/")))
+	if err != nil {
+		t.Fatalf("NewStore(reopened inner): %v", err)
+	}
+
+	return config.Nested(inner, "aggregate", config.NestedPromotable)
+}

@@ -67,7 +67,17 @@ func Nested(s *Store, id string, opts ...NestedOption) Backend {
 		opt(&cfg)
 	}
 
-	return &nested{inner: s, id: id, promotable: cfg.promotable}
+	n := &nested{inner: s, id: id, promotable: cfg.promotable}
+	if cfg.promotable {
+		// Writability is a type, not a flag, for the same reason it is on
+		// Backend: a read-only aggregate that implemented Prepare would be
+		// handed a synthesised writable target by sourceOrder, and a write
+		// aimed at a store nobody said could be written to would be routed
+		// somewhere it can never land.
+		return &nestedWritable{nested: n}
+	}
+
+	return n
 }
 
 // nested is a Store presented as a Backend.
@@ -84,6 +94,12 @@ type nested struct {
 }
 
 func (n *nested) ID() string { return n.id }
+
+// pinOnlyLayers reports whether this backend's layers may be named but never
+// routed at. Satisfied by both aggregate types — nestedWritable embeds *nested
+// — so the Store asks the behaviour rather than the concrete type, which is
+// what stopped working the moment promotable became a second type.
+func (n *nested) pinOnlyLayers() bool { return n.promotable }
 
 // Capabilities are the inner store's, reduced to what composition can promise.
 //
@@ -271,4 +287,189 @@ func ensureDistinctLayers(loaded []backendLayers) error {
 	}
 
 	return nil
+}
+
+// nestedWritable is a promotable aggregate: its inner layers can receive a
+// write that names them, and never one that merely routes.
+type nestedWritable struct{ *nested }
+
+// Prepare routes each edit to the inner backend that owns the layer it names,
+// and composes their staged writes into one.
+//
+// It delegates rather than reimplementing: the inner store already knows which
+// backend produced which layer, and a second routing pass here could disagree
+// with the first.
+func (n *nestedWritable) Prepare(ctx context.Context, edits []Edit) (Pending, error) {
+	n.inner.mu.Lock()
+	owners := n.inner.backendBySource()
+	n.inner.mu.Unlock()
+
+	grouped := map[string][]Edit{}
+	backends := map[string]WritableBackend{}
+	order := []string{}
+
+	for _, edit := range edits {
+		// The layer as the inner store knows it. The aggregate hands its own
+		// copy upward unchanged when promotable, so the two agree.
+		owner, ok := owners[edit.Target]
+		if !ok {
+			return nil, fmt.Errorf("%w: %s → %q is not a layer of the nested store",
+				ErrInvalidTarget, n.id, edit.Target)
+		}
+
+		writable, ok := owner.(WritableBackend)
+		if !ok {
+			return nil, fmt.Errorf("%w: %s → %s", ErrNotWritable, n.id, owner.ID())
+		}
+
+		id := owner.ID()
+		if _, seen := grouped[id]; !seen {
+			order = append(order, id)
+
+			backends[id] = writable
+		}
+
+		grouped[id] = append(grouped[id], edit)
+	}
+
+	staged := make([]Pending, 0, len(order))
+
+	for _, id := range order {
+		p, err := backends[id].Prepare(ctx, grouped[id])
+		if err != nil {
+			discardEach(ctx, staged)
+
+			return nil, fmt.Errorf("%s → %s: %w", n.id, id, err)
+		}
+
+		staged = append(staged, p)
+	}
+
+	return &nestedPending{aggregate: n, staged: staged, ids: order}, nil
+}
+
+// nestedPending is the staged writes of one or more inner backends, presented
+// as a single Pending.
+//
+// The two-phase protocol composes without modification, which is the payoff for
+// Pending being an interface: each inner backend keeps its own conflict check
+// and its own rollback, and this fans out to them in a fixed order so a failure
+// names a stable set.
+type nestedPending struct {
+	aggregate *nestedWritable
+	staged    []Pending
+	ids       []string
+	committed []Pending
+}
+
+// Layers is what the aggregate will contribute once committed: the inner
+// store's layers, with the ones this write touched replaced by their staged
+// versions.
+func (p *nestedPending) Layers() []Layer {
+	replaced := map[Source]Layer{}
+
+	for _, staged := range p.staged {
+		for _, l := range staged.Layers() {
+			replaced[l.Source] = l
+		}
+	}
+
+	snap := p.aggregate.inner.Snapshot()
+	if snap == nil {
+		return nil
+	}
+
+	out := make([]Layer, 0, len(snap.layers))
+
+	for _, l := range snap.layers {
+		if staged, ok := replaced[l.Source]; ok {
+			out = append(out, Layer{Source: l.Source, Values: cloneMap(staged.Values)})
+
+			continue
+		}
+
+		out = append(out, Layer{Source: l.Source, Values: cloneMap(l.Values)})
+	}
+
+	return out
+}
+
+func (p *nestedPending) Verify(ctx context.Context) error {
+	// The aggregate's own conflict trap, and it is not redundant with the inner
+	// backends' checks.
+	//
+	// Each inner backend compares against the version IT captured, at the INNER
+	// store's load. If the inner store reloaded after the outer store did — the
+	// ordinary way it notices a foreign change — those versions are fresh, every
+	// inner check passes, and the outer store's write lands on top of a change
+	// it never saw. That is the lost update ErrConflict exists to prevent, and
+	// it is invisible from inside the inner backends.
+	//
+	// So the aggregate compares the inner store's snapshot version against the
+	// one recorded when this Store loaded it: the same version-at-Load rule the
+	// whole family turns on, applied one level up.
+	if snap := p.aggregate.inner.Snapshot(); snap != nil {
+		if got := snap.Version(); got != p.aggregate.innerVersion() {
+			return fmt.Errorf("%w: %s moved from version %d to %d since it was read",
+				ErrConflict, p.aggregate.id, p.aggregate.innerVersion(), got)
+		}
+	}
+
+	for i, staged := range p.staged {
+		if err := staged.Verify(ctx); err != nil {
+			return p.wrap(i, err)
+		}
+	}
+
+	return nil
+}
+
+func (p *nestedPending) Commit(ctx context.Context) error {
+	for i, staged := range p.staged {
+		if err := staged.Commit(ctx); err != nil {
+			return p.wrap(i, err)
+		}
+
+		p.committed = append(p.committed, staged)
+	}
+
+	return nil
+}
+
+func (p *nestedPending) Rollback(ctx context.Context) error {
+	var failed error
+
+	for i := len(p.committed) - 1; i >= 0; i-- {
+		if err := p.committed[i].Rollback(ctx); err != nil && failed == nil {
+			failed = err
+		}
+	}
+
+	p.committed = nil
+
+	return failed
+}
+
+func (p *nestedPending) Discard(ctx context.Context) error {
+	discardEach(ctx, p.staged)
+	p.committed = nil
+
+	return nil
+}
+
+// wrap names the path to the failure rather than only its leaf.
+//
+// A conflict two levels down is reported against a source the caller may never
+// have heard of, and "config.yaml changed since it was read" is not actionable
+// when the caller pinned a write at "global". The chain is the cost of
+// unbounded depth, and stating it is what keeps that cost payable.
+func (p *nestedPending) wrap(i int, err error) error {
+	return fmt.Errorf("%s → %s: %w", p.aggregate.id, p.ids[i], err)
+}
+
+// discardEach abandons staged writes that will not be committed.
+func discardEach(ctx context.Context, staged []Pending) {
+	for _, p := range staged {
+		_ = p.Discard(ctx)
+	}
 }

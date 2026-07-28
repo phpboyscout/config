@@ -211,7 +211,7 @@ func (p *Plan) String() string {
 // value set is the value read back. Writing to the base instead would leave
 // the edit immediately shadowed by an overlay, which looks to the user like
 // the write silently failed.
-func route(snap *Snapshot, targets, order []Source, sensitive map[Source]bool, withheld map[string]Source, changes []Change) (*Plan, error) {
+func route(snap *Snapshot, targets, routable, order []Source, sensitive map[Source]bool, withheld map[string]Source, changes []Change) (*Plan, error) {
 	if len(changes) == 0 {
 		return nil, ErrNoChanges
 	}
@@ -228,7 +228,7 @@ func route(snap *Snapshot, targets, order []Source, sensitive map[Source]bool, w
 	values := indexLayers(snap)
 
 	for _, change := range changes {
-		op, err := routeOne(snap, targets, order, values, sensitive, withheld, change)
+		op, err := routeOne(snap, targets, routable, order, values, sensitive, withheld, change)
 		if err != nil {
 			return nil, err
 		}
@@ -239,7 +239,7 @@ func route(snap *Snapshot, targets, order []Source, sensitive map[Source]bool, w
 	return plan, nil
 }
 
-func routeOne(snap *Snapshot, targets, order []Source, values map[Source]map[string]any, sensitive map[Source]bool, withheld map[string]Source, change Change) (Operation, error) {
+func routeOne(snap *Snapshot, targets, routable, order []Source, values map[Source]map[string]any, sensitive map[Source]bool, withheld map[string]Source, change Change) (Operation, error) {
 	segs := splitPath(change.Path)
 	if segs == nil {
 		return Operation{}, fmt.Errorf("%w: %q", ErrInvalidPath, change.Path)
@@ -258,7 +258,7 @@ func routeOne(snap *Snapshot, targets, order []Source, values map[Source]map[str
 
 		target, defines = pinned, layerDefines(snap, pinned, segs)
 	} else {
-		found, alreadyThere, ok := findTarget(snap, targets, segs)
+		found, alreadyThere, ok := findTarget(snap, routable, segs)
 		if !ok {
 			return Operation{}, fmt.Errorf("%w: %s", ErrNoWritableLayer, change.Path)
 		}

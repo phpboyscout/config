@@ -601,6 +601,58 @@ func (s *Store) publish(loaded []backendLayers) *Snapshot {
 	return next
 }
 
+// routableOnly narrows the writable targets to those routing may CHOOSE.
+//
+// Every routable source is writable, but not every writable one is routable: a
+// promotable nested store's layers can be written to when named and must never
+// be selected on their own, or an ordinary edit of an inherited key would walk
+// past the outer store's own layers and rewrite the shared configuration
+// beneath it.
+//
+// Kept as a separate slice rather than a flag on Source, because a layer inside
+// a nested store genuinely IS routable — within its own store. It is only
+// unroutable as seen from here, which makes it a property of the composition
+// rather than of the source.
+func routableOnly(order []Source, pinOnly map[Source]bool) []Source {
+	var out []Source
+
+	for _, src := range order {
+		if src.Writable && !pinOnly[src] {
+			out = append(out, src)
+		}
+	}
+
+	return out
+}
+
+// pinOnlyBackend is a backend whose layers may be named as a write target but
+// must never be selected by routing.
+type pinOnlyBackend interface {
+	pinOnlyLayers() bool
+}
+
+// pinOnlySources reports the layers that may be named but never routed at.
+func (s *Store) pinOnlySources() map[Source]bool {
+	var out map[Source]bool
+
+	for _, bl := range s.loaded {
+		pinOnly, ok := bl.backend.(pinOnlyBackend)
+		if !ok || !pinOnly.pinOnlyLayers() {
+			continue
+		}
+
+		for _, l := range bl.layers {
+			if out == nil {
+				out = map[Source]bool{}
+			}
+
+			out[l.Source] = true
+		}
+	}
+
+	return out
+}
+
 // loadedBackends returns the backends this store was built from, for a nested
 // aggregate to reduce their capabilities into its own.
 func (s *Store) loadedBackends() []Backend {
@@ -661,12 +713,13 @@ func (s *Store) Plan(changes ...Change) (*Plan, error) {
 	s.mu.Lock()
 	order := s.sourceOrder()
 	targets := writableOnly(order)
+	routable := routableOnly(order, s.pinOnlySources())
 	sensitive := s.sensitiveSources()
 	withheld := s.sensitiveWithheld()
 	snap := s.current.Load()
 	s.mu.Unlock()
 
-	return route(snap, targets, order, sensitive, withheld, changes)
+	return route(snap, targets, routable, order, sensitive, withheld, changes)
 }
 
 // Apply routes changes, writes them, and publishes the resulting snapshot.
@@ -718,7 +771,8 @@ func (s *Store) apply(ctx context.Context, changes []Change) (*Snapshot, bool, e
 
 	sources := s.sourceOrder()
 
-	plan, err := route(current, writableOnly(sources), sources, s.sensitiveSources(), s.sensitiveWithheld(), changes)
+	plan, err := route(current, writableOnly(sources), routableOnly(sources, s.pinOnlySources()),
+		sources, s.sensitiveSources(), s.sensitiveWithheld(), changes)
 	if err != nil {
 		return nil, false, err
 	}
@@ -801,6 +855,7 @@ func (s *Store) prepare(ctx context.Context, plan *Plan) (map[string]Pending, []
 
 		grouped[id] = append(grouped[id], Edit{
 			Document: op.Target.Document,
+			Target:   op.Target,
 			Path:     op.Change.Path,
 			Value:    op.Change.Value,
 			Remove:   op.Change.Remove,

@@ -75,6 +75,20 @@ type Suite struct {
 	WriteKey   string
 	WriteValue string
 
+	// PinOnlyTargets declares that the backend's layers can receive a write only
+	// when a change NAMES them, and are never chosen by routing on their own.
+	//
+	// Writable normally implies routable, and for every backend that owns its
+	// own storage it does. A composed store is the exception: its layers belong
+	// to the store it wraps, and letting routing choose one would mean an
+	// ordinary edit of an inherited key rewriting the shared configuration it
+	// was inherited from. Promotion has to be named to happen.
+	//
+	// With this set, the write cases pin their target rather than relying on
+	// routing to find it, which is the only way such a backend can be written to
+	// at all.
+	PinOnlyTargets bool
+
 	// BoundedKeySpace declares that the backend accepts writes only to keys it
 	// was configured with, rather than to any key routed at it.
 	//
@@ -255,9 +269,18 @@ func (s Suite) applyToleratedBesideAbsentSource(t *testing.T) {
 	}
 }
 
-// provenanceNamesBackend confirms the backend's layers carry its identity, so
-// Origin can answer "which source supplied this" — and that the name matches the
-// backend's ID, the equality write routing depends on.
+// provenanceNamesBackend confirms the backend's layers carry an identity, so
+// Origin can answer "which source supplied this".
+//
+// It used to require the name to EQUAL the backend's ID, because write routing
+// found a backend by scanning IDs for the target's name. Routing now records
+// which backend produced which layer at load, so a backend may name its layers
+// anything — and one whose layers are themselves resolved elsewhere, a composed
+// store carrying the layers of the store it wraps, necessarily does.
+//
+// What still has to hold is that the name is one the backend actually
+// contributed. A layer named after nothing the backend returned is a source no
+// caller can act on and no write can be aimed at.
 func (s Suite) provenanceNamesBackend(t *testing.T) {
 	key := s.sortedKeys()[0]
 	backend, _ := s.newBackend(t, s.Seed)
@@ -269,10 +292,48 @@ func (s Suite) provenanceNamesBackend(t *testing.T) {
 		t.Fatalf("Origin(%q) reported no source", key)
 	}
 
-	if src.Name != backend.ID() {
-		t.Errorf("Origin(%q).Name = %q, want the backend's ID %q — routing finds the backend by this equality",
-			key, src.Name, backend.ID())
+	layers, err := backend.Load(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
 	}
+
+	for _, l := range layers {
+		if l.Source.Name == src.Name {
+			return
+		}
+	}
+
+	t.Errorf("Origin(%q).Name = %q, which is not the name of any layer %q returned — "+
+		"provenance must point at a source the backend actually contributed",
+		key, src.Name, backend.ID())
+}
+
+// writeChange builds the change a write case applies, naming the target when
+// the backend declares [Suite.PinOnlyTargets].
+//
+// The name comes from the Store's own [config.Store.WritableTargets], which
+// reports exactly what a pinned change is allowed to name — including targets
+// routing will never choose, which is the whole reason a pin-only backend needs
+// it. Asking the BACKEND instead would mean calling Load, and a backend that
+// captures its conflict version at Load would have that version refreshed by the
+// question, quietly erasing the very conflict a case is trying to provoke.
+func (s Suite) writeChange(t *testing.T, store *config.Store, key string, value any) config.Change {
+	t.Helper()
+
+	if !s.PinOnlyTargets {
+		return config.Set(key, value)
+	}
+
+	targets := store.WritableTargets()
+	if len(targets) == 0 {
+		t.Fatal("PinOnlyTargets is set but the store offers no writable target to name")
+	}
+
+	// The highest-precedence one, matching where routing would have put a new
+	// key if it were allowed to choose.
+	target := targets[len(targets)-1]
+
+	return config.Set(key, value, config.ToDocument(target.Name, target.Document))
 }
 
 // readOnlySkippedByRouting confirms a write to a key a read-only backend defines
@@ -328,7 +389,7 @@ func (s Suite) writeRoundTrips(t *testing.T) {
 	backend, ctrl := s.newBackend(t, s.Seed)
 	store := newStore(t, config.WithBackend(backend))
 
-	if _, err := store.Apply(context.Background(), config.Set(s.WriteKey, s.WriteValue)); err != nil {
+	if _, err := store.Apply(context.Background(), s.writeChange(t, store, s.WriteKey, s.WriteValue)); err != nil {
 		t.Fatalf("Apply(Set(%q, %q)): %v", s.WriteKey, s.WriteValue, err)
 	}
 
@@ -355,7 +416,7 @@ func (s Suite) conflictDetected(t *testing.T) {
 	// Something else changes the backing store after the Store loaded it.
 	ctrl.Mutate(t)
 
-	_, err := store.Apply(context.Background(), config.Set(s.WriteKey, s.WriteValue))
+	_, err := store.Apply(context.Background(), s.writeChange(t, store, s.WriteKey, s.WriteValue))
 	if !errors.Is(err, config.ErrConflict) {
 		t.Errorf("Apply after a foreign change = %v, want ErrConflict — the version must be "+
 			"captured at Load, not at Prepare", err)
@@ -402,7 +463,7 @@ func (s Suite) renderableScalarsAndHostileKeys(t *testing.T) {
 			backend, _ := s.newBackend(t, s.Seed)
 			store := newStore(t, config.WithBackend(backend))
 
-			_, err := store.Apply(context.Background(), config.Set(tc.key, tc.value))
+			_, err := store.Apply(context.Background(), s.writeChange(t, store, tc.key, tc.value))
 			if err != nil {
 				// Fail-closed is an acceptable outcome: refusing a construct it
 				// cannot represent is exactly the guarantee. A codec may refuse it
