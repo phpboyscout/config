@@ -209,9 +209,9 @@ not need; it cannot infer one it was never given.
 
 | Spec | Status |
 |---|---|
-| [Store aggregation](2026-07-28-store-aggregation.md) | draft |
-| [Backend key filtering](2026-07-28-backend-key-filtering.md) | draft |
-| [Write-target options](2026-07-28-write-target-options.md) | draft |
+| [Store aggregation](2026-07-28-store-aggregation.md) | approved |
+| [Backend key filtering](2026-07-28-backend-key-filtering.md) | approved |
+| [Write-target options](2026-07-28-write-target-options.md) | approved |
 | [config-keychain adapter](2026-07-27-config-keychain.md) | approved |
 | [config-gcp-secret adapter](2026-07-27-config-gcp-secret.md) | approved |
 | [config-azure-keyvault adapter](2026-07-25-config-azure-keyvault.md) | approved |

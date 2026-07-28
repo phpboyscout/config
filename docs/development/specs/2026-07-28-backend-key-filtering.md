@@ -2,7 +2,8 @@
 title: Backend key filtering — allow and deny lists over any backend
 date: 2026-07-28
 author: matt.cockayne
-status: draft
+status: approved
+approved: 2026-07-28
 ---
 
 # Backend key filtering

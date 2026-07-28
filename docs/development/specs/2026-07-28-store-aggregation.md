@@ -2,7 +2,8 @@
 title: Store aggregation — a Store as a backend of another Store
 date: 2026-07-28
 author: matt.cockayne
-status: draft
+status: approved
+approved: 2026-07-28
 ---
 
 # Store aggregation
@@ -403,6 +404,62 @@ a studio server where a global-scope write travels a different code path. Even
 then the first answer is to route that write through the composed store with
 `To()`, which is what D3a exists for.
 
+### D11a — When the outer store *is* watching, an inner write is picked up on the next tick
+
+The partial answer that makes D11's limit survivable, and it needs no new API.
+
+`publish` stamps every snapshot with a monotonic counter (`s.version.Add(1)`,
+`store.go:583`), and `Snapshot.Version() uint64` is already public. So the
+aggregate records the inner store's version at `Load` and compares it on each
+watch tick, alongside the delegated inner `Watch` that D8 already runs:
+
+```
+on each tick:
+    if inner.Snapshot().Version() != versionAtLoad {
+        onChange()
+    }
+```
+
+The outer store then reloads through its **ordinary** path: the aggregate
+re-`Load`s, `sameConfiguration` decides whether anything moved, observers fire
+only if it did.
+
+**Why this is not a smaller cascading observer.** Nothing registers a callback
+across the store boundary. The notification travels the outer store's *own*
+watch path, on its own goroutine, exactly as a file change would — so the
+per-store, goroutine-keyed `insideObserver` guard is never asked to reason about
+a chain that crosses stores. That was the strongest argument against the
+observer in D11, and this approach does not attract it.
+
+Cost is an atomic load and a `uint64` comparison per tick per nested store.
+
+**This is a partial answer and the documentation must say so.** Three limits,
+none of which should be discovered rather than read:
+
+- **It only works while the outer store is watching.** A store that is not
+  watching stays exactly as D11 describes. That is proportionate — a store that
+  is not watching has already accepted that it does not track change — but it is
+  not "solved".
+- **Latency is the poll interval.** Same as any watch, and worth saying because
+  "picked up automatically" reads as "immediately".
+- **The version bumps on every reload, changed or not**, because `publish` runs
+  on both paths. So a bump does not imply a configuration change, and a tick can
+  cost a wasted outer reload that resolves to "nothing moved" and notifies
+  nobody. Wasteful, never wrong.
+
+**No solution here is complete**, and the honest framing — which the how-to and
+the explanation page must both carry — is that a store composed over another
+sees an inner write *soon* when watching and *on next reload* when not, rather
+than that the problem has been made to go away. An edge case with a narrow,
+documented window is a different thing from a solved one, and writing it up as
+the latter is how someone ends up depending on it.
+
+`Plan`-side detection — surfacing the same version comparison where staleness is
+observable as *wrongness*, in `ShadowedBy` and `Creates` — is deliberately left
+out. It would mean deciding whether a dry run against a moved inner store is an
+error or a warning, which is a real API question for a case nobody has hit.
+Recorded as a follow-on, not an omission.
+
 ## Public API
 
 ```go
@@ -463,6 +520,11 @@ for error messages and for the D6 chain, not for a layer.
   containing *both* writes. The second half is what proves `rebuild`'s re-read
   is doing the work the decision rests on, so it is watched to fail by carrying
   the aggregate's layers over instead of re-reading them.
+- **The version tick fires** (D11a): a watching outer store observes a change
+  after a direct inner `Apply`, and does **not** fire when the inner store
+  reloads without changing anything — the second half proving
+  `sameConfiguration` still filters, so the tick costs a reload rather than a
+  spurious notification.
 
 ## Migration & compatibility
 
@@ -475,11 +537,13 @@ A minor version.
 
 ## Resolved
 
-**2026-07-28 — O3, observing the inner store's `Apply`.** No (D11). Investigated
-rather than assumed: `rebuild` re-reads untouched backends on every `Apply`,
-before validate and verify, so the cost is stale *reporting* in a window any
-outer write closes — not stale writes. Documented as a limit with `Reload` as
-the escape hatch.
+**2026-07-28 — O3, observing the inner store's `Apply`.** No cascading observer
+(D11), but the watch bridge compares the inner store's snapshot version on each
+tick (D11a), so a watching store picks the write up without any cross-store
+callback. Investigated rather than assumed: `rebuild` re-reads untouched
+backends on every `Apply`, before validate and verify, so the residual cost is
+stale *reporting* in a window any outer write closes — not stale writes.
+Accepted as **partial**, with the limits documented rather than smoothed over.
 
 **2026-07-28 — O1 (second round), tree or DAG.** A tree: a store may appear at
 most once (D4). Refusing the diamond is deliberate — it resolves fine for reads,
