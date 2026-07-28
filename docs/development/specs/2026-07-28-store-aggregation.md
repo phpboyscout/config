@@ -244,27 +244,51 @@ Refused at construction rather than at load because this is always a programming
 error, never a runtime condition, and the construction site is where the mistake
 was made. `ErrCyclicStore` names both stores and the path between them.
 
-### D4a — Two layers may share a name; precedence resolves it
+### D4a — A shared *name* is fine; an identical `Source` is refused
 
-Legal, and not an error. Two stores in the graph loading the same path produce
-two layers with the same `Source.Name`, and that is fine: layering already
-resolves it per key, the higher-precedence one winning exactly as it would for
-any other pair of layers.
+Two cases that look alike and are not. The distinction is whether the layers are
+distinguishable at all.
 
-For `To(name)` addressing the rule is **first match in precedence order wins** —
-if a name does not match the first candidate it will not match the second, so
-there is nothing to disambiguate between. `Plan` names the resolved target
-before anything is written, so a caller who has surprised themselves can see it
-rather than discover it afterwards.
+**A shared name is legal.** Two layers may carry the same `Source.Name` while
+differing in `Kind` — a remote backend and a file that happen to agree on a
+name. Layering resolves them per key exactly as it would any other pair, and for
+`To(name)` the rule is **the highest-precedence layer of that name wins**: the
+one whose value the caller can actually read. `Plan` names the resolved target
+before anything is written, so a caller who has surprised themselves sees it
+rather than discovering it later.
 
-The tree rule (D4) already removes the systematic source of duplicates, so what
-remains is two stores genuinely pointed at the same file — which is either
-deliberate or a bug in the caller's own composition, and in both cases
-precedence is the honest answer rather than a refusal.
+That rule is [write-target options](2026-07-28-write-target-options.md) D8, and
+it was a **fix**: `matchTarget` walked the writable targets forward while
+`findTarget` walked them backward, so a pinned name used to resolve to the
+lowest-precedence copy — the one the others hide.
 
-**Which end "first" means is settled in [write-target
-options](2026-07-28-write-target-options.md) D8**, and it is not currently what
-the code does.
+**An identical `Source` is refused, at composition, with `ErrDuplicateLayer`.**
+Two stores in the graph loading the same path produce two layers whose `Source`
+structs are equal in every field. Those are not ambiguous, they are
+*indistinguishable*, and the routing index cannot hold both:
+
+- `indexLayers` builds `map[Source]map[string]any` (`plan.go:359`), so the
+  second layer's values **silently overwrite** the first's.
+- `shadowedAbove` compares `src == target`, so it cannot tell them apart.
+- `sensitiveSources` has the same `map[Source]bool` shape.
+
+The observable consequence is a **wrong plan**: if the lower copy defines a key
+the upper does not, shadow detection never sees it, and `Plan` reports a write as
+effective when it is not. That is the failure class this module exists to
+prevent, so it is refused rather than tolerated.
+
+Refusing at composition rather than fixing the index is deliberate. Keying the
+index by layer position would repair the collapse internally, but
+`Operation.Target` is a `Source` in the public API — so a caller would still have
+no way to name one of two identical layers, and the ambiguity would simply move
+somewhere less visible. And a user who has composed two stores over the same file
+has almost certainly not meant to: the same file resolved twice at two
+precedences is a configuration mistake, and saying so loudly at construction is
+kinder than resolving it silently and correctly.
+
+The tree rule (D4) already removes the systematic source of duplicates — a store
+appearing twice — so what this catches is two *different* stores pointed at one
+file. Narrow, and always worth hearing about.
 
 ### D5 — Depth is unbounded, for reads and for writes
 
@@ -472,6 +496,7 @@ func Nested(s *Store, id string, opts ...NestedOption) Backend
 func NestedPromotable(*nestedConfig)
 
 var ErrCyclicStore = errors.New("config: store is already present in this graph")
+var ErrDuplicateLayer = errors.New("config: two layers in the composed store are indistinguishable")
 ```
 
 No `SourceKind` for the aggregate: it contributes no layer of its own, only the
@@ -505,10 +530,16 @@ for error messages and for the D6 chain, not for a layer.
 - **Tree enforcement** (D4): direct (`a` in `a`), indirect (`a → b → a`), and
   the diamond (`a` nested into both `b` and `c`, both composed into `d`) — all
   three refused with `ErrCyclicStore`.
-- **Duplicate names** (D4a): two stores over the same path compose, resolve by
-  precedence, and `To(name)` selects the end D8 specifies — asserted through
-  `Plan` rather than by writing, so the test names the target rather than
-  inferring it from a file.
+- **Shared names versus identical sources** (D4a), which must be asserted as two
+  separate cases or the distinction rots:
+  1. Two layers sharing a `Name` but differing in `Kind` compose, and
+     `To(name)` selects the highest-precedence one — asserted through `Plan`, so
+     the test names the target rather than inferring it from a written file.
+  2. Two layers with an **equal** `Source` are refused at composition with
+     `ErrDuplicateLayer`. Watched to fail by allowing them and asserting the
+     wrong-plan symptom directly: a key defined only in the lower copy is missed
+     by `shadowedAbove`, and the plan claims a write is effective when it is
+     not.
 - **`Sensitive` precision**: a nested store containing Vault refuses a write of a
   Vault-defined key into a plain outer layer, and *permits* a write of an
   unrelated key to the same outer layer. The second half is what proves D7 kept
@@ -550,8 +581,12 @@ most once (D4). Refusing the diamond is deliberate — it resolves fine for read
 but a store appearing twice contributes its layers twice at two precedences,
 shadowing itself.
 
-**2026-07-28 — O2 (second round), duplicate layer names.** Legal; precedence
-resolves them and first match wins (D4a). No `ErrDuplicateLayer`.
+**2026-07-28 — O2 (second round), duplicate layer names.** Split in two once
+implementation showed the cases differ (D4a). A shared *name* is legal and
+resolved by precedence, highest wins. An **identical `Source`** is refused at
+composition with `ErrDuplicateLayer`, because such layers are indistinguishable
+to `indexLayers` and `shadowedAbove` and silently produce a wrong plan — the
+first recorded resolution assumed precedence could separate them, and it cannot.
 
 **2026-07-28 — O1, flatten or pass through.** Pass through, as a contiguous
 block (D2). The original framing was a false dichotomy: interleaved precedence
