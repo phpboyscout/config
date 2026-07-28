@@ -371,3 +371,60 @@ func TestFileBackend_Capabilities(t *testing.T) {
 		t.Error("an in-memory source must not be watchable")
 	}
 }
+
+// Pinning by name requires knowing the names, and the only route to one used to
+// be planning a write and inspecting it — backwards, and it allocates a plan the
+// caller throws away.
+//
+// The contract is "everything To accepts", which is why this feeds every
+// returned name back through To rather than comparing against a literal list. A
+// literal list drifts; this cannot, because the matcher itself decides whether
+// the test passes.
+func TestWritableTargets_EveryEntryIsAcceptedByTo(t *testing.T) {
+	t.Parallel()
+
+	store, err := NewStore(context.Background(),
+		WithFiles(memFS(t, map[string]string{
+			"/base.yaml": "server:\n  port: 8080\n",
+			"/over.yaml": "server:\n  port: 9090\n",
+		}), "/base.yaml", "/over.yaml"),
+		WithEnv("APP"))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	targets := store.WritableTargets()
+	if len(targets) == 0 {
+		t.Fatal("WritableTargets returned nothing, so nothing can be pinned")
+	}
+
+	for _, target := range targets {
+		if !target.Writable {
+			t.Errorf("%s is offered as a target but reports Writable false", target)
+		}
+
+		if _, err := store.Plan(Set("server.port", 1, ToDocument(target.Name, target.Document))); err != nil {
+			t.Errorf("To(%q) rejected a target WritableTargets offered: %v", target.Name, err)
+		}
+	}
+}
+
+// The environment is readable and never a write target, so offering it would
+// invite a pin that can only fail.
+func TestWritableTargets_ExcludesReadOnlyLayers(t *testing.T) {
+	// Not parallel: t.Setenv and t.Parallel cannot be combined.
+	t.Setenv("APP_SERVER_PORT", "7070")
+
+	store, err := NewStore(context.Background(),
+		WithFiles(memFS(t, map[string]string{"/base.yaml": "server:\n  port: 8080\n"}), "/base.yaml"),
+		WithEnv("APP"))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	for _, target := range store.WritableTargets() {
+		if target.Kind == SourceEnv {
+			t.Errorf("WritableTargets offered the environment layer %s", target)
+		}
+	}
+}

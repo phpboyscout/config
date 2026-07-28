@@ -589,6 +589,30 @@ func (s *Store) publish(loaded []backendLayers) *Snapshot {
 	return next
 }
 
+// WritableTargets returns the layers a change may be pinned to with [To], in
+// precedence order.
+//
+// The contract is "everything To accepts", not "everywhere a write might land".
+// Those are the same set today, and they stop being so as soon as a layer can
+// be nameable without being routed to — so the list is built from the same
+// sources [matchTarget] is given, rather than from anything that reasons about
+// where routing would choose to go.
+//
+// It includes the synthesised entry for a writable backend that has not
+// contributed a layer yet, because a write may be aimed at a file that does not
+// exist and omitting it would make the list lie about what To accepts.
+//
+// [Sources] is a different question — what is in this store, readable or not —
+// and stays as it is.
+func (s *Store) WritableTargets() []Source {
+	// Locked for the same reason Sources is: the backend list is replaced
+	// wholesale by AddLayer, so an unsynchronised read races the slice header.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return writableOnly(s.sourceOrder())
+}
+
 // Sources returns the identity of every backend, in precedence order.
 func (s *Store) Sources() []string {
 	// Locked because AddLayer replaces the backend list wholesale, so reading
