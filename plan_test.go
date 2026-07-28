@@ -304,3 +304,36 @@ func TestRoute_ReportsShadowingForAFileThatDoesNotExistYet(t *testing.T) {
 		t.Errorf("shadowed by %q, want env:APP_DB_HOST", got)
 	}
 }
+
+// Two layers can share a Source.Name — two backends configured over the same
+// path, and, once stores compose, an inner and an outer layer that happen to
+// agree. Pinning by name then has to pick one, and the two halves of the router
+// disagreed about which: matchTarget walked the writable targets forward, which
+// is lowest precedence first, while findTarget five lines below walked the same
+// slice backward because "the highest-precedence writable target is where it
+// will be visible".
+//
+// So a pinned name resolved to the copy whose value nobody reads. They now
+// agree, because two matching rules in one router is exactly the drift the
+// equivalence assertions elsewhere in this file exist to prevent.
+func TestMatchTarget_PrefersTheHighestPrecedenceLayerWithThatName(t *testing.T) {
+	t.Parallel()
+
+	// Same Name, different Kind — which is what makes them two distinguishable
+	// layers rather than one. matchTarget compares Name and Document only, so
+	// both are candidates and it has to choose.
+	lower := Source{Kind: SourceKind("remote"), Name: "shared", Writable: true}
+	upper := Source{Kind: SourceFile, Name: "shared", Writable: true}
+
+	snap := newSnapshot(1, []Layer{
+		{Source: lower, Values: map[string]any{"which": "lower"}},
+		{Source: upper, Values: map[string]any{"which": "upper"}},
+	})
+
+	p := planFor(t, snap, Change{Path: "which", Value: "x", Target: &Source{Name: "shared"}})
+
+	if got := p.Operations[0].Target; got != upper {
+		t.Errorf("pinned target = %+v, want the highest-precedence layer of that "+
+			"name (%+v) — the lower copy is the one nobody reads", got, upper)
+	}
+}

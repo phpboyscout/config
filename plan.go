@@ -258,10 +258,17 @@ func creates(change Change, defines bool) bool {
 // Document in particular — and an unmatched target used to route silently, plan
 // a plausible dry run, and then fail at apply with an internal-invariant error
 // blaming the module for the caller's typo.
+//
+// Walked in reverse precedence, like [findTarget] and for the same reason: more
+// than one layer can carry a name — two backends configured over the same path,
+// or a nested store agreeing with the store that composes it — and the caller
+// naming one means the one whose value they can read. Walking forward returned
+// the lowest-precedence copy, which is the one hidden by the others, so a pinned
+// write landed where nothing would ever read it back.
 func matchTarget(targets []Source, want Source) (Source, error) {
-	for _, t := range targets {
-		if t.Name == want.Name && t.Document == want.Document {
-			return t, nil
+	for i := len(targets) - 1; i >= 0; i-- {
+		if targets[i].Name == want.Name && targets[i].Document == want.Document {
+			return targets[i], nil
 		}
 	}
 
