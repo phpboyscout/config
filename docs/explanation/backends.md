@@ -118,7 +118,10 @@ than to discover later:
   The write path enforces it: because secrets backends are read-only, a write to
   a key one owns routes down to the next writable layer — a plain file — so the
   core refuses that write with `ErrSensitiveLeak` rather than let the secret land
-  there.
+  there. A key hidden by [a filter](../how-to/filter-a-backend.md) keeps its
+  sensitive marking for exactly this reason — a denied key defines nothing, so
+  without it the guard would stop firing and the filter would quietly re-open
+  the hole it exists to close.
 - **The comment guarantee is document-backend-only.** Everything this module
   says about preserving comments applies to YAML files. A key-value backend
   cannot honour it, so the promise has to be scoped rather than implied.

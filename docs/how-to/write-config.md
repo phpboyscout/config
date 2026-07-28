@@ -193,6 +193,9 @@ for _, target := range store.WritableTargets() {
   routing. A typo is a typo, not a request to guess.
 - **Where more than one layer carries a name**, the highest-precedence one wins — the
   one whose value you can read back.
+- **A key a backend does not contribute is not a target.** That includes keys hidden by
+  [a filter](filter-a-backend.md), which is how a filtered backend stops being written
+  to without being made read-only.
 
 Pinning does **not** opt you out of the sensitive-key guard. A write of a key a
 sensitive source defines is still refused if the target is not itself sensitive, pinned
