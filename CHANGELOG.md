@@ -1,5 +1,23 @@
 # Changelog
 
+## [v0.11.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.11.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.10.0...v0.11.0)
+
+### Features
+
+- promote through a composed store, and pass the conformance gate ([23fc5ba](https://gitlab.com/phpboyscout/go/config/-/commit/23fc5ba61dd8d14ec7138a0a2c66ed591d119f12))
+- compose stores, with the inner layers passing through as a block ([dabe80e](https://gitlab.com/phpboyscout/go/config/-/commit/dabe80e72191618359fa332bce1d87421081f295))
+- bound a backend's key space with Allow and Deny ([7a32c13](https://gitlab.com/phpboyscout/go/config/-/commit/7a32c136b6c175e609041427b4391859434c475f))
+- expose the layers a change can be pinned to ([aacd43e](https://gitlab.com/phpboyscout/go/config/-/commit/aacd43ec8e6bf26fafe8f63e2137d6597f0c1220))
+- pin a write target with Set/Remove options ([1f29d8c](https://gitlab.com/phpboyscout/go/config/-/commit/1f29d8cdbe1624ffc810f515b69ace8842ac81ab))
+
+### Bug Fixes
+
+- undo a composed store's partial commit, and name the chain on failure ([134922c](https://gitlab.com/phpboyscout/go/config/-/commit/134922cef807be72b0f4309cb60652f1cdcd4c7f))
+- find a write's backend by the layer it targets, not by scanning IDs ([a4907f2](https://gitlab.com/phpboyscout/go/config/-/commit/a4907f25308c70074f7c88f6068fa2c68be0b48a))
+- resolve a pinned write target to the highest-precedence layer of that name ([0bee588](https://gitlab.com/phpboyscout/go/config/-/commit/0bee588c1309f44aa13fde8e6f8ff4c5c87e8cec))
+
 ## [v0.10.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.10.0)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.9.3...v0.10.0)
