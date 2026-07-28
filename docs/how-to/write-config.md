@@ -140,25 +140,64 @@ any other, but they have nowhere to persist to, so routing skips them. The same 
 a layer added at runtime with `AddLayer`. If everything that could hold a change is
 read-only, `Apply` returns `ErrNoWritableLayer` rather than picking something arbitrary.
 
-You can override routing when you genuinely know better, by pinning a change to a layer:
+## Naming the layer yourself
+
+You can override routing by pinning a change to a layer:
 
 ```go
-// Only Name and Document are matched, and only against layers that are already
-// writable — the other fields are ignored, so setting them proves nothing.
-target := config.Source{Name: "/etc/app/base.yaml"}
-
-change := config.Set("server.port", 9090)
-change.Target = &target
-
-plan, err := store.Plan(change)
+plan, err := store.Plan(
+    config.Set("server.port", 9090, config.To("/etc/app/base.yaml")))
 ```
 
-The target must name a real, writable layer — and for a multi-document file, its
-`Document` index too, which is how you address the second document of one file. A name
-that matches nothing returns `ErrInvalidTarget` rather than falling back to routing.
+!!! warning "Reach for this sparingly"
 
-Reach for this sparingly: routing's default is right far more often than a hand-picked
-target, and pinning is how an edit ends up written somewhere nobody reads.
+    Routing's default is right far more often than a hand-picked target, and pinning is
+    how an edit ends up written somewhere nobody reads. `Plan` will tell you where a
+    change is going and whether anything still outranks it — check it before you commit
+    to a pin.
+
+**The case that genuinely justifies it is promotion**: moving a setting from a
+project-scoped config up into a user's global one, where the two are layers of the same
+store. The value has to land in a specific layer, and that layer is not the one routing
+would pick — that is the whole point of the operation.
+
+```go
+// promote, and clear the project's own copy so the promoted value is not
+// immediately shadowed by it
+store.Apply(ctx,
+    config.Set("theme", "dark", config.To("~/.myapp/config.yaml")),
+    config.Remove("theme"),
+)
+```
+
+`To` and `ToDocument` work on `Remove` as well as `Set`, and inside a batch — which is
+what makes the pair above one atomic-as-the-backend-allows operation rather than two
+writes with a window between them.
+
+### What a name matches
+
+`WritableTargets()` lists exactly the layers `To` will accept, in precedence order:
+
+```go
+for _, target := range store.WritableTargets() {
+    fmt.Println(target)
+}
+```
+
+- **Only `Name` and `Document` are matched.** That is why `To` takes a name rather than
+  a `config.Source` — a `Source` built by hand invites filling in `Kind` or `Writable`
+  and believing they select something.
+- **A multi-document file** shares one name across its documents, so `To(name)` means
+  document 0. Use `ToDocument(name, 1)` to address the second.
+- **A name matching nothing returns `ErrInvalidTarget`**, rather than falling back to
+  routing. A typo is a typo, not a request to guess.
+- **Where more than one layer carries a name**, the highest-precedence one wins — the
+  one whose value you can read back.
+
+Pinning does **not** opt you out of the sensitive-key guard. A write of a key a
+sensitive source defines is still refused if the target is not itself sensitive, pinned
+or not; that is a safety invariant rather than a routing preference. See
+[`ErrSensitiveLeak`](#errors-worth-branching-on).
 
 ## "Written, but it still does not take effect"
 
