@@ -164,6 +164,38 @@ conflict detection and plan as any other write, rather than a manual
 read-from-one-write-to-the-other. That is the worked example the page should
 lead the section with.
 
+### D8 — `To` resolves to the **highest**-precedence layer with that name, which is a fix
+
+Two layers may share a `Source.Name` — [store
+aggregation](2026-07-28-store-aggregation.md) D4a makes that legal and expects
+precedence to resolve it, first match winning. That requires "first" to be
+defined, and the current code defines it the surprising way.
+
+`matchTarget` iterates `targets` forward (`plan.go:258`). `writableOnly`
+preserves `sourceOrder`'s ordering, which is **lowest → highest** precedence. So
+today a pinned name matches the *lowest*-precedence layer carrying it.
+
+`findTarget`, five lines further down, walks the same slice **backwards** — and
+its own comment says why: *"the highest-precedence writable target is where it
+will be visible."*
+
+So the two halves of the router disagree about which end of an ambiguous set to
+prefer, and the pinned half prefers the one whose value nobody sees. This is
+pre-existing, not introduced by aggregation; aggregation only makes duplicate
+names likely enough to notice.
+
+`To` therefore resolves to the highest-precedence layer with the given name, and
+`matchTarget` is corrected to walk backwards to match `findTarget`.
+
+Observable only where two layers share a name, which requires two backends with
+the same `ID()` — possible today, rare, and arguably already a caller error. The
+change makes `Plan` name a different target in that case, so it is visible
+before any write rather than discovered after one.
+
+**Correcting the existing function rather than making `To` differ from it** is
+deliberate. Two matching rules in one router is exactly the drift the equivalence
+test in the testing strategy exists to prevent.
+
 ## Public API
 
 ```go
@@ -195,6 +227,9 @@ Unit, table-driven — this is routing, not I/O, so there is nothing to fake:
   a different fault from having nowhere to write.
 - `ToDocument` addresses the second document of a multi-document file, and
   `To` on the same file resolves to document 0.
+- **Two layers sharing a name**: `To` selects the highest-precedence one (D8),
+  asserted through `Plan` so the test names the target rather than inferring it
+  from a written file. Watched to fail by restoring the forward walk.
 - A pinned write of a key a sensitive source defines, into a non-sensitive
   target, returns `ErrSensitiveLeak` (D4). **Watched to fail** by removing the
   guard, since this is the assertion most likely to rot.
@@ -207,9 +242,17 @@ list and the matcher drifting apart.
 
 ## Migration & compatibility
 
-Purely additive. `Set` and `Remove` keep their existing call syntax, the
-`Change.Target` field is untouched, and no error behaviour changes. A minor
-version.
+Additive but for one behaviour fix. `Set` and `Remove` keep their existing call
+syntax, `Change.Target` is untouched, and no error behaviour changes.
+
+D8 changes which layer a pinned target resolves to **when two layers share a
+name** — from the lowest-precedence to the highest. No existing configuration in
+this repo's tests produces that case, and it requires two backends answering to
+the same `ID()`. It is called out in the release note rather than buried, because
+"pinning resolves differently" is the kind of change a downstream tool should be
+told about even when it almost certainly does not hit it.
+
+A minor version.
 
 ## Open questions
 

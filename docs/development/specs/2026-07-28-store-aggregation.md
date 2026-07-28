@@ -156,21 +156,51 @@ returns a `Pending` composing the inner `Pending`s. `Verify`, `Commit`,
 composes without modification — which is the payoff for `Pending` being an
 interface rather than a struct.
 
-### D4 — Nesting is a DAG, enforced at construction
+### D4 — The composed graph is a tree: a store may appear at most once
 
-Cycles are refused, hard. `Nested(a, …)` reachable from `a` is unbounded
-recursion at `Load`, terminating in a stack overflow whose trace names nothing
-useful.
+Stricter than refusing cycles. Any attempt to nest a store already reachable in
+the graph is refused at construction, whether or not it would close a cycle.
 
-Detection walks the inner store's backend graph transitively at construction —
-not at load — because a cycle is always a programming error, never a runtime
-condition, and the construction site is where the mistake was made.
+That rules out the diamond — one global store nested into two project stores
+which are themselves composed together. A diamond is not a cycle and resolves
+perfectly well for reads, so this is a deliberate narrowing rather than a
+consequence. Three things pay for it:
 
-`ErrCyclicStore`, naming both ends of the edge that would close the cycle.
+- **Enforcement is identity alone**, walked once at construction. No reachability
+  analysis, no memoisation, no way for the check itself to be subtly wrong.
+- **A store appearing twice would contribute its layers twice**, at two different
+  precedences. Every value in it would then be shadowed by a copy of itself, and
+  `Explain` would name a layer that appears more than once in the order — which
+  is exactly the kind of thing this module exists not to do.
+- **A shared store is still expressible.** Nest it once, at the depth where both
+  consumers can see it. The tree rule pushes the sharing into the shape of the
+  graph, where it is visible, instead of into a repeated node.
 
-Whether the rule is "no cycles" (a DAG, where one store may legitimately appear
-twice) or "no store already in the graph" (a tree) is **open question O1** — see
-there, because they differ in a case that is not obviously wrong.
+Refused at construction rather than at load because this is always a programming
+error, never a runtime condition, and the construction site is where the mistake
+was made. `ErrCyclicStore` names both stores and the path between them.
+
+### D4a — Two layers may share a name; precedence resolves it
+
+Legal, and not an error. Two stores in the graph loading the same path produce
+two layers with the same `Source.Name`, and that is fine: layering already
+resolves it per key, the higher-precedence one winning exactly as it would for
+any other pair of layers.
+
+For `To(name)` addressing the rule is **first match in precedence order wins** —
+if a name does not match the first candidate it will not match the second, so
+there is nothing to disambiguate between. `Plan` names the resolved target
+before anything is written, so a caller who has surprised themselves can see it
+rather than discover it afterwards.
+
+The tree rule (D4) already removes the systematic source of duplicates, so what
+remains is two stores genuinely pointed at the same file — which is either
+deliberate or a bug in the caller's own composition, and in both cases
+precedence is the honest answer rather than a refusal.
+
+**Which end "first" means is settled in [write-target
+options](2026-07-28-write-target-options.md) D8**, and it is not currently what
+the code does.
 
 ### D5 — Depth is unbounded, for reads and for writes
 
@@ -254,8 +284,7 @@ type NestedOption func(*nestedConfig)
 
 func Nested(s *Store, id string, opts ...NestedOption) Backend
 
-var ErrCyclicStore = errors.New("config: nested store would form a cycle")
-var ErrDuplicateLayer = errors.New("config: two layers in the composed store share a name")
+var ErrCyclicStore = errors.New("config: store is already present in this graph")
 ```
 
 No `SourceKind` for the aggregate: it contributes no layer of its own, only the
@@ -278,8 +307,13 @@ for error messages and for the D6 chain, not for a layer.
   by reading that file, not the composed view.
 - **Depth**: a three-level graph resolves, and a write to the deepest layer
   reaches it (D5).
-- **DAG enforcement**: direct (`a` in `a`), indirect (`a → b → a`), and whichever
-  of the diamond cases O1 settles on.
+- **Tree enforcement** (D4): direct (`a` in `a`), indirect (`a → b → a`), and
+  the diamond (`a` nested into both `b` and `c`, both composed into `d`) — all
+  three refused with `ErrCyclicStore`.
+- **Duplicate names** (D4a): two stores over the same path compose, resolve by
+  precedence, and `To(name)` selects the end D8 specifies — asserted through
+  `Plan` rather than by writing, so the test names the target rather than
+  inferring it from a file.
 - **`Sensitive` precision**: a nested store containing Vault refuses a write of a
   Vault-defined key into a plain outer layer, and *permits* a write of an
   unrelated key to the same outer layer. The second half is what proves D7 kept
@@ -298,6 +332,14 @@ A minor version.
 
 ## Resolved
 
+**2026-07-28 — O1 (second round), tree or DAG.** A tree: a store may appear at
+most once (D4). Refusing the diamond is deliberate — it resolves fine for reads,
+but a store appearing twice contributes its layers twice at two precedences,
+shadowing itself.
+
+**2026-07-28 — O2 (second round), duplicate layer names.** Legal; precedence
+resolves them and first match wins (D4a). No `ErrDuplicateLayer`.
+
 **2026-07-28 — O1, flatten or pass through.** Pass through, as a contiguous
 block (D2). The original framing was a false dichotomy: interleaved precedence
 is not a consequence of passing layers through, and once the block is spliced at
@@ -311,23 +353,6 @@ composes, so depth costs atomicity and error legibility rather than correctness.
 
 ## Open questions
 
-- **O1 — Tree or DAG?** The instinct is "hard error if a store is already in the
-  graph", which forbids a store appearing **twice**, not merely cyclically. That
-  is a tree, and it rules out a diamond: a single global store nested into two
-  project stores that are themselves composed together. A tool holding several
-  projects open at once — keryx studio — plausibly wants exactly that, and it is
-  not a cycle. Note the two rules also differ in cost: a tree can be enforced by
-  identity alone, a DAG needs a proper reachability walk. **Leaning: enforce a
-  DAG (refuse cycles only), and let a shared node be legal.**
-- **O2 — What happens when two layers in the composed graph share a name?**
-  Layer names are usually absolute paths, so genuine collisions are rarer than
-  they look — but two stores over the same file, or a diamond under O1, produce
-  one. It breaks `To(name)` addressing and would make `prepare`'s layer map
-  ambiguous. Options: hard error at construction (`ErrDuplicateLayer`, consistent
-  with the DAG strictness), or qualify inner names with the aggregate's `id`
-  (`global:~/.krites/config.yaml`), which keeps them addressable at the cost of
-  changing what `Explain` prints. **Leaning: hard error**, because qualification
-  silently changes provenance strings that users and tests may depend on.
 - **O3 — Does the aggregate need to observe the inner store's `Apply`?** D8
   covers foreign change via `Watch`. But code that still holds the inner store
   and calls `Apply` on it directly bypasses the watcher entirely — `Apply`
