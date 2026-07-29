@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.12.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.12.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.11.0...v0.12.0)
+
+### Features
+
+- **fs**: add DirLister, an optional interface for enumerating a directory ([82e23c0](https://gitlab.com/phpboyscout/go/config/-/commit/82e23c0d49c6fe761897a66a9dfda97493372b2e))
+
 ## [v0.11.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.11.0)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.10.0...v0.11.0)
