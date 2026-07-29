@@ -414,7 +414,8 @@ Three cases the mount does not cover were weighed and rejected as insufficient:
    reads. This one is real — and it is not a Kubernetes problem. The identical shape is how
    Docker and Podman secrets (`/run/secrets/*`) and systemd `LoadCredential`
    (`$CREDENTIALS_DIRECTORY/*`) present. It wants a small zero-dependency backend over
-   `config.FS`, not a Kubernetes API client, and if it is built it gets its own spec.
+   `config.FS`, not a Kubernetes API client. Specified as
+   [config-filekv](2026-07-29-config-filekv.md).
 
 So Phase C is **`config-etcd` alone**. `config-k8s` is not deferred, it is **rejected** — recorded
 here rather than dropped from the list, so the question is not re-litigated from scratch.
