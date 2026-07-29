@@ -32,8 +32,8 @@ var ErrReadOnlyFS = errors.New("config: filesystem is read-only")
 //
 // Adding a method here is a breaking change for every implementation, so
 // capability beyond this minimum is expressed as an optional interface —
-// [RealPather] and [LinkReader] — that an implementation may simply not
-// satisfy. See D1 of the filesystem abstraction spec.
+// [RealPather], [LinkReader] and [DirLister] — that an implementation may simply
+// not satisfy. See D1 of the filesystem abstraction spec.
 type FS interface {
 	// ReadFile returns a source's contents, or an error satisfying
 	// errors.Is(err, fs.ErrNotExist) when it is absent. That distinction is
@@ -86,6 +86,32 @@ type FS interface {
 // it cannot honour.
 type RealPather interface {
 	RealPath(name string) (realPath string, ok bool)
+}
+
+// DirLister optionally enumerates a directory.
+//
+// [FS] deliberately has no listing method: every source it was built for is
+// named, so a backend asks for the file it was configured with rather than
+// discovering what is there. A backend whose whole input is a *directory* — a
+// mounted ConfigMap, a secrets directory, one file per key — needs the other
+// shape, and this is it.
+//
+// Optional rather than part of FS, for the reason [RealPather] is: adding a
+// method to FS breaks every filesystem adapter in the family at once, and most
+// of them exist to serve named files. A filesystem that cannot enumerate — or
+// one for which enumeration would be unbounded, such as an object store with no
+// delimiter — simply does not have the method.
+//
+// The same rule applies as to the other optional interfaces: an implementation
+// must not satisfy one it cannot honour. Returning an error from ReadDir rather
+// than omitting the method makes every filesystem look listable, so a consumer
+// selects it and discovers the absence one directory at a time.
+//
+// ReadDir reports the directory's entries without following into them. An
+// absent directory returns an error satisfying errors.Is(err, fs.ErrNotExist),
+// so a caller can tell "nothing configured here yet" from a real failure.
+type DirLister interface {
+	ReadDir(name string) ([]fs.DirEntry, error)
 }
 
 // LinkReader optionally resolves a symbolic link.
@@ -145,6 +171,8 @@ func (osFS) MkdirAll(path string, perm fs.FileMode) error { return os.MkdirAll(p
 func (osFS) RealPath(name string) (string, bool) { return name, true }
 
 func (osFS) Readlink(name string) (string, error) { return os.Readlink(name) }
+
+func (osFS) ReadDir(name string) ([]fs.DirEntry, error) { return os.ReadDir(name) }
 
 // Dir returns an FS rooted at a directory.
 //
@@ -257,6 +285,37 @@ func (r rootFS) MkdirAll(path string, perm fs.FileMode) error {
 // already been refused by os.Root if it escaped.
 func (r rootFS) RealPath(name string) (string, bool) {
 	return filepath.Join(r.path, name), true
+}
+
+// ReadDir lists a directory through the root, so listing is confined exactly as
+// every other operation is.
+//
+// os.Root has no ReadDir of its own, so the directory is opened through the root
+// — which is where the containment is enforced — and read from the handle. A
+// traversal that escaped would leak the names of files the caller was never
+// given access to: a smaller breach than reading them, and still a breach.
+func (r rootFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	var out []fs.DirEntry
+
+	err := r.with(func(root *os.Root) error {
+		dir, openErr := root.Open(name)
+		if openErr != nil {
+			return openErr
+		}
+
+		defer func() { _ = dir.Close() }()
+
+		var readErr error
+
+		out, readErr = dir.ReadDir(-1)
+
+		return readErr
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return out, nil
 }
 
 func (r rootFS) Readlink(name string) (string, error) {

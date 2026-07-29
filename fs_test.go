@@ -233,3 +233,115 @@ func TestDir_DoesNotAccumulateDescriptors(t *testing.T) {
 		t.Errorf("200 Dir calls leaked %d descriptors; the root must not be held open", leaked)
 	}
 }
+
+// DirLister is what an adapter over a directory of files needs, and nothing in
+// FS provides it: the interface has ReadFile, WriteFile, Stat, Rename, Remove
+// and MkdirAll, none of which enumerates.
+//
+// It is optional rather than part of FS because adding a method would break
+// every filesystem adapter in the family — afero, billy, iofs, sftp and the
+// three object stores — to serve one consumer.
+
+func TestOS_ListsADirectory(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	for _, name := range []string{"log.level", "database.host"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	lister, ok := OS().(DirLister)
+	if !ok {
+		t.Fatal("the operating-system filesystem must implement DirLister")
+	}
+
+	entries, err := lister.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+
+	if got := namesOf(entries); len(got) != 2 {
+		t.Errorf("ReadDir returned %v, want both files", got)
+	}
+}
+
+func TestDir_ListsWithinTheRoot(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "conf"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "conf", "log.level"), []byte("debug"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	filesystem, err := Dir(root)
+	if err != nil {
+		t.Fatalf("Dir: %v", err)
+	}
+
+	lister, ok := filesystem.(DirLister)
+	if !ok {
+		t.Fatal("a rooted filesystem must implement DirLister")
+	}
+
+	entries, err := lister.ReadDir("conf")
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+
+	if got := namesOf(entries); len(got) != 1 || got[0] != "log.level" {
+		t.Errorf("ReadDir = %v, want [log.level]", got)
+	}
+}
+
+// Listing must be confined exactly as every other rooted operation is. A
+// traversal that reads a directory outside the root would leak the names of
+// files the caller was never given access to, which is a smaller breach than
+// reading them and still a breach.
+func TestDir_ListingCannotEscapeTheRoot(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	outside := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(outside, "secret.yaml"), []byte("s: 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	filesystem, err := Dir(root)
+	if err != nil {
+		t.Fatalf("Dir: %v", err)
+	}
+
+	lister := filesystem.(DirLister)
+
+	if _, err := lister.ReadDir(filepath.Join("..", filepath.Base(outside))); err == nil {
+		t.Error("ReadDir escaped the root via .., leaking the names of files outside it")
+	}
+}
+
+// An absent directory reports fs.ErrNotExist, so a consumer can tell "nothing
+// configured here yet" from "this filesystem cannot list".
+func TestDirLister_AbsentDirectoryIsNotExist(t *testing.T) {
+	t.Parallel()
+
+	lister := OS().(DirLister)
+
+	if _, err := lister.ReadDir(filepath.Join(t.TempDir(), "nope")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("ReadDir of an absent directory = %v, want fs.ErrNotExist", err)
+	}
+}
+
+func namesOf(entries []fs.DirEntry) []string {
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.Name())
+	}
+
+	return out
+}
