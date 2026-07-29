@@ -284,7 +284,7 @@ parameter-store trio.
 `config-gcp-secret`. The `Sensitive` family (D5), read-only by default (D7).
 
 **Phase C — cloud-native key-value.** `config-etcd` and `config-k8s`. Native watch (D6), the
-second typically read-only.
+second typically read-only. *(`config-k8s` was subsequently rejected — see R4.)*
 
 **Phase D — revisit.** Write support for any read-only secrets backend a consumer needs, and
 anything the earlier adapters showed this umbrella got wrong — corrected here by dated revision,
@@ -383,3 +383,38 @@ the Google client stack. The argument for polling is ownership and contract, not
 An opt-in event-driven watch remains a legitimate follow-on for any category-2 system, per adapter,
 each with its own spec (D2), and each most likely in its **own module** so consumers who poll do not
 carry the messaging client. None is in scope for the adapters specified so far.
+
+### R4 (2026-07-29) — `config-k8s` is rejected; Phase C is etcd alone (amends the phasing)
+
+Phase C listed `config-etcd` and `config-k8s` together, inheriting "native watch" as the
+justification for both. That was never argued, and it does not survive being argued.
+
+**A ConfigMap already reaches a pod through two layers this module has.** Mounted as a volume, a
+ConfigMap key holding a document *is a file* — `WithFiles` reads it, and the kubelet rewrites the
+mount in place when the ConfigMap changes, so the existing file watch gives hot reload with no new
+code. Consumed with `envFrom`, it is environment variables — `WithEnv` reads it. An adapter that
+talks to the API server would be a third route to data the process can already see.
+
+**The cost is the heaviest in the toolkit.** `k8s.io/client-go` links **38 modules** (measured
+2026-07-29), against `config-gcp-secret`'s 39 — the adapter whose weight the family already
+singles out as a warning. And unlike a mount, the API path needs RBAC `get`/`watch` on
+configmaps and a service account, so it is strictly more privilege for strictly less reach: it
+only works in-cluster.
+
+By contrast `go.etcd.io/etcd/client/v3` links **16** — the same as Consul. The two systems were
+grouped by "cloud-native" framing, not by cost or by need.
+
+Three cases the mount does not cover were weighed and rejected as insufficient:
+
+1. **A `subPath` mount never updates** — a genuine Kubernetes trap, but a documentation problem,
+   not one an adapter fixes.
+2. **A ConfigMap you have not mounted** — another namespace, or chosen at runtime. Real, narrow,
+   and anyone doing it already carries `client-go`.
+3. **A ConfigMap of many scalar keys mounts as many single-value files**, which no adapter here
+   reads. This one is real — and it is not a Kubernetes problem. The identical shape is how
+   Docker and Podman secrets (`/run/secrets/*`) and systemd `LoadCredential`
+   (`$CREDENTIALS_DIRECTORY/*`) present. It wants a small zero-dependency backend over
+   `config.FS`, not a Kubernetes API client, and if it is built it gets its own spec.
+
+So Phase C is **`config-etcd` alone**. `config-k8s` is not deferred, it is **rejected** — recorded
+here rather than dropped from the list, so the question is not re-litigated from scratch.
