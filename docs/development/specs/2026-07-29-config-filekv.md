@@ -100,6 +100,37 @@ It reads a directory through `config.FS`. Nothing else. Like `config-dotenv`,
 this adapter adds **no module** to a consumer's graph, which is much of why it is
 worth having at all — the alternative it replaces costs 38.
 
+### D2a — Listing needs a new optional interface on `config.FS`
+
+**`config.FS` cannot list a directory.** It has `ReadFile`, `WriteFile`, `Stat`,
+`Rename`, `Remove` and `MkdirAll`, and nothing that enumerates — so this adapter
+could not be built as first drafted. Found by reading the interface rather than
+assuming it.
+
+The core therefore gains an optional interface, beside the two it already has:
+
+```go
+// DirLister optionally enumerates a directory.
+type DirLister interface {
+    ReadDir(name string) ([]fs.DirEntry, error)
+}
+```
+
+Optional, not a new method on `FS`, for the reason `RealPather` and `LinkReader`
+are: adding it to the interface is a **breaking change to seven filesystem
+adapters** — afero, billy, iofs, sftp, aws-s3, gcp-gcs, azure-blob — each needing
+a coordinated release, to serve one consumer. An optional interface costs the
+others nothing.
+
+The same warning `RealPather` carries applies: *an implementation must not
+satisfy an optional interface it cannot honour*. A filesystem that cannot
+enumerate should not have the method rather than return an error from it.
+
+`configfilekv.New` type-asserts and **fails at construction** against a
+filesystem that cannot list, rather than returning an empty layer at load — an
+adapter whose whole job is enumeration silently contributing nothing is the worst
+available outcome.
+
 ### D3 — The filename is the key; `.` splits it into the tree
 
 `database.host` becomes `database` → `host`. A name with no dot is a single
@@ -111,16 +142,24 @@ keys permit `[-._a-zA-Z0-9]+`, and Docker and systemd names are freer still — 
 inventing a second separator would make `db_password` and `db.password` collide
 for no reason.
 
-### D4 — Dot-prefixed entries are skipped; only regular files are read
+### D4 — Dot-prefixed entries are skipped; subdirectories nest
 
 The atomic-writer rule, and it doubles as the ordinary Unix hidden-file
 convention. Directories are skipped, symlinks are followed and read for their
 target's contents.
 
-**Non-recursive.** ConfigMap keys cannot contain `/`, so no nesting arises from
-the case that motivated this. A projected volume can nest, and mapping a
-subdirectory to a path segment is a coherent extension — **open question O3**,
-deliberately not built on speculation.
+**Recursive: a subdirectory is a path segment.** `sub/database.host` becomes
+`sub` → `database` → `host`, which is the same rule D3 applies to dots.
+
+An earlier draft skipped subdirectories as speculative. That was wrong: a
+Kubernetes **projected volume** with `items: [{key: x, path: sub/x}]` produces
+exactly this layout, so nesting is legitimate usage rather than a mistake, and
+silently skipping it would make a supported configuration disappear with no
+diagnosis.
+
+Dot-prefixed directories are still skipped, which is what keeps the atomic
+writer's `..2026_...` staging directory out — and it is skipped *before*
+recursion, so the whole staged tree is invisible rather than enumerated twice.
 
 ### D5 — Read-only by default; `WithWritable()` opts in
 
@@ -175,6 +214,20 @@ Defaulting to `0644` and letting people discover their secrets were
 world-readable is the wrong way round: the tighter default fails visibly (a
 sibling process cannot read it) while the looser one fails silently.
 
+### D5c — A missing directory is created on first write, not at construction
+
+`WithWritable()` against a path that does not exist yet is the ordinary first-run
+case, and `config.FS` already offers `MkdirAll`.
+
+It is created **on the first write**, not at construction, matching the file
+backend: a declared-but-missing file is a routing candidate and `Apply` creates
+it. Constructing a store should not have a filesystem side effect for a write
+that may never come — a read-only run of a tool that merely *could* write would
+otherwise leave an empty directory behind.
+
+Created under the same mode policy as D5b, so a credentials directory is not
+world-traversable by default.
+
 ### D6 — An empty file is an empty value, not an absent key
 
 A ConfigMap key with an empty value mounts as a zero-byte file. It is declared,
@@ -205,8 +258,12 @@ for a secrets directory sharing a store with everything else.
 ### D9 — Watch by polling, reporting *possible* change
 
 `WatchableBackend`, polled. The backend compares a cheap directory fingerprint —
-each entry's name, size and modification time — and reports possible change when
-it moves.
+each entry's **name, size and modification time**, one `Stat` per entry and no
+file reads — and reports possible change when it moves.
+
+Hashing contents would be exact, but it makes the watch scale with data volume
+rather than directory size, to catch an edit that preserves name, size *and*
+mtime — which is vanishingly rare outside a test that constructs it.
 
 Deliberately liberal: the `Backend` contract says a watch *"reports possible
 change rather than actual change"*, because only the Store can decide whether the
@@ -261,7 +318,7 @@ func WithSensitive() Option
 func WithValueCodec(codec config.Codec) Option
 func WithPollInterval(d time.Duration) Option
 
-// Writing (D5, D5a, D5b)
+// Writing (D5, D5a, D5b, D5c)
 func WithWritable() Option
 func WithFileMode(mode fs.FileMode) Option
 
@@ -280,6 +337,17 @@ A new module. Nothing existing changes.
 - **O1, trailing newlines.** Byte-exact by default; `WithTrimTrailingNewline()`
   opts in (D10). The friendlier default is the one that fails invisibly, and for
   a secret it fails as an authentication error with nothing to point at.
+- **O2, the poll fingerprint.** Name, size and mtime (D9). Hashing would be
+  exact but scales the watch with data volume to catch a case that essentially
+  does not occur outside a test.
+- **O3, recursive directories.** Recurse; a subdirectory is a path segment (D4).
+  The earlier YAGNI lean was wrong — a projected volume with an `items[].path`
+  produces exactly this, so skipping would make supported configuration vanish.
+- **O5, a missing directory.** Created on first write, not at construction
+  (D5c), matching how the file backend treats a declared-but-missing file.
+- **The `ReadDir` gap.** A new optional `config.DirLister` (D2a), not a method on
+  `config.FS` — the latter is a breaking change to seven adapters to serve one
+  consumer.
 - **O4, a writable variant.** In scope from the start, opt-in via
   `WithWritable()` (D5), rather than deferred — adding it later would be a
   capability promotion and a release note. Writability is a type, not a flag, so
@@ -288,17 +356,5 @@ A new module. Nothing existing changes.
 
 ## Open questions
 
-- **O2 — Should the poll fingerprint include content?** Name, size and mtime miss
-  an edit that preserves all three. Rare, and cheap to rule out by hashing — but
-  hashing every file per tick makes a watch proportional to the data rather than
-  the directory. Probably fine as specified given the Store re-reads on any
-  reported change; worth measuring.
-- **O3 — Recursive directories.** A projected volume can nest. Mapping a
-  subdirectory to a path segment is coherent and unneeded by the motivating
-  cases. Left out until something asks.
-- **O5 — Should `WithWritable()` create the directory if absent?** A writable
-  store pointed at a path that does not exist yet is the ordinary first-run case,
-  and the file backend already treats a declared-but-missing file as a routing
-  candidate. Creating a *directory* is a larger act than creating a file, and its
-  mode is a second decision. Leaning: create it, at the same mode policy as
-  D5b — but it wants stating rather than assuming.
+None outstanding. Anything implementation turns up — including any of K1–K6
+proving false — is recorded as a dated revision rather than a silent edit.
