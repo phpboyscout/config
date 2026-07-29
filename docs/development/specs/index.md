@@ -209,8 +209,8 @@ not need; it cannot infer one it was never given.
 
 | Spec | Status |
 |---|---|
-| [config-filekv adapter](2026-07-29-config-filekv.md) | draft |
-| [config-etcd adapter](2026-07-29-config-etcd.md) | draft |
+| [config-filekv adapter](2026-07-29-config-filekv.md) | approved |
+| [config-etcd adapter](2026-07-29-config-etcd.md) | approved |
 | [Store aggregation](2026-07-28-store-aggregation.md) | implemented |
 | [Backend key filtering](2026-07-28-backend-key-filtering.md) | implemented |
 | [Write-target options](2026-07-28-write-target-options.md) | implemented |

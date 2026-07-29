@@ -2,7 +2,8 @@
 title: config-filekv — a directory of single-value files as a config layer
 date: 2026-07-29
 author: matt.cockayne
-status: draft
+status: approved
+approved: 2026-07-29
 ---
 
 # config-filekv

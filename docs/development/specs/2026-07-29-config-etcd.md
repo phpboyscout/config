@@ -2,7 +2,8 @@
 title: config-etcd — etcd as a config backend
 date: 2026-07-29
 author: matt.cockayne
-status: draft
+status: approved
+approved: 2026-07-29
 ---
 
 # config-etcd
