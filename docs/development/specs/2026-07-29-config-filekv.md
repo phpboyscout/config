@@ -80,7 +80,9 @@ misremembered layout would fail only in a cluster.
 - **K6** — systemd credentials are mode `0400` under `$CREDENTIALS_DIRECTORY`,
   byte-exact.
 
-K3, K5 and K6 decide **O1** below, so they are worth settling early.
+K3, K5 and K6 underpin **D10** (values are byte-exact), so they are the ones to
+settle first — if any of the three does append a newline, that decision is wrong
+for that system and the spec needs a revision, not a quiet code change.
 
 ## Decisions
 
@@ -120,15 +122,58 @@ the case that motivated this. A projected volume can nest, and mapping a
 subdirectory to a path segment is a coherent extension — **open question O3**,
 deliberately not built on speculation.
 
-### D5 — Read-only
+### D5 — Read-only by default; `WithWritable()` opts in
 
-Every one of the three motivating mounts is read-only: a ConfigMap volume is
-mounted read-only, Docker secrets are `0444`, systemd credentials `0400`.
-Offering a write path would be offering one that fails on the filesystem for all
-three real consumers.
+Every one of the three motivating mounts is read-only — a ConfigMap volume is
+mounted read-only, Docker secrets are `0444`, systemd credentials `0400` — so a
+write path is off unless asked for. A default that fails on the filesystem for
+all three real consumers would be a capability lie.
 
-A plain writable directory used as a key-value store is a coherent *different*
-want — **open question O4**.
+But a plain directory of files is a perfectly good small writable store, and
+adding it later would mean a capability promotion and a release note. So it is
+opt-in from the start:
+
+```go
+configfilekv.New(config.OS(), "/var/lib/myapp/config", configfilekv.WithWritable())
+```
+
+**Writability is a type, not a flag.** `New` returns a plain `Backend` without
+the option and a `WritableBackend` with it, mirroring `config.Filtered` and
+`config.Nested` — so a store never routes a write at a directory nobody said
+could be written to.
+
+### D5a — What writing means, and what it cannot promise
+
+Four things the write path has to answer, and none of them is free:
+
+- **One file per key.** Setting `database.host` writes the file `database.host`;
+  removing it deletes the file. A key whose value is a subtree has no
+  single-file representation, so a `Set` of a map is refused with
+  `ErrInvalidTarget` rather than invented — the same refusal
+  `config-keychain` makes for the same reason.
+- **`AtomicMultiKey: false`.** Writing three keys is three file writes. There is
+  no `..data` trick available to a general directory — that is the kubelet's
+  mechanism, not a filesystem primitive — so a failure part-way leaves the
+  earlier writes in place and rollback undoes them best-effort. Declared, not
+  pretended.
+- **Each file is written atomically in itself**, via write-temp-then-rename, so
+  a reader never sees a half-written value. That is per key, and it is the only
+  atomicity available.
+- **Conflict detection compares content**, because a file has no version. Verify
+  re-reads each touched file and compares against what Load saw, exactly as
+  `config-keychain` does — it catches another writer, cannot distinguish
+  "changed and changed back", and leaves a window between check and write. The
+  honest position is that this is a check, not a guarantee.
+
+### D5b — A new file's mode is the caller's decision, defaulting to `0600`
+
+A writable directory may well be holding credentials, so the default is
+owner-only. `WithFileMode(0o644)` widens it where the values are ordinary
+configuration.
+
+Defaulting to `0644` and letting people discover their secrets were
+world-readable is the wrong way round: the tighter default fails visibly (a
+sibling process cannot read it) while the looser one fails silently.
 
 ### D6 — An empty file is an empty value, not an absent key
 
@@ -172,9 +217,18 @@ that notifies nobody.
 `NativeWatch: false` — it is a poll, and saying otherwise would be the kind of
 capability lie the family's `config-afero` lesson is about.
 
-### D10 — Values are strings; a codec is available for the odd structured one
+### D10 — Values are the file's bytes, verbatim
 
-The file's bytes, as a string. Umbrella **R1** applies: a consumer whose files
+The file's bytes, as a string, **byte-exact** — no trailing newline is trimmed
+unless `WithTrimTrailingNewline()` asks for it.
+
+All three systems write the value exactly (K3, K5, K6), so a stray newline only
+appears when a human created the file with `echo`. Trimming by default would
+silently alter a value that legitimately ends in whitespace — and when that
+value is a secret, the result is an authentication failure with nothing to point
+at. A visible stray `\n` shows up in the first log line and is diagnosable; a
+silently mangled credential is not. The friendlier default is the one that fails
+invisibly, so it is the opt-in. Umbrella **R1** applies: a consumer whose files
 hold JSON or YAML injects a `config.Codec`, and this adapter takes no codec
 dependency of its own.
 
@@ -187,7 +241,10 @@ error. The documentation must say so plainly rather than let someone discover it
 - Unit against an in-memory `config.FS` seeded with the atomic-writer layout —
   `..data`, a timestamped directory, key symlinks — so D4 is exercised against
   the shape it exists for rather than a flat directory.
-- **`config/backendconformance` is the gate**, read-only branch.
+- **`config/backendconformance` is the gate, run twice**: read-only, and again
+  with `WithWritable()` so the write, conflict and rollback branches all run.
+  Two runs, because the read-only default and the opt-in write path are
+  different types and a single run would leave one of them unproven.
 - An **integration test against a real ConfigMap mount** verifying K1–K3, which
   is the only way those stop being assumptions. It needs a cluster, so it is
   env-gated and skipped by default like the cloud adapters — with the difference
@@ -204,6 +261,13 @@ func WithSensitive() Option
 func WithValueCodec(codec config.Codec) Option
 func WithPollInterval(d time.Duration) Option
 
+// Writing (D5, D5a, D5b)
+func WithWritable() Option
+func WithFileMode(mode fs.FileMode) Option
+
+// Values (O1)
+func WithTrimTrailingNewline() Option
+
 const SourceKind = config.SourceKind("filekv")
 ```
 
@@ -211,17 +275,19 @@ const SourceKind = config.SourceKind("filekv")
 
 A new module. Nothing existing changes.
 
+## Resolved (2026-07-29)
+
+- **O1, trailing newlines.** Byte-exact by default; `WithTrimTrailingNewline()`
+  opts in (D10). The friendlier default is the one that fails invisibly, and for
+  a secret it fails as an authentication error with nothing to point at.
+- **O4, a writable variant.** In scope from the start, opt-in via
+  `WithWritable()` (D5), rather than deferred — adding it later would be a
+  capability promotion and a release note. Writability is a type, not a flag, so
+  a store never routes a write at a directory nobody opted in. What writing can
+  and cannot promise is D5a; file modes are D5b.
+
 ## Open questions
 
-- **O1 — Trailing newlines: trim, or byte-exact?** *(the one that needs deciding
-  first)* Kubernetes, Docker and systemd all write values byte-exact (K3, K5,
-  K6), so a stray newline only appears when a human created the file with `echo`.
-  Trimming silently alters a value that legitimately ends in whitespace — and for
-  a *secret* that means an authentication failure with no clue why. Not trimming
-  means the hand-made cases carry a `\n` that shows up in the first log line.
-  **Leaning: byte-exact by default, with `WithTrimTrailingNewline()` to opt in**,
-  because a visible stray newline is diagnosable and a silently mangled secret is
-  not. Wants confirming, since it is the default people meet daily.
 - **O2 — Should the poll fingerprint include content?** Name, size and mtime miss
   an edit that preserves all three. Rare, and cheap to rule out by hashing — but
   hashing every file per tick makes a watch proportional to the data rather than
@@ -230,7 +296,9 @@ A new module. Nothing existing changes.
 - **O3 — Recursive directories.** A projected volume can nest. Mapping a
   subdirectory to a path segment is coherent and unneeded by the motivating
   cases. Left out until something asks.
-- **O4 — A writable variant.** A plain directory as a writable key-value store is
-  a different want from the three read-only mounts here. Separate decision, and
-  possibly a separate adapter, since making this one writable would offer a path
-  that fails on every consumer it was built for.
+- **O5 — Should `WithWritable()` create the directory if absent?** A writable
+  store pointed at a path that does not exist yet is the ordinary first-run case,
+  and the file backend already treats a declared-but-missing file as a routing
+  candidate. Creating a *directory* is a larger act than creating a file, and its
+  mode is a second decision. Leaning: create it, at the same mode policy as
+  D5b — but it wants stating rather than assuming.
