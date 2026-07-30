@@ -10,8 +10,8 @@ require (
 	github.com/spf13/cast v1.10.0
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
-	gitlab.com/phpboyscout/go/yamldoc v0.1.4
-	go.yaml.in/yaml/v3 v3.0.4
+	gitlab.com/phpboyscout/go/yamldoc v0.1.5
+	go.yaml.in/yaml/v3 v3.0.5
 )
 
 require (
