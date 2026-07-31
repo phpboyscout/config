@@ -16,6 +16,16 @@ who reads secrets from Key Vault takes it — and its SDK — and one who does n
 go get gitlab.com/phpboyscout/go/config-azure-keyvault
 ```
 
+!!! warning "Released, but not yet exercised against a real vault"
+
+    The conformance suite passes and the unit tests drive a hand-written fake of the SDK
+    surface — but Key Vault has no emulator, so **the client wiring has never met the
+    actual service**. That is the one part a fake cannot prove.
+
+    Nothing suggests it is wrong. It has simply not been demonstrated, and this page
+    would rather say so than let a version number imply otherwise. The integration suite
+    is written and waiting on credentials; this warning comes off when it passes.
+
 You build the client — vault URL and credential both — and hand it in:
 
 ```go

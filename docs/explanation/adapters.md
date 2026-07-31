@@ -214,8 +214,8 @@ before it is built**. The grouping is a planned order, not a commitment date.
 | [`config-gcp-parameter`](../how-to/gcp-parameter.md) | GCP Parameter Manager | A | **Released** *(read-only)* |
 | [`config-vault`](../how-to/vault.md) | HashiCorp Vault | B — secrets managers | **Released** *(read-only)* |
 | [`config-aws-secrets`](../how-to/aws-secrets.md) | AWS Secrets Manager | B | **Released** *(read-only)* |
-| [`config-azure-keyvault`](../how-to/azure-keyvault.md) | Azure Key Vault | B | **Released** *(read-only)* |
-| [`config-gcp-secret`](../how-to/gcp-secret.md) | GCP Secret Manager | B | **Released** *(read-only)* |
+| [`config-azure-keyvault`](../how-to/azure-keyvault.md) | Azure Key Vault | B | **Released** *(read-only; [not yet exercised against a real vault](../how-to/azure-keyvault.md))* |
+| [`config-gcp-secret`](../how-to/gcp-secret.md) | GCP Secret Manager | B | **Released** *(read-only; [not yet exercised against a real project](../how-to/gcp-secret.md))* |
 | [`config-keychain`](../how-to/keychain.md) | OS keychain | — not in the umbrella | **Released** *(read **and** write)* |
 | [`config-filekv`](../how-to/filekv.md) | a directory of single-value files | — not in the umbrella | **Released** *(read, opt-in write)* |
 | `config-etcd` | etcd | C — cloud-native key–value | **Specified** *(native watch, read+write)* |

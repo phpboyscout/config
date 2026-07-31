@@ -16,6 +16,17 @@ secrets from GCP takes it — and its SDK — and one who does not pays nothing.
 go get gitlab.com/phpboyscout/go/config-gcp-secret
 ```
 
+!!! warning "Released, but not yet exercised against a real project"
+
+    The conformance suite passes and the unit tests drive a hand-written fake of the SDK
+    surface — but Secret Manager has no emulator, so **the client wiring has never met the
+    actual service**. The version-state behaviour described below is precisely the part a
+    fake cannot prove.
+
+    Nothing suggests it is wrong. It has simply not been demonstrated, and this page
+    would rather say so than let a version number imply otherwise. The integration suite
+    is written and waiting on credentials; this warning comes off when it passes.
+
 You build the client — Application Default Credentials, a service account, workload identity — and
 hand it in with the project it should read:
 
