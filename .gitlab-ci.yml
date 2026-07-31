@@ -118,8 +118,27 @@ variables:
       git clone --depth 1 "https://gitlab.com/phpboyscout/go/${ADAPTER}.git" "${SRC}"
       cd "${SRC}"
       # Filesystem replace → build against config HEAD, not the pinned tag.
-      # A path replace needs no go.sum entry, so no checksum churn.
+      # A path replace needs no go.sum entry for config ITSELF, so there is no
+      # checksum churn for the module under test.
       go mod edit -replace "gitlab.com/phpboyscout/go/config=${CI_PROJECT_DIR}"
+      # But config's own dependencies still resolve normally, and the adapter's
+      # go.mod records them as indirects at whatever version its last release
+      # pinned. When a config MR raises one of those — a Renovate bump to
+      # yamldoc or go-yaml, say — the adapter's go.mod is below the new floor
+      # and the build stops with "updates to go.mod needed", which is module
+      # bookkeeping rather than a broken API.
+      #
+      # A real consumer never meets that state: Renovate bumps their config pin
+      # and tidies in the same commit. So the canary tidies too, which is what
+      # makes the combination it tests a combination that can actually exist.
+      #
+      # This does NOT weaken the gate. Tidy resolves module requirements, not
+      # type checking, so a removed or changed symbol still fails the build
+      # below; and a package deleted outright fails the tidy itself, which is
+      # reported here rather than swallowed.
+      echo "::group::${ADAPTER} — go mod tidy (align indirects with config HEAD)"
+      if ! go mod tidy; then echo "CANARY FAIL[${ADAPTER}]: go mod tidy broke against config HEAD"; exit 1; fi
+      echo "::endgroup::"
       echo "::group::${ADAPTER} — go build ./..."
       if ! go build ./...; then echo "CANARY FAIL[${ADAPTER}]: go build broke against config HEAD"; exit 1; fi
       echo "::endgroup::"
