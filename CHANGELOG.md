@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.12.1](https://gitlab.com/phpboyscout/go/config/-/releases/v0.12.1)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.12.0...v0.12.1)
+
+### Bug Fixes
+
+- **deps**: update go modules ([8538e9c](https://gitlab.com/phpboyscout/go/config/-/commit/8538e9cdc0d8bdd0c6fa4e406952934e1191f6d5))
+
 ## [v0.12.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.12.0)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.11.0...v0.12.0)
