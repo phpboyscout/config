@@ -16,13 +16,6 @@ who reads secrets from Key Vault takes it — and its SDK — and one who does n
 go get gitlab.com/phpboyscout/go/config-azure-keyvault
 ```
 
-!!! info "Not yet tagged"
-
-    This adapter is built and its conformance suite passes, but the first release is held until it
-    has been verified against a real vault — Key Vault has no emulator, so nothing short of the
-    service itself proves the client wiring. `go get` resolves it to a pseudo-version from `main`
-    in the meantime.
-
 You build the client — vault URL and credential both — and hand it in:
 
 ```go

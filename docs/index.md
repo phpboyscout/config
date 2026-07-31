@@ -191,18 +191,20 @@ cloud **parameter stores** are released:
 
 - **Parameter stores** — [AWS SSM](how-to/aws-ssm.md), [Azure App Configuration](how-to/azure-appconfig.md)
   and [GCP Parameter Manager](how-to/gcp-parameter.md), Consul's siblings.
-- **Secrets managers** — [Vault](how-to/vault.md) and [AWS Secrets
-  Manager](how-to/aws-secrets.md) are released and read-only; a value either provides can never be
-  written into a plainer layer beneath, because the core refuses that. [Azure Key
-  Vault](how-to/azure-keyvault.md) and [GCP Secret Manager](how-to/gcp-secret.md) are built and
-  awaiting verification against the real services.
+- **Secrets managers** — [Vault](how-to/vault.md), [AWS Secrets
+  Manager](how-to/aws-secrets.md), [Azure Key Vault](how-to/azure-keyvault.md) and [GCP Secret
+  Manager](how-to/gcp-secret.md), all released and read-only; a value any of them provides can
+  never be written into a plainer layer beneath, because the core refuses that.
 - **The OS keychain** — [config-keychain](how-to/keychain.md) makes macOS Keychain, Windows
   Credential Manager or Secret Service a layer, and is the one secrets backend that *writes*: a
   token this application just obtained belongs there rather than in the config file.
 - **A directory of single-value files** — [config-filekv](how-to/filekv.md) reads a mounted
   Kubernetes ConfigMap, Docker secrets or systemd credentials, where each filename is a key. It
   adds no dependency at all.
-- **Cloud-native key–value** *(roadmap)* — etcd and Kubernetes ConfigMaps, with native change-watch.
+- **Cloud-native key–value** *(roadmap)* — [etcd](explanation/adapters.md#roadmap), specified and
+  next to build, with a native change feed rather than polling. Kubernetes ConfigMaps are
+  deliberately **not** on this list: one already reaches a pod as a file or an environment
+  variable, so `config-filekv` above covers the gap without a 38-module API client.
 
 **[→ The full adapter ecosystem, with status and roadmap](explanation/adapters.md)**
 

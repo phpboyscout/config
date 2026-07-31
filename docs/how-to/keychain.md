@@ -18,11 +18,6 @@ keychain — macOS Keychain, Windows Credential Manager, or a Secret Service imp
 go get gitlab.com/phpboyscout/go/config-keychain
 ```
 
-!!! info "Not yet tagged"
-
-    This adapter is built and its conformance suite passes; the first release follows shortly.
-    `go get` resolves it to a pseudo-version from `main` in the meantime.
-
 ```go
 import (
 	"gitlab.com/phpboyscout/go/config"

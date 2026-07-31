@@ -187,14 +187,12 @@ The local keychain is the exception, and the reason it is one is worth reading b
   stream. Flat IDs verbatim, or one secret as a document. Its distinctive behaviour is version
   states: `latest` means most recently *created*, so a disabled newest version makes it unreadable
   and the adapter falls back to the newest enabled one — reporting that through a callback, because
-  provenance cannot carry a per-key resolution. **The heaviest adapter here at 39 modules.** *Built;
-  release gated on verification against a real project.*
+  provenance cannot carry a per-key resolution. **The heaviest adapter here at 39 modules.**
 - [**`config-azure-keyvault`**](../how-to/azure-keyvault.md) — Azure Key Vault. Read-only,
   statically sensitive, polled at five minutes. The one store here with **no hierarchy at all**:
   names allow only letters, digits and hyphens, so a name is a key verbatim and structure comes
   from a document in one secret. Reading a vault is one request per secret, because the listing
-  carries no values. *Built; release is gated on verification against a real vault, since Key Vault
-  has no emulator.*
+  carries no values.
 - [**`config-aws-secrets`**](../how-to/aws-secrets.md) — AWS Secrets Manager. Read-only, statically
   sensitive, polled. Reads a **prefix by default** — the reversal of Vault's shape, because
   `BatchGetSecretValue` returns a whole prefix in one request — or one secret as a whole document,
@@ -216,10 +214,10 @@ before it is built**. The grouping is a planned order, not a commitment date.
 | [`config-gcp-parameter`](../how-to/gcp-parameter.md) | GCP Parameter Manager | A | **Released** *(read-only)* |
 | [`config-vault`](../how-to/vault.md) | HashiCorp Vault | B — secrets managers | **Released** *(read-only)* |
 | [`config-aws-secrets`](../how-to/aws-secrets.md) | AWS Secrets Manager | B | **Released** *(read-only)* |
-| [`config-azure-keyvault`](../how-to/azure-keyvault.md) | Azure Key Vault | B | **Built** · release pending verification *(read-only)* |
-| [`config-gcp-secret`](../how-to/gcp-secret.md) | GCP Secret Manager | B | **Built** · release pending verification *(read-only)* |
+| [`config-azure-keyvault`](../how-to/azure-keyvault.md) | Azure Key Vault | B | **Released** *(read-only)* |
+| [`config-gcp-secret`](../how-to/gcp-secret.md) | GCP Secret Manager | B | **Released** *(read-only)* |
 | [`config-keychain`](../how-to/keychain.md) | OS keychain | — not in the umbrella | **Released** *(read **and** write)* |
-| [`config-filekv`](../how-to/filekv.md) | a directory of single-value files | — not in the umbrella | **Built** *(read, opt-in write)* |
+| [`config-filekv`](../how-to/filekv.md) | a directory of single-value files | — not in the umbrella | **Released** *(read, opt-in write)* |
 | `config-etcd` | etcd | C — cloud-native key–value | **Specified** *(native watch, read+write)* |
 | ~~`config-k8s`~~ | Kubernetes ConfigMaps | C | **Rejected** — a ConfigMap already reaches a pod as a file or an environment variable ([umbrella R4](../development/specs/2026-07-21-dynamic-backend-adapters.md)) |
 

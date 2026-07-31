@@ -16,13 +16,6 @@ secrets from GCP takes it — and its SDK — and one who does not pays nothing.
 go get gitlab.com/phpboyscout/go/config-gcp-secret
 ```
 
-!!! info "Not yet tagged"
-
-    This adapter is built and its conformance suite passes, but the first release is held until it
-    has been verified against a real project — there is no emulator for Secret Manager, and the
-    version-state behaviour below is precisely the part a fake cannot prove. `go get` resolves it
-    to a pseudo-version from `main` in the meantime.
-
 You build the client — Application Default Credentials, a service account, workload identity — and
 hand it in with the project it should read:
 

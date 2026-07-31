@@ -33,7 +33,7 @@ provenance, shadowing and hot-reload all work the same.
 
 Hot-reload needs a backend to notice change. The systems split:
 
-- **Native change feed.** Consul blocking queries, etcd watch, Kubernetes informers — a real
+- **Native change feed.** Consul blocking queries, etcd watch — a real
   subscription, so a change arrives push-fast and the backend reports `NativeWatch: true`.
 - **No change feed.** The cloud parameter stores have nothing to subscribe to, so they **poll** and
   report `NativeWatch: false`. Polling inherits everything else for free: the Store still coalesces
