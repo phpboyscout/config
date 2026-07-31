@@ -53,6 +53,7 @@ hide:
   <a class="cfg-pill" href="how-to/azure-keyvault/">Azure Key Vault</a>
   <a class="cfg-pill" href="how-to/gcp-secret/">GCP Secret</a>
   <a class="cfg-pill" href="how-to/keychain/">OS keychain</a>
+  <a class="cfg-pill" href="how-to/filekv/">file-per-key dir</a>
   <a class="cfg-pill cfg-pill--more" href="explanation/adapters/#roadmap">+ roadmap →</a>
 </div>
 
@@ -198,6 +199,9 @@ cloud **parameter stores** are released:
 - **The OS keychain** — [config-keychain](how-to/keychain.md) makes macOS Keychain, Windows
   Credential Manager or Secret Service a layer, and is the one secrets backend that *writes*: a
   token this application just obtained belongs there rather than in the config file.
+- **A directory of single-value files** — [config-filekv](how-to/filekv.md) reads a mounted
+  Kubernetes ConfigMap, Docker secrets or systemd credentials, where each filename is a key. It
+  adds no dependency at all.
 - **Cloud-native key–value** *(roadmap)* — etcd and Kubernetes ConfigMaps, with native change-watch.
 
 **[→ The full adapter ecosystem, with status and roadmap](explanation/adapters.md)**

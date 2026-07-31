@@ -169,6 +169,13 @@ The local keychain is the exception, and the reason it is one is worth reading b
   secret's field colliding with a child secret is [refused rather than
   guessed](dynamic-backends.md#ambiguous-structure-is-refused-not-guessed). Unlike the byte-valued
   stores it needs no value codec — Vault returns already-structured JSON.
+- [**`config-filekv`**](../how-to/filekv.md) — a **directory of single-value files**, where
+  each filename is a key. Not one system but a shape three of them share: a mounted
+  Kubernetes ConfigMap or Secret, Docker and Podman secrets under `/run/secrets`, and
+  systemd credentials. Read-only by default with opt-in writes, and **it adds no
+  module** — which is much of why it exists, since the alternative for a ConfigMap is a
+  38-module Kubernetes client to read data the pod already has. Its integration suite
+  proves the mount layout against a real cluster rather than against documentation.
 - [**`config-keychain`**](../how-to/keychain.md) — the local OS keychain, and the odd one out of
   this group in two ways. It is **writable**, because the token it holds is one the application
   just obtained on the user's own machine rather than something a separate audited process
@@ -211,9 +218,10 @@ before it is built**. The grouping is a planned order, not a commitment date.
 | [`config-aws-secrets`](../how-to/aws-secrets.md) | AWS Secrets Manager | B | **Released** *(read-only)* |
 | [`config-azure-keyvault`](../how-to/azure-keyvault.md) | Azure Key Vault | B | **Built** · release pending verification *(read-only)* |
 | [`config-gcp-secret`](../how-to/gcp-secret.md) | GCP Secret Manager | B | **Built** · release pending verification *(read-only)* |
-| [`config-keychain`](../how-to/keychain.md) | OS keychain | — not in the umbrella | **Built** *(read **and** write)* |
-| `config-etcd` | etcd | C — cloud-native key–value | Planned *(native watch)* |
-| `config-k8s` | Kubernetes ConfigMaps | C | Planned *(native watch)* |
+| [`config-keychain`](../how-to/keychain.md) | OS keychain | — not in the umbrella | **Released** *(read **and** write)* |
+| [`config-filekv`](../how-to/filekv.md) | a directory of single-value files | — not in the umbrella | **Built** *(read, opt-in write)* |
+| `config-etcd` | etcd | C — cloud-native key–value | **Specified** *(native watch, read+write)* |
+| ~~`config-k8s`~~ | Kubernetes ConfigMaps | C | **Rejected** — a ConfigMap already reaches a pod as a file or an environment variable ([umbrella R4](../development/specs/2026-07-21-dynamic-backend-adapters.md)) |
 
 Secrets managers ship **read-only by default** — a config tool writing a secret is a rarer and
 riskier thing than reading one, so write support for those is opt-in and specified per adapter.
