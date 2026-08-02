@@ -170,7 +170,7 @@ You do not need cobra, or a real command line, to test flag precedence. Build a
 func TestFlagBeatsFile(t *testing.T) {
 	fsys, err := config.Dir(t.TempDir())
 	require.NoError(t, err)
-	require.NoError(t, fsys.WriteFile("/config.yaml",
+	require.NoError(t, fsys.WriteFile("config.yaml",
 		[]byte("server:\n  port: 8080\n"), 0o600))
 
 	flags := pflag.NewFlagSet("mytool", pflag.ContinueOnError)
@@ -179,7 +179,7 @@ func TestFlagBeatsFile(t *testing.T) {
 	require.NoError(t, flags.Parse([]string{"--port", "9090"}))
 
 	store, err := config.NewStore(context.Background(),
-		config.WithFiles(fsys, "/config.yaml"),
+		config.WithFiles(fsys, "config.yaml"),
 		config.WithFlags(flags, config.BindFlag("port", "server.port")),
 	)
 	require.NoError(t, err)

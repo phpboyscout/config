@@ -179,9 +179,15 @@ require gitlab.com/phpboyscout/go/config v0.5.0 // the release the codec seam la
 
 Export a constructor that hides the codec, so a consumer writes
 `config.WithBackend(yourformat.New(fsys, path))`, and run the conformance suite in your module's
-tests. If you ship read-only first and add writing later, that is a supported lifecycle — a
-minor version with a release note, because the routing changes: see the
-[format adapters spec](../development/specs/2026-07-20-non-yaml-format-adapters.md).
+tests.
+
+If you ship read-only first and add writing later, that is a supported lifecycle — but cut
+it as a **minor** version with a release note, because it changes behaviour a consumer did
+not ask to change. A backend that cannot write is skipped by routing, so a write of a key it
+holds lands in the next writable layer beneath. The moment it *can* write, that same write
+routes at the new backend instead. Nothing in the consumer's code changed, and their edits
+now land somewhere else. Say so in the note. The mechanics are in
+[the format adapters spec](../development/specs/2026-07-20-non-yaml-format-adapters.md).
 
 ## Related
 

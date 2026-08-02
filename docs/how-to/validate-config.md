@@ -64,9 +64,18 @@ type AppConfig struct {
 | `config:"a.b"` | maps the field to a dot-separated configuration key |
 | `validate:"required"` | fails when the key is **absent** — see below |
 | `enum:"a,b,c"` | fails when the value is not one of the listed values |
-| `default:"x"` | **appears in documentation and error hints — does not set the value** |
-| `description:"…"` | human-readable description carried on the field schema |
-| `config:"-"` | skips the field entirely |
+| `default:"x"` | **recorded on the field schema — does not set the value** |
+| `description:"…"` | recorded on the field schema; no message currently reads it |
+| `config:"-"` | skips a scalar field — but a **struct** field is still walked, exactly as an untagged one is ([why](../reference/struct-tags.md#how-untagged-struct-fields-become-key-prefixes)) |
+
+!!! warning "`required` is the whole of the `validate` vocabulary"
+    The tag is split on commas and every token compared against the literal string
+    `required`. A tag written for another validation library —
+    `validate:"required,min=1,oneof=8080 9090"` — applies `required` and **silently
+    discards the rest**. There is no warning; the constraint simply does not exist.
+
+    The full tag reference, including which Go types the schema can and cannot describe,
+    is in [Struct tags](../reference/struct-tags.md).
 
 !!! info "`required` means present, not non-zero"
     A `bool` set to `false` and an `int` set to `0` are configured values, and
@@ -89,9 +98,12 @@ would. Both spellings work; pick one and stay with it.
     defaults layer, added with `WithReaders` — because a second source of defaults will
     drift from the first. Do not define a default in both.
 
-!!! note "Two different struct tags"
-    Validation reads **`config:`**; [section decoding](typed-sections.md) reads
-    **`mapstructure:`**. They are separate mechanisms, and one struct may carry both.
+!!! note "Two different sets of struct tags"
+    Validation reads **`config:`** (plus `validate:`, `enum:`, `default:` and
+    `description:`). [Section decoding](typed-sections.md) reads **`mapstructure:`**,
+    falling back to `yaml:` then `json:` then the lower-cased field name. They are separate
+    mechanisms, and one struct may carry both sets — see
+    [Struct tags](../reference/struct-tags.md).
 
 ## Validate in one call
 
@@ -292,6 +304,13 @@ The reading path is unaffected — `GetInt` coerces — but validation is not a 
 If a key is routinely supplied by the environment or a flag, either leave it out of the
 typed schema or declare it as a string.
 
+The schema's type model is also coarser than Go's. It knows `string`, `int`, `float64`,
+`bool` and `duration`, and maps **everything else to `string`** — including unsigned
+integers, slices, maps and `time.Time`. A field declared `uint16` or `[]string` therefore
+fails its own type check against an ordinary YAML file. Use `int` for a validated numeric
+field, and leave collections out of the validated struct; the full mapping is in
+[Struct tags](../reference/struct-tags.md#what-the-type-check-actually-compares).
+
 ## Validate your own slice, not the world
 
 Each package should validate its own keys with its own struct. There is deliberately no
@@ -338,15 +357,17 @@ one in place. See [Use typed sections](typed-sections.md).
 
 ## Testing validation
 
-No disk needed. Build a store over an in-memory filesystem and assert on the error:
+Build a store over a throwaway directory and assert on the error. `config.Dir` takes paths
+**relative to its root**, so write `"config.yaml"` and not `"/config.yaml"` — an absolute
+path is treated as an attempt to escape the root and fails with `path escapes from parent`.
 
 ```go
 fsys, err := config.Dir(t.TempDir())
 require.NoError(t, err)
-require.NoError(t, fsys.WriteFile("/config.yaml",
+require.NoError(t, fsys.WriteFile("config.yaml",
 	[]byte("server:\n  host: localhost\nlog:\n  level: verbose\n"), 0o644))
 
-store, err := config.NewStore(ctx, config.WithFiles(fsys, "/config.yaml"))
+store, err := config.NewStore(ctx, config.WithFiles(fsys, "config.yaml"))
 require.NoError(t, err)
 
 err = config.ValidateStruct[AppConfig](store.View())
@@ -362,3 +383,5 @@ assert.Contains(t, err.Error(), "log.level")
 - [React to changes with hot-reload](hot-reload.md)
 - [Hot-reload safety](../explanation/hot-reload-safety.md) — why a rejected reload changes nothing
 - [Write configuration](write-config.md) — planning, routing and applying a change
+- [Struct tags](../reference/struct-tags.md) — every tag, what is honoured, and what is silently ignored
+- [Errors](../reference/errors.md#errinvalidconfig) — `ErrInvalidConfig` and `ErrEmptySchema` in full

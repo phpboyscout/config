@@ -161,9 +161,9 @@ func storeOver(t *testing.T, body string) *config.Store {
 
 	fsys, err := config.Dir(t.TempDir())
 	require.NoError(t, err)
-	require.NoError(t, fsys.WriteFile("/config.yaml", []byte(body), 0o600))
+	require.NoError(t, fsys.WriteFile("config.yaml", []byte(body), 0o600))
 
-	store, err := config.NewStore(context.Background(), config.WithFiles(fsys, "/config.yaml"))
+	store, err := config.NewStore(context.Background(), config.WithFiles(fsys, "config.yaml"))
 	require.NoError(t, err)
 
 	return store
@@ -188,21 +188,25 @@ require.NoError(t, err)
 assert.Equal(t, 9090, store.View().GetInt("server.port"))
 ```
 
-For file behaviour — watching, writing, missing overlays — use `config.Dir(t.TempDir())`,
-which gives you real merge and write behaviour with nothing on disk:
+For file behaviour — watching, writing, missing overlays — use `config.Dir(t.TempDir())`.
+It is a **real directory on disk**, cleaned up by `t.TempDir()`, so writes, renames,
+permissions and native watching all behave as they do in production. Paths are relative to
+its root, so write `"app.yaml"` and not `"/app.yaml"`:
 
 ```go
 fsys, err := config.Dir(t.TempDir())
 require.NoError(t, err)
-require.NoError(t, fsys.WriteFile("/app.yaml", []byte("server:\n  port: 8080\n"), 0o644))
+require.NoError(t, fsys.WriteFile("app.yaml", []byte("server:\n  port: 8080\n"), 0o644))
 
-store, err := config.NewStore(ctx, config.WithFiles(fsys, "/app.yaml"))
+store, err := config.NewStore(ctx, config.WithFiles(fsys, "app.yaml"))
 require.NoError(t, err)
 ```
 
-Note that `fsnotify` cannot see an in-memory filesystem, so `Watch` falls back to
-polling there — which is why a test that needs deterministic change detection should
-supply its own `Watcher` rather than rely on either.
+Native watching works here, because `config.Dir` reports a real operating-system path. An
+in-memory filesystem does not, so `fsnotify` cannot see it and `Watch` falls back to
+polling. Either way a test that needs *deterministic* change detection should supply its own
+`Watcher` rather than wait on a timer or on the kernel — see
+[Testing reload behaviour](hot-reload.md#testing-reload-behaviour).
 
 Use a mock to test *consumers* of configuration; use a real store to test
 configuration *itself*.
@@ -214,7 +218,7 @@ each other. `WithEnviron` supplies the variables instead:
 
 ```go
 store, err := config.NewStore(ctx,
-	config.WithFiles(fsys, "/app.yaml"),
+	config.WithFiles(fsys, "app.yaml"),
 	config.WithEnv("MYTOOL", config.WithEnviron(func() []string {
 		return []string{"MYTOOL_SERVER_PORT=9090"}
 	})),
@@ -254,4 +258,4 @@ the store. Remember that precedence is simply the order the sources were added, 
 - [Load & merge configuration](load-and-merge.md)
 - [Use typed sections](typed-sections.md)
 - [React to changes with hot-reload](hot-reload.md)
-- [Getting started](../getting-started.md)
+- [Getting started](../tutorials/getting-started.md)

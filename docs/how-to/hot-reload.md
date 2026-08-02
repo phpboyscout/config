@@ -319,7 +319,7 @@ require.NoError(t, err)
 
 defer stop()
 
-require.NoError(t, fsys.WriteFile("/app.yaml", []byte("value: second\n"), 0o644))
+require.NoError(t, fsys.WriteFile("app.yaml", []byte("value: second\n"), 0o644))
 w.fire() // the store re-reads and notifies, synchronously
 
 assert.Equal(t, "second", store.View().GetString("value"))
@@ -359,3 +359,5 @@ Register the backend with `WithBackend` as usual. See
 - [Use typed sections](typed-sections.md)
 - [Validate configuration](validate-config.md) — gate reloads on a schema
 - [Test with the config mocks](test-with-mocks.md)
+- [Defaults and limits](../reference/defaults-and-limits.md#watching-and-reload-timing) — the poll and settle intervals, and what overrides them
+- [Errors](../reference/errors.md#errwatchunavailable) — what an unwatchable set of sources returns
