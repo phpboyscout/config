@@ -266,3 +266,4 @@ and a one-method interface are the whole contract.
 - [Validate configuration](validate-config.md)
 - [Load & merge configuration](load-and-merge.md)
 - [Test with the config mocks](test-with-mocks.md)
+- [Struct tags](../reference/struct-tags.md#decoding-tags) — `mapstructure`, `yaml` and `json`, and the types that decode from text

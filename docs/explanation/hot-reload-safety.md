@@ -283,3 +283,4 @@ Stated plainly, because each is a real edge:
 - [Validate configuration](../how-to/validate-config.md) — gating reloads on a schema
 - [Use typed sections](../how-to/typed-sections.md) — the same fail-closed doctrine, one level down
 - [Write configuration](../how-to/write-config.md) — why an own write never reaches the watcher
+- [Defaults and limits](../reference/defaults-and-limits.md#watching-and-reload-timing) — the intervals this page reasons about

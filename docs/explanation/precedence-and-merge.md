@@ -236,3 +236,5 @@ level.
 - [Load & merge configuration](../how-to/load-and-merge.md) — building a store, in order
 - [Bind CLI flags](../how-to/bind-cli-flags.md) — why only changed flags contribute
 - [History](../about/history.md) — where this model came from
+- [Keys and paths](../reference/keys-and-paths.md) — the same rules stated as a lookup table
+- [Environment variables](../reference/environment-variables.md) — the full name-resolution algorithm

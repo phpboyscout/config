@@ -294,3 +294,5 @@ kept indefinitely and would quietly serve values that grew arbitrarily old.
 - [React to changes with hot-reload](hot-reload.md)
 - [Validate configuration](validate-config.md)
 - [Precedence & merge model](../explanation/precedence-and-merge.md)
+- [Environment variables](../reference/environment-variables.md) — the exact name-to-key mapping, and when a name is ambiguous
+- [Keys and paths](../reference/keys-and-paths.md) — the dotted-path grammar and the per-shape merge rules

@@ -248,3 +248,4 @@ Stated plainly, because each is a real edge:
 - [Write configuration](../how-to/write-config.md) — planning, routing, conflicts
 - [Precedence & merge model](precedence-and-merge.md) — how layers fold together
 - [Hot-reload safety](hot-reload-safety.md) — the watcher and foreign changes
+- [Limitations](../reference/limitations.md) — the same boundaries, collected across every part of the module

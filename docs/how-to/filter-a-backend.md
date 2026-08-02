@@ -124,3 +124,5 @@ Both are asserted by tests that fail if the forwarding is removed.
 - [Backends and capabilities](../explanation/backends.md) — what a backend declares, and what the store does with it
 - [Write configuration](write-config.md) — where a write lands, and how to name a layer yourself
 - [Keep tokens in the OS keychain](keychain.md) — a sensitive backend worth bounding
+- [Keys and paths](../reference/keys-and-paths.md#filter-patterns-for-allow-and-deny) — the exact pattern grammar, with worked matches
+- [Errors](../reference/errors.md#errsensitiveleak) — why a filtered secret still cannot be written to a plain layer

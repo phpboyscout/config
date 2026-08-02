@@ -420,3 +420,5 @@ left guessing, and neither should the user be.
 - [Provenance](../explanation/provenance.md) — who supplied a value and what shadows it
 - [The Store](../explanation/the-store.md) — why one component owns config I/O
 - [Hot-reload](hot-reload.md) — reacting to changes made outside this process
+- [Errors](../reference/errors.md) — every error value a write can return, and what to do about each
+- [Defaults and limits](../reference/defaults-and-limits.md#file-modes-and-write-staging) — the modes a created file and directory carry

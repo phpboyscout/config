@@ -163,3 +163,4 @@ forget, because there is no separate step.
 - [The Store](the-store.md) — why one component owns configuration I/O
 - [Provenance](provenance.md) — how a layer's identity is recorded and reported
 - [Precedence and the merge model](precedence-and-merge.md)
+- [Errors](../reference/errors.md) — the error values a backend is expected to return

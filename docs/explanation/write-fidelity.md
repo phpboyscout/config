@@ -91,3 +91,4 @@ If you know what changed, say so precisely: diff before against after and issue 
 - [Write configuration](../how-to/write-config.md) — the recipes
 - [Backends & capabilities](backends.md) — what a backend must support to be written to
 - [The Store](the-store.md) — why one component owns every write
+- [Limitations](../reference/limitations.md#writes) — what a write does not promise

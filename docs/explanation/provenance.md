@@ -180,3 +180,4 @@ Worth stating plainly, so you do not go looking for it:
 - [The Store](the-store.md) — why one component owns config I/O, and what a snapshot is
 - [Write configuration](../how-to/write-config.md) — routing, shadowed writes, conflicts
 - [Precedence & merge model](precedence-and-merge.md) — how layers fold together
+- [Limitations](../reference/limitations.md#provenance-is-leaf-only) — why a populated mapping has no single origin

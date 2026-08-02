@@ -205,3 +205,6 @@ if err != nil {
 - [Use typed sections](typed-sections.md) — decode a subtree onto your own struct
 - [Load & merge configuration](load-and-merge.md) — where the values come from
 - [Provenance](../explanation/provenance.md) — and why each one won
+- [Keys and paths](../reference/keys-and-paths.md) — what a path can and cannot address
+- [Struct tags](../reference/struct-tags.md) — the tags decoding reads, and the types that decode from text
+- [Defaults and limits](../reference/defaults-and-limits.md#sizes) — the binary suffixes `GetSizeInBytes` understands

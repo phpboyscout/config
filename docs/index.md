@@ -12,7 +12,7 @@ hide:
     <h1 class="cfg-hero__title">Configuration that <span class="amber">shows its work</span></h1>
     <p class="cfg-hero__lede">Assemble settings from defaults, files, the environment, flags and remote systems like Consul — with a precedence you read off the call site, every value able to say where it came from, and writes that never wreck the file.</p>
     <div class="cfg-hero__cta">
-      <a class="cfg-btn cfg-btn--primary" href="getting-started/">Get started</a>
+      <a class="cfg-btn cfg-btn--primary" href="tutorials/getting-started/">Get started</a>
       <a class="cfg-btn cfg-btn--ghost" href="explanation/adapters/">Explore the ecosystem</a>
     </div>
     <code class="cfg-hero__install">go get gitlab.com/phpboyscout/go/config</code>
@@ -24,7 +24,7 @@ hide:
 
 <div class="cfg-eco">
   <span class="cfg-eco__label">Formats</span>
-  <a class="cfg-pill" href="getting-started/">YAML</a>
+  <a class="cfg-pill" href="tutorials/getting-started/">YAML</a>
   <a class="cfg-pill" href="how-to/json/">JSON</a>
   <a class="cfg-pill" href="how-to/toml/">TOML</a>
   <a class="cfg-pill" href="how-to/hcl/">HCL</a>
@@ -235,11 +235,11 @@ it.
 ## Where next
 
 The documentation follows the [Diátaxis](https://diataxis.fr) quadrants: learn, then do,
-then understand.
+then look up, then understand.
 
 <div class="grid cards" markdown>
 
-- :material-rocket-launch: **[Getting started](getting-started.md)** — the tutorial.
+- :material-rocket-launch: **[Getting started](tutorials/getting-started.md)** — the tutorial.
   Build a store over a file, read values, ask where they came from, write a change back,
   and react to one made outside your process.
 - :material-file-tree: **[Load & merge](how-to/load-and-merge.md)** — files, embedded
@@ -258,6 +258,10 @@ then understand.
   a secrets manager or an HTTP endpoint an ordinary layer.
 - :material-test-tube: **[Test with the mocks](how-to/test-with-mocks.md)** —
   `MockReader`, `MockBinder` and `MockObserved` in your tests.
+- :material-book-open-variant: **[Reference](reference/index.md)** — key syntax, the
+  environment-variable mapping, struct tags, every error, every default.
+- :material-cancel: **[Limitations](reference/limitations.md)** — what it does not do, does
+  not guarantee, and will not be made to do.
 - :material-lightbulb-on: **[The Store](explanation/the-store.md)** — why one component
   owns config I/O, and what follows from that rule.
 - :material-map-marker-path: **[Provenance](explanation/provenance.md)** — what `Origin`,
@@ -292,7 +296,23 @@ For how the module got here, see [History](about/history.md).
 
 ## Reference
 
-The Go API reference lives on
+**[The reference section](reference/index.md)** covers the surfaces you *write* rather than
+the ones you call — the exact rules, looked up when you need them:
+
+- **[Keys and paths](reference/keys-and-paths.md)** — the dotted-path grammar, key casing,
+  how layers merge per value shape, and what `Allow`/`Deny` patterns match.
+- **[Environment variables](reference/environment-variables.md)** — how a variable name
+  becomes a key, what the prefix does, and when a name is ambiguous.
+- **[Struct tags](reference/struct-tags.md)** — every tag validation reads, every tag
+  decoding reads, and which are silently ignored.
+- **[Errors](reference/errors.md)** — every exported error value, what returns it, and what
+  to do about it.
+- **[Defaults and limits](reference/defaults-and-limits.md)** — every interval, file mode
+  and built-in bound.
+- **[Limitations](reference/limitations.md)** — what the module does not do, will not do,
+  and cannot do.
+
+The Go API reference — every type, method and signature — lives on
 **[pkg.go.dev](https://pkg.go.dev/gitlab.com/phpboyscout/go/config)**, which is where a
-language API reference belongs — generated from the source it documents, so it cannot
-drift from it.
+language API reference belongs: generated from the source it documents, so it cannot drift
+from it.
