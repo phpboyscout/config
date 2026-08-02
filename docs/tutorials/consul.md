@@ -10,7 +10,7 @@ By the end of this tutorial you will have a program that loads its configuration
 running HashiCorp Consul, reads typed values from it, reacts when a value changes in Consul
 without restarting, and writes a value back — all through the same `config` store a file uses.
 
-Unlike [Getting started](../getting-started.md), this one needs one external service: a Consul
+Unlike [Getting started](getting-started.md), this one needs one external service: a Consul
 agent, which you will run locally in development mode. Work through it top to bottom; you run the
 program after each step.
 

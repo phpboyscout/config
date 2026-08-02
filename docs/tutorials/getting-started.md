@@ -2,8 +2,6 @@
 title: Getting started
 description: Build a store over a YAML file, read values, ask where they came from, write a change back, and react to a foreign edit.
 tags: [tutorial, getting-started]
-hide:
-  - navigation
 ---
 
 # Getting started
@@ -340,17 +338,23 @@ goroutine.
 
 You now have the whole shape of the module. The how-to guides go deeper on each part:
 
-- **[Load & merge configuration](how-to/load-and-merge.md)** — multiple files, embedded
+- **[Load & merge configuration](../how-to/load-and-merge.md)** — multiple files, embedded
   defaults, CLI flags, and the full precedence chain.
-- **[Read configuration values](how-to/read-values.md)** — the full read surface: typed
+- **[Read configuration values](../how-to/read-values.md)** — the full read surface: typed
   accessors, the generic `config.Value[T]`, scoped views and struct decoding.
-- **[Write configuration](how-to/write-config.md)** — routing, conflicts, batching, and
+- **[Write configuration](../how-to/write-config.md)** — routing, conflicts, batching, and
   the sharp edge of setting a whole map.
-- **[Use typed sections](how-to/typed-sections.md)** — decode a subtree onto your own
+- **[Use typed sections](../how-to/typed-sections.md)** — decode a subtree onto your own
   struct, and keep it current across reloads with `ObserveSection`.
-- **[Validate configuration](how-to/validate-config.md)** — catch bad configuration at
+- **[Validate configuration](../how-to/validate-config.md)** — catch bad configuration at
   load time with a `Schema` and `config:` struct tags.
-- **[React to changes with hot-reload](how-to/hot-reload.md)** — observers, watchers and
+- **[React to changes with hot-reload](../how-to/hot-reload.md)** — observers, watchers and
   error handling in more detail.
 
-For why it is built this way, read **[The Store](explanation/the-store.md)**.
+When you need an exact rule rather than a walkthrough — the dotted-path grammar, how an
+environment variable maps onto a key, which struct tags are honoured, what an error means,
+what a default is — that is **[Reference](../reference/index.md)**. What the module
+deliberately does *not* do is collected in
+**[Limitations](../reference/limitations.md)**.
+
+For why it is built this way, read **[The Store](../explanation/the-store.md)**.

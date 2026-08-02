@@ -1,0 +1,12 @@
+# Redirects for pages that have moved, served by GitLab Pages from the site root.
+#
+# This file is copied verbatim into the built site, so every line here is a live
+# rule. Keep a rule for as long as anything might still link to the old path —
+# blog posts and other projects' documentation link here, and a rename without a
+# redirect turns each of those into a 404.
+#
+# Format: <from> <to> <status>
+
+# The tutorial moved into the tutorials/ quadrant (2026-08).
+/getting-started/ /tutorials/getting-started/ 301
+/getting-started/index.html /tutorials/getting-started/ 301

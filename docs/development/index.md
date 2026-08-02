@@ -9,7 +9,7 @@ authors: [Matt Cockayne <matt@phpboyscout.uk>]
 
 !!! info "This is about working on the module, not with it"
     Everything here concerns contributing to `config` itself. If you are configuring an
-    application *using* it, start at the [tutorial](../getting-started.md).
+    application *using* it, start at the [tutorial](../tutorials/getting-started.md).
 
 ## Setup
 
