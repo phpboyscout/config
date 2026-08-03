@@ -39,11 +39,12 @@ package backendconformance
 
 import (
 	"context"
-	"errors"
 	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	"gitlab.com/phpboyscout/go/errors"
 
 	"gitlab.com/phpboyscout/go/config"
 )

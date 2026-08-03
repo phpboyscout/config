@@ -2,11 +2,11 @@ package config
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
 
+	"gitlab.com/phpboyscout/go/errors"
 	"gitlab.com/phpboyscout/go/yamldoc"
 	yaml "go.yaml.in/yaml/v3"
 )

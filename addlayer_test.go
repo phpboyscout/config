@@ -2,9 +2,10 @@ package config
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // A programmatic layer is how a tool contributes configuration it computed

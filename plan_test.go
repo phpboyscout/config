@@ -2,10 +2,11 @@ package config
 
 import (
 	"context"
-	"errors"
 	"reflect"
 	"strings"
 	"testing"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // Routing decides where an edit lands. Getting it wrong is not a crash — it is

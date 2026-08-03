@@ -2,17 +2,18 @@ package config
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"slices"
 	"strings"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // ErrAmbiguousEnvKey is returned when a set environment variable could
 // designate more than one configuration key, so honouring it would mean
 // guessing which the user meant.
-var ErrAmbiguousEnvKey = errors.New("config: environment variable is ambiguous")
+var ErrAmbiguousEnvKey = errors.NewSentinel("config.ambiguous_env_key", "config: environment variable is ambiguous")
 
 // envBackend contributes configuration from environment variables.
 type envBackend struct {

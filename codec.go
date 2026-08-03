@@ -3,10 +3,11 @@ package config
 import (
 	"context"
 	"crypto/sha256"
-	"errors"
 	"fmt"
 	"io/fs"
 	"time"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // Codec turns a source's bytes into layer values.

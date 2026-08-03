@@ -2,13 +2,13 @@ package config
 
 import (
 	"context"
-	"errors"
 	"io/fs"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/spf13/afero"
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 func memFS(t *testing.T, files map[string]string) FS {

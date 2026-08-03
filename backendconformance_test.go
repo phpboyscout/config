@@ -2,10 +2,11 @@ package config_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"testing"
+
+	"gitlab.com/phpboyscout/go/errors"
 
 	"gitlab.com/phpboyscout/go/config"
 	"gitlab.com/phpboyscout/go/config/backendconformance"

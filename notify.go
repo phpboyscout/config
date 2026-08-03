@@ -1,10 +1,11 @@
 package config
 
 import (
-	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // Reader is the read surface a consumer depends on.

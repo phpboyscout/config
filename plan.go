@@ -1,33 +1,34 @@
 package config
 
 import (
-	"errors"
 	"fmt"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // Routing errors.
 var (
 	// ErrNoWritableLayer is returned when a change has nowhere it can be
 	// written: every layer that could hold it is read-only.
-	ErrNoWritableLayer = errors.New("config: no writable layer for change")
+	ErrNoWritableLayer = errors.NewSentinel("config.no_writable_layer", "config: no writable layer for change")
 
 	// ErrNoChanges is returned when an apply is asked to do nothing.
-	ErrNoChanges = errors.New("config: no changes to apply")
+	ErrNoChanges = errors.NewSentinel("config.no_changes", "config: no changes to apply")
 
 	// ErrInvalidPath is returned for a malformed dotted path.
-	ErrInvalidPath = errors.New("config: invalid path")
+	ErrInvalidPath = errors.NewSentinel("config.invalid_path", "config: invalid path")
 
 	// ErrInvalidTarget is returned when a target cannot receive what is being
 	// asked of it: a decode target that cannot hold values, a layer with no
 	// name, or a pinned write target naming no writable source.
-	ErrInvalidTarget = errors.New("config: invalid target")
+	ErrInvalidTarget = errors.NewSentinel("config.invalid_target", "config: invalid target")
 
 	// ErrSensitiveLeak is returned when a write would land a key a sensitive
 	// source defines into a layer that is not sensitive — writing secret-category
 	// material into a plain store. Because secrets backends are read-only, a
 	// write to a key they own routes down to the next writable layer, typically a
 	// file; refusing it is what keeps that safe.
-	ErrSensitiveLeak = errors.New("config: refusing to write a sensitive key into a non-sensitive layer")
+	ErrSensitiveLeak = errors.NewSentinel("config.sensitive_leak", "config: refusing to write a sensitive key into a non-sensitive layer")
 )
 
 // Change is a single edit to persist.

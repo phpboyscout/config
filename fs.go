@@ -1,11 +1,12 @@
 package config
 
 import (
-	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // ErrReadOnlyFS is returned by the write methods of a read-only [FS] —
@@ -14,7 +15,7 @@ import (
 // can errors.Is it, rather than a bare fs.ErrPermission that a genuine
 // permission failure is indistinguishable from. See the filesystem adapters
 // spec, D4.
-var ErrReadOnlyFS = errors.New("config: filesystem is read-only")
+var ErrReadOnlyFS = errors.NewSentinel("config.read_only_f_s", "config: filesystem is read-only")
 
 // FS is the filesystem surface this module needs, and the whole of it.
 //

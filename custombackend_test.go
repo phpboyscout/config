@@ -2,12 +2,13 @@ package config_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"sync"
 	"testing"
 	"time"
+
+	"gitlab.com/phpboyscout/go/errors"
 
 	"gitlab.com/phpboyscout/go/config"
 )

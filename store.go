@@ -2,7 +2,6 @@ package config
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -13,15 +12,16 @@ import (
 	"time"
 
 	"github.com/spf13/pflag"
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 var (
 	// ErrNoSources is returned when a Store is built with nothing to read.
-	ErrNoSources = errors.New("config: no sources configured")
+	ErrNoSources = errors.NewSentinel("config.no_sources", "config: no sources configured")
 
 	// ErrInvalidConfig is returned when a candidate configuration fails schema
 	// validation. The previous configuration, if any, is retained.
-	ErrInvalidConfig = errors.New("config: configuration is not valid")
+	ErrInvalidConfig = errors.NewSentinel("config.invalid_config", "config: configuration is not valid")
 )
 
 // Store is the sole owner of configuration I/O.

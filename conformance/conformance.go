@@ -27,10 +27,11 @@ package conformance
 import (
 	"bytes"
 	"context"
-	"errors"
 	"sort"
 	"strings"
 	"testing"
+
+	"gitlab.com/phpboyscout/go/errors"
 
 	"gitlab.com/phpboyscout/go/config"
 )

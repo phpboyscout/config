@@ -2,13 +2,13 @@ package config_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/cucumber/godog"
+	"gitlab.com/phpboyscout/go/errors"
 
 	. "gitlab.com/phpboyscout/go/config"
 )

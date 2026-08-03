@@ -2,13 +2,13 @@ package config
 
 import (
 	"context"
-	"errors"
 	"io/fs"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/spf13/afero"
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // failingRenameFs fails the rename of a nominated path, which is how a commit

@@ -3,7 +3,6 @@ package config
 import (
 	"context"
 	"crypto/sha256"
-	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -11,13 +10,14 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // ErrWatchUnavailable is returned when watching cannot work for the given
 // sources. It is deliberately loud: a watcher that silently does nothing is
 // worse than none, because the application believes it will hear about changes
 // and never will.
-var ErrWatchUnavailable = errors.New("config: cannot watch sources")
+var ErrWatchUnavailable = errors.NewSentinel("config.watch_unavailable", "config: cannot watch sources")
 
 // DefaultPollInterval is how often the polling watcher checks for changes when
 // the filesystem cannot notify.

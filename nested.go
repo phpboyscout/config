@@ -2,22 +2,23 @@ package config
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // Composition errors.
 var (
 	// ErrCyclicStore is returned when composing stores would put one store into
 	// the graph twice — whether or not that closes a cycle. See [Nested].
-	ErrCyclicStore = errors.New("config: store is already present in this graph")
+	ErrCyclicStore = errors.NewSentinel("config.cyclic_store", "config: store is already present in this graph")
 
 	// ErrDuplicateLayer is returned when two layers in a composed store are
 	// indistinguishable: equal in kind, name and document, so nothing can tell
 	// them apart. See [Nested].
-	ErrDuplicateLayer = errors.New("config: two layers in the composed store are indistinguishable")
+	ErrDuplicateLayer = errors.NewSentinel("config.duplicate_layer", "config: two layers in the composed store are indistinguishable")
 )
 
 // NestedOption configures a nested store. See [NestedPromotable].

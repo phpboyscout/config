@@ -2,7 +2,6 @@ package config
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/afero"
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // manualWatcher lets a test decide exactly when a change is reported, so

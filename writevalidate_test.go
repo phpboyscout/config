@@ -2,9 +2,10 @@ package config
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // serverConfig is the smallest shape that can express each of the failure

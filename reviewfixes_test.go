@@ -2,7 +2,6 @@ package config
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/spf13/pflag"
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // Commenting a configuration file out entirely is an ordinary thing to do, and

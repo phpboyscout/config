@@ -2,9 +2,10 @@ package config
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // D15's central claim is that validation and the reload a write causes cannot

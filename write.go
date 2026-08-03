@@ -3,12 +3,13 @@ package config
 import (
 	"context"
 	"crypto/sha256"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sync/atomic"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // File modes for staged and committed configuration.
@@ -26,16 +27,16 @@ const (
 var (
 	// ErrConflict is returned when a source changed between being read and
 	// being written, so committing would silently discard someone else's work.
-	ErrConflict = errors.New("config: source changed since it was read")
+	ErrConflict = errors.NewSentinel("config.conflict", "config: source changed since it was read")
 
 	// ErrNotWritable is returned when a change is routed at a backend that
 	// cannot persist.
-	ErrNotWritable = errors.New("config: backend is not writable")
+	ErrNotWritable = errors.NewSentinel("config.not_writable", "config: backend is not writable")
 
 	// ErrPartialCommit is returned when a multi-source commit fails partway
 	// and could not be fully rolled back. It always names what is in which
 	// state: a caller must never be left guessing.
-	ErrPartialCommit = errors.New("config: commit partially applied")
+	ErrPartialCommit = errors.NewSentinel("config.partial_commit", "config: commit partially applied")
 )
 
 // asEdit renders a change as the edit a backend applies, for the internal

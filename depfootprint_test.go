@@ -30,6 +30,12 @@ const sentinelPackage = "github.com/spf13/cast"
 const selfModule = "gitlab.com/phpboyscout/go/config"
 
 var allowedModules = []string{
+	// The estate's errors package, which replaced the standard
+	// library's here so that hints, stacks and structured attributes
+	// survive. It has NO dependencies of its own, so this adds one
+	// module to the graph and nothing beneath it.
+	"gitlab.com/phpboyscout/go/errors",
+
 	// Command-line flags, for the flag backend.
 	"github.com/spf13/pflag",
 	// Type coercion, for the typed accessors.

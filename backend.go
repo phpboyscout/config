@@ -2,22 +2,23 @@ package config
 
 import (
 	"context"
-	"errors"
 	"time"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // Backend errors. Callers should branch on these with errors.Is.
 var (
 	// ErrBackendUnsafe is returned when a source contains a construct that
 	// cannot be safely round-tripped, so editing it would risk corruption.
-	ErrBackendUnsafe = errors.New("config: source cannot be safely edited")
+	ErrBackendUnsafe = errors.NewSentinel("config.backend_unsafe", "config: source cannot be safely edited")
 
 	// ErrBackendParse is returned when a source is not valid for its format.
-	ErrBackendParse = errors.New("config: source could not be parsed")
+	ErrBackendParse = errors.NewSentinel("config.backend_parse", "config: source could not be parsed")
 
 	// ErrInternal is returned when an invariant of this module does not hold.
 	// It is never the caller's fault and is always worth reporting.
-	ErrInternal = errors.New("config: internal invariant violated")
+	ErrInternal = errors.NewSentinel("config.internal", "config: internal invariant violated")
 )
 
 // Backend is a source of configuration layers.

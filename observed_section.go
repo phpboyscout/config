@@ -1,15 +1,16 @@
 package config
 
 import (
-	"errors"
 	"reflect"
 	"sync"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // ErrNoMergeFunc is returned when a section supplies defaults but no way to
 // combine them with the configured values. Silently preferring one over the
 // other would drop half the settings without saying so.
-var ErrNoMergeFunc = errors.New("config: section defaults require a merge function")
+var ErrNoMergeFunc = errors.NewSentinel("config.no_merge_func", "config: section defaults require a merge function")
 
 // ObservedSection stores the latest typed snapshot of an observed config
 // section.

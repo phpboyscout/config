@@ -2,11 +2,11 @@ package config
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 
 	"github.com/spf13/pflag"
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 func envOf(vars ...string) EnvOption {

@@ -2,9 +2,10 @@ package config
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 func readFile(t *testing.T, filesystem FS, path string) string {

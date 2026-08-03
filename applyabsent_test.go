@@ -2,10 +2,11 @@ package config
 
 import (
 	"context"
-	"errors"
 	"io/fs"
 	"strings"
 	"testing"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // Declaring an optional, not-yet-created source is a supported pattern at load

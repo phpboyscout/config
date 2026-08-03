@@ -1,16 +1,17 @@
 package config
 
 import (
-	"errors"
 	"maps"
 	"reflect"
 	"strings"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // ErrEmptySchema is returned when schema construction produced no fields. A
 // schema that constrains nothing would validate everything, which is worse
 // than having none: the caller believes their configuration is checked.
-var ErrEmptySchema = errors.New("config: schema has no fields defined")
+var ErrEmptySchema = errors.NewSentinel("config.empty_schema", "config: schema has no fields defined")
 
 // Schema defines the expected structure and constraints for configuration values.
 type Schema struct {

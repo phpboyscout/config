@@ -1,13 +1,14 @@
 package config
 
 import (
-	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
 
 // TestDir_ConfinesEveryOperation covers the containment Dir exists to provide.
