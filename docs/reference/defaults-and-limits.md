@@ -18,7 +18,10 @@ Every number this module chooses on your behalf, in one place.
 
 ### How the poll interval is actually chosen
 
-1. If you passed `WithPollInterval(d)` with a positive `d`, that wins outright.
+1. If you passed `WithPollInterval(d)` with a positive `d` *other than* `DefaultPollInterval`,
+   that wins outright. Nothing records that the call was made, so the choice is made by
+   comparing the interval against the default — passing exactly `2s` is indistinguishable from
+   not passing it at all, and a hint still applies.
 2. Otherwise, if the backend or filesystem implements `PollIntervalHinter` and hints a
    positive duration, the hint is used. This is how a remote object store — where every poll
    is a billed API call — asks for minutes rather than the two seconds a local file wants.
