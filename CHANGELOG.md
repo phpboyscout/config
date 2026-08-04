@@ -1,5 +1,17 @@
 # Changelog
 
+## [v0.13.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.13.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.12.1...v0.13.0)
+
+### Features
+
+- adopt gitlab.com/phpboyscout/go/errors ([bcd16a1](https://gitlab.com/phpboyscout/go/config/-/commit/bcd16a19120db2bef03816f83ff740be0761642b))
+
+### Bug Fixes
+
+- **deps**: update module github.com/cucumber/godog to v0.16.0 ([a0aa495](https://gitlab.com/phpboyscout/go/config/-/commit/a0aa4953ea9c95df354d4158d5a8e05ca5825f82))
+
 ## [v0.12.1](https://gitlab.com/phpboyscout/go/config/-/releases/v0.12.1)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.12.0...v0.12.1)
