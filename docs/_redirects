@@ -13,10 +13,12 @@
 
 # The specs moved to the forge wikis (2026-08). A spec now lives in the wiki of
 # the project it decides, so the adapter specs point at the adapters' own wikis.
-# Verified: GitLab Pages honours an absolute destination (see the blog's
-# /terraform-aws-bootstrap/ rule, which returns a live 301).
-/development/specs/ https://gitlab.com/phpboyscout/go/config/-/wikis/specs/home 301
-/development/specs/index.html https://gitlab.com/phpboyscout/go/config/-/wikis/specs/home 301
+# Verified against the deployed site: each rule below returns a 301 to its wiki page.
+#
+# There is deliberately NO rule for /development/specs/ itself. That page still
+# exists — it is the spec *process* guidance, which is living documentation and
+# stayed in the repo — and a real file wins over a redirect rule anyway, so the
+# rule was dead as well as wrong.
 /development/specs/2026-07-18-structure-preserving-config-writes/ https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0001-comment-safe-layer-correct-config-writes 301
 /development/specs/2026-07-18-structure-preserving-config-writes/index.html https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0001-comment-safe-layer-correct-config-writes 301
 /development/specs/2026-07-19-store-architecture/ https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0002-store-architecture 301
