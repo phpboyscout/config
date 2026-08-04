@@ -94,6 +94,10 @@ shared = from-second (from /var/lib/app/state.jsonl#1); also defined in /var/lib
 
 ## What it costs
 
+| | |
+|---|---|
+| Modules added | **13** — 4 for tidwall sjson, gjson, match and pretty, 9 for the `config` graph |
+
 Reading is standard-library only. Writing adds `tidwall/sjson` (edit in place) and
 `tidwall/pretty` (re-indent an inserted key) — four small packages, asserted by an allowlist
 test in the module so an unforeseen transitive addition fails its build. No filesystem library:

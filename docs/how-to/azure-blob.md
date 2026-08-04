@@ -75,6 +75,10 @@ with `WithPollInterval`.
 
 ## What it costs
 
+| | |
+|---|---|
+| Modules added | **14** — 5 for the Blob Storage SDK, 9 for the `config` graph |
+
 The `azblob` SDK (three Azure modules — `azidentity` deliberately not among them), plus `config`,
 asserted by an allowlist test. The tests run against [Azurite](https://github.com/Azure/Azurite)
 under testcontainers, so the suite needs no Azure account.

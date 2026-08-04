@@ -92,6 +92,10 @@ store.Watch(ctx) // a change in Consul now reaches your observers
 
 ## What it costs
 
+| | |
+|---|---|
+| Modules added | **24** — 15 for the Consul API client, 9 for the `config` graph |
+
 The config graph plus the Consul SDK (`github.com/hashicorp/consul/api` and its client
 dependencies) — the honest cost of talking to Consul, asserted by an allowlist test in the module
 so an unforeseen transitive addition fails the build. The testcontainers integration suite is

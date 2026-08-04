@@ -68,8 +68,12 @@ store, _ := config.NewStore(ctx, config.WithFiles(configiofs.Wrap(sub), "app.yam
 
 ## What it costs
 
-**Nothing.** `config-iofs` adds no third-party dependency — it is `io/fs` and the standard library,
-asserted by an allowlist test in the module. It is the leanest adapter in the family.
+| | |
+|---|---|
+| Modules added | **none** — everything it links comes from the `config` graph, and an allowlist test in the module fails if that changes |
+
+It is `io/fs` and the standard library, which makes it the leanest adapter in the family —
+joint with the four read-only flat formats, which also add nothing.
 
 ## Related
 

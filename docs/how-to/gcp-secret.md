@@ -170,7 +170,7 @@ _, err := store.Apply(ctx, config.Set("db-password", "rotated"))
 
 | | |
 |---|---|
-| Modules added | **39** — 31 for the Secret Manager SDK, 9 for the `config` graph |
+| Modules added | **39** — 30 for the Secret Manager SDK, 9 for the `config` graph |
 | Requires | `config` **v0.7.0+** — the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
 
 This is **the heaviest adapter in the toolkit** — roughly five times AWS Secrets Manager's five

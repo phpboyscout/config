@@ -69,6 +69,10 @@ sentinel's ETag changes — falling back to a full re-list. `WithPollInterval` s
 
 ## What it costs
 
+| | |
+|---|---|
+| Modules added | **14** — 5 for the App Configuration SDK, 9 for the `config` graph |
+
 The config graph plus the App Configuration SDK (`azappconfig`, `azcore` and two support modules —
 five, asserted by an allowlist test). `azidentity` is **yours**, built with the client, not the
 adapter's.

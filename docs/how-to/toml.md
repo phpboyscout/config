@@ -65,6 +65,10 @@ guessed.
 
 ## What it costs
 
+| | |
+|---|---|
+| Modules added | **10** — 1 for [go-toml](https://github.com/pelletier/go-toml), 9 for the `config` graph |
+
 The config graph plus one TOML parser (`pelletier/go-toml/v2`, with no dependencies of its own),
 asserted by an allowlist test in the module. No filesystem library: you supply the `config.FS`.
 

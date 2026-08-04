@@ -73,6 +73,10 @@ billed call).
 
 ## What it costs
 
+| | |
+|---|---|
+| Modules added | **39** — 30 for the Parameter Manager SDK, 9 for the `config` graph |
+
 The config graph plus the Google Cloud Parameter Manager client — the **heaviest** graph in the
 adapter family (the first-party gRPC/protobuf/auth stack), asserted honestly by an allowlist test.
 

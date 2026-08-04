@@ -60,6 +60,10 @@ far calmer than the 2-second local default, and overridable with `WithPollInterv
 
 ## What it costs
 
+| | |
+|---|---|
+| Modules added | **20** — 11 for the AWS S3 SDK, 9 for the `config` graph |
+
 The AWS SDK for Go v2 S3 packages, plus `config` and what it already brings — asserted by an
 allowlist test pinned to exactly the S3 SDK modules, so a consumer reading from S3 never compiles
 another cloud's SDK. The tests run against [LocalStack](https://localstack.cloud/) under

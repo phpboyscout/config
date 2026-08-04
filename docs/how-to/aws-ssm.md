@@ -69,6 +69,10 @@ no change feed. The default interval is conservative because of SSM's API rate l
 
 ## What it costs
 
+| | |
+|---|---|
+| Modules added | **14** — 5 for the AWS SSM SDK, 9 for the `config` graph |
+
 The config graph plus the AWS SDK for Go v2's SSM client (`service/ssm` and the SDK core — five
 modules, asserted by an allowlist test). You build the client, so its config/credentials packages
 are yours, not the adapter's. The testcontainers/LocalStack integration suite is test-only.
