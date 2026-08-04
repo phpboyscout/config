@@ -80,7 +80,7 @@ an adapter when the file lives somewhere neither covers.
 `config-iofs` is read-only because `io/fs` is read-only by design, and adds **no third-party
 dependency**. How reload, read-only capability and the object-store commit work across the family is
 [How filesystem adapters work](filesystem-adapters.md); the
-[filesystem adapters spec](../development/specs/2026-07-22-filesystem-adapters.md) is the umbrella
+[filesystem adapters spec](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0006-filesystem-adapters) is the umbrella
 that governs it.
 
 ### Cloud object stores
@@ -107,7 +107,7 @@ fetched **at runtime from a remote system**, given full precedence, provenance a
 exactly as a file is. The seam already exists and is proven —
 [`WithBackend`](../how-to/custom-backend.md) takes anything satisfying a three-method `Backend`,
 with writes and native watch as opt-in capabilities. The
-[dynamic backend adapters spec](../development/specs/2026-07-21-dynamic-backend-adapters.md) is the
+[dynamic backend adapters spec](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0005-dynamic-backend-adapters) is the
 umbrella that governs the whole family.
 
 ### config-consul — the first
@@ -219,7 +219,7 @@ before it is built**. The grouping is a planned order, not a commitment date.
 | [`config-keychain`](../how-to/keychain.md) | OS keychain | — not in the umbrella | **Released** *(read **and** write)* |
 | [`config-filekv`](../how-to/filekv.md) | a directory of single-value files | — not in the umbrella | **Released** *(read, opt-in write)* |
 | `config-etcd` | etcd | C — cloud-native key–value | **Specified** *(native watch, read+write)* |
-| ~~`config-k8s`~~ | Kubernetes ConfigMaps | C | **Rejected** — a ConfigMap already reaches a pod as a file or an environment variable ([umbrella R4](../development/specs/2026-07-21-dynamic-backend-adapters.md)) |
+| ~~`config-k8s`~~ | Kubernetes ConfigMaps | C | **Rejected** — a ConfigMap already reaches a pod as a file or an environment variable ([umbrella R4](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0005-dynamic-backend-adapters)) |
 
 Secrets managers ship **read-only by default** — a config tool writing a secret is a rarer and
 riskier thing than reading one, so write support for those is opt-in and specified per adapter.

@@ -13,7 +13,7 @@ cloud object store. Each ships as its own `config-<fs>` module that satisfies th
 [`config.FS`](backends.md) interface, and — like the [dynamic backends](dynamic-backends.md) — they
 are more alike than not. This page explains what the family shares and where its members
 legitimately differ. For what exists, see [the adapter ecosystem](adapters.md); the
-[filesystem adapters spec](../development/specs/2026-07-22-filesystem-adapters.md) is the umbrella
+[filesystem adapters spec](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0006-filesystem-adapters) is the umbrella
 that governs the whole family.
 
 ## The built-ins, and no hidden default

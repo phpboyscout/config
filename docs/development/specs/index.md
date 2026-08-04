@@ -19,14 +19,35 @@ written down the next person reads it as a bug and "fixes" it.
 
 ## Where specs live
 
+**Specs are wiki pages, not files in this repository.**
+
 ```
-docs/development/specs/YYYY-MM-DD-<slug>.md
+https://gitlab.com/phpboyscout/go/config/-/wikis/specs/<NNNN>-<slug>
 ```
 
-The ISO date prefix orders them by creation; the slug says what they are. Examples:
+A spec is a point-in-time decision record — written once, true of a moment, read later for
+its conclusions. Twenty-six of them sitting in `docs/` buried the living documentation they
+were beside, so they moved. Contributor guides, engineering standards and testing
+conventions stay here, because those change when the code does.
 
-- `2026-07-18-structure-preserving-config-writes.md`
-- `2026-07-19-store-architecture.md`
+- **[All `config` specs](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/home)** — the
+  core architecture and the three umbrella specs.
+- **[Reports](https://gitlab.com/phpboyscout/go/config/-/wikis/reports/home)** — audits and
+  reviews, which are the same kind of document.
+
+### A spec belongs to the project it decides
+
+The adapters are sibling modules, and so are their specs. An adapter's spec lives in **that
+adapter's own wiki**, numbered from `0001` there — `config-vault` spec 0001, `config-consul`
+spec 0001. Only the umbrella specs, the ones settling what a whole family of adapters
+shares, live here.
+
+That is why the numbers restart per project, and why "spec 0001" is ambiguous without
+naming the project. Refer to one by project and name: *"config-vault 0001"*, *"the
+dynamic-backend umbrella"*.
+
+Eight adapters have no spec of their own — `config-afero` and the seven format adapters.
+They were built under an umbrella, and each of their wikis says which one.
 
 ## When a spec is required
 
@@ -49,13 +70,24 @@ decision-bearing change is how a module loses its own reasoning.
 ```yaml
 ---
 title: <what the spec decides, as a phrase not a sentence>
+description: >-
+  <A folded block scalar, wrapped at 120 columns, at most 600 characters. GitLab renders
+  this at the top of the page, so a single 800-character line greets every reader as a
+  wall of text. Past 600 characters you are writing an abstract, and an abstract belongs
+  in the body where it can have structure.>
+status: DRAFT
 date: YYYY-MM-DD
-author: <your name>
-status: draft
+authors: [Matt Cockayne]
+tags: [specification, ...]
 issue: phpboyscout/go/config#<n>      # optional
-supersedes: <YYYY-MM-DD-slug>.md      # optional
+blocked-by: <the obstacle, named>     # optional
 ---
+
+[[_TOC_]]
 ```
+
+`[[_TOC_]]` generates a contents block from the headings. A spec past a couple of hundred
+lines is unnavigable without one, and it costs a line.
 
 ## Status lifecycle
 
@@ -63,10 +95,22 @@ supersedes: <YYYY-MM-DD-slug>.md      # optional
 
 | Status | Meaning |
 |---|---|
-| `draft` | Under discussion. **Do not implement against it yet.** |
-| `approved` | Agreed. Safe to implement. |
-| `implemented` | Shipped. Flip it when the change merges or tags. |
-| `rejected` | Considered and decided against, or superseded by a later spec. |
+| `DRAFT` | Under discussion. **Do not implement against it yet.** |
+| `IN REVIEW` | Being reviewed. Still not safe to implement against. |
+| `APPROVED` | Agreed. Safe to implement. |
+| `IN PROGRESS` | Being built. |
+| `IMPLEMENTED` | Shipped. Flip it when the change merges or tags. |
+| `SUPERSEDED` | Replaced by a later spec, which it names. |
+| `REJECTED` | Considered and decided against. |
+
+### Blocked is not a status
+
+A spec can be agreed and still unstartable — waiting on a release, a credential, a window.
+Say so in `blocked-by`, naming the obstacle, and leave the status alone. Blocking is
+orthogonal to status: a spec can be blocked while `DRAFT`, `APPROVED` or `IN PROGRESS`
+alike, and a `HELD` status would force a false choice between "agreed" and "blocked" when
+both are true. Clear the field when the obstacle clears — a stale `blocked-by` reads as
+current and stops work that could have started.
 
 **Keep rejected specs.** The value is the durable "we thought about X and chose not to,
 for these reasons" record, so the question does not get re-litigated from scratch a year
@@ -88,7 +132,7 @@ Adapt to the decision, but most specs want:
    behaviour that spans components and time.
 6. **Migration & compatibility** — what breaks, and what a consumer has to do about it.
 7. **Open questions** — what is still live. Resolve these *with* the human before the
-   status moves to `approved`.
+   status moves to `APPROVED`.
 8. **Implementation phases** — a prioritised breakdown, each independently verifiable.
 
 ### Numbering decisions
@@ -110,6 +154,56 @@ decision it revises, so a reader arriving at D8 sees that R10 amended it.
 That cross-link is not decoration. In this module a decision was recorded, half implemented,
 and the unimplemented half then documented as intended behaviour — because the person
 writing the docs read the code rather than the spec. The link is what makes that visible.
+
+## Writing for the wiki
+
+A spec on the wiki is rendered by **GitLab Flavored Markdown**, not CommonMark. That brings
+things worth using and one hazard worth knowing.
+
+### Sigils autolink, and mostly not yet
+
+On a wiki, `#123` becomes a link to issue 123, `!123` to a merge request, `~name` to a
+label, `%1.2` to a milestone, `$123` to a snippet, and `@name` to a user.
+
+`@name` is the one that does harm rather than merely being wrong: it resolves against every
+user on the forge, so it links **and notifies, immediately, always**. Never write one.
+
+Everything else resolves only when its target exists — which makes it a review hazard rather
+than a rendering bug. A spec citing an upstream project's "issue #821", or its own
+"Resolved #4", is not wrong today; it is wrong *later*, silently, when this project grows an
+issue 821 or 4. **Backtick any sigil you did not mean as a reference** — `` `#821` `` stays
+text permanently — or write the cross-project form that links to the thing you actually
+meant:
+
+```
+phpboyscout/go/config!39        a merge request in another project
+phpboyscout/go/config-consul#5  an issue in another project
+```
+
+Inline code and fenced blocks are never autolinked, so anything already in code is safe.
+
+### Links out of a wiki page
+
+A wiki page **cannot use a relative link into the repository** — those do not resolve. Link
+to a repository file or a docs page by full URL, and to another wiki page by its slug:
+
+```
+[the umbrella](0005-dynamic-backend-adapters)                             a sibling spec
+https://gitlab.com/phpboyscout/go/config-vault/-/wikis/specs/0001-...     another project's
+https://config.go.phpboyscout.uk/how-to/vault/                            a docs page
+```
+
+### Worth using
+
+**Mermaid**, in a fenced ` ```mermaid ` block, wherever the prose is describing a shape — an
+order of calls, a state machine, a dependency graph. A diagram that lives *in* the spec stays
+true to it; one in a separate image file drifts, and nobody notices because images do not
+show up in a diff. `sequenceDiagram`, `stateDiagram-v2`, `flowchart` and `erDiagram` carry
+most specs.
+
+**Alerts** (`> [!important]`) for the one load-bearing fact a reader must not miss — sparingly,
+because a spec where everything is important has nothing important in it. **`<details>`** to
+keep long evidence available without it dominating the page.
 
 ## Working with an AI assistant
 
@@ -182,8 +276,8 @@ the change touches.>
 - List every exported name added, removed or changed, and what it costs consumers.
 - Describe how each decision will be tested, including what would falsely pass.
 - Raise open questions rather than resolving them yourself — I will answer them.
-- Set status to `draft`, and save to
-  docs/development/specs/YYYY-MM-DD-<slug>.md
+- Set status to `DRAFT`, and save it as a wiki page at specs/<NNNN>-<slug>, taking the
+  next free number in this project's wiki.
 ```
 
 ### Context worth attaching
@@ -191,7 +285,7 @@ the change touches.>
 | Always | Why |
 |---|---|
 | `docs/development/index.md` | conventions, structure, the one architectural rule |
-| `docs/development/specs/` | existing specs, as format and depth examples |
+| [the wiki specs](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/home) | existing specs, as format and depth examples |
 | `go.mod` | module path and dependency versions |
 
 | When relevant | |
@@ -205,33 +299,15 @@ the change touches.>
 Err toward too much context rather than too little. An assistant can ignore a file it does
 not need; it cannot infer one it was never given.
 
-## Current specs
+## The specs themselves
 
-| Spec | Status |
-|---|---|
-| [config-filekv adapter](2026-07-29-config-filekv.md) | approved |
-| [config-etcd adapter](2026-07-29-config-etcd.md) | approved |
-| [Store aggregation](2026-07-28-store-aggregation.md) | implemented |
-| [Backend key filtering](2026-07-28-backend-key-filtering.md) | implemented |
-| [Write-target options](2026-07-28-write-target-options.md) | implemented |
-| [config-keychain adapter](2026-07-27-config-keychain.md) | approved |
-| [config-gcp-secret adapter](2026-07-27-config-gcp-secret.md) | approved |
-| [config-azure-keyvault adapter](2026-07-25-config-azure-keyvault.md) | approved |
-| [config-aws-secrets adapter](2026-07-25-config-aws-secrets.md) | implemented |
-| [config-vault adapter](2026-07-22-config-vault.md) | implemented |
-| [config-iofs adapter](2026-07-22-config-iofs.md) | approved |
-| [config-billy adapter](2026-07-22-config-billy.md) | approved |
-| [config-aws-s3 adapter](2026-07-22-config-aws-s3.md) | approved |
-| [config-gcp-gcs adapter](2026-07-22-config-gcp-gcs.md) | approved |
-| [config-azure-blob adapter](2026-07-22-config-azure-blob.md) | approved |
-| [config-sftp adapter](2026-07-22-config-sftp.md) | approved |
-| [Filesystem adapters](2026-07-22-filesystem-adapters.md) | approved |
-| [config-aws-ssm adapter](2026-07-22-config-aws-ssm.md) | approved |
-| [config-azure-appconfig adapter](2026-07-22-config-azure-appconfig.md) | approved |
-| [config-gcp-parameter adapter](2026-07-22-config-gcp-parameter.md) | approved |
-| [config-consul adapter](2026-07-22-config-consul.md) | implemented |
-| [Dynamic backend adapters](2026-07-21-dynamic-backend-adapters.md) | approved |
-| [Filesystem abstraction](2026-07-20-filesystem-abstraction.md) | approved |
-| [Non-YAML format adapters](2026-07-20-non-yaml-format-adapters.md) | approved |
-| [Store architecture](2026-07-19-store-architecture.md) | approved |
-| [Structure-preserving config writes](2026-07-18-structure-preserving-config-writes.md) | superseded |
+They are in the wiki, and the index there is generated from the specs rather than
+maintained beside them:
+
+- **[config specs](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/home)** — the core
+  architecture, and the umbrella specs governing each adapter family.
+- **[config reports](https://gitlab.com/phpboyscout/go/config/-/wikis/reports/home)** — audits
+  and reviews.
+
+Each adapter's spec is in its own project's wiki; the list of all of them is on the
+[config specs page](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/home).

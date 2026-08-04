@@ -20,7 +20,7 @@ watching, then writing. Each stage works on its own, so stop wherever your sourc
     format-specific part, a `Codec`, and pass it to `config.NewCodecBackend(fsys, path, codec)`.
     A codec that also implements `EditingCodec` yields a writable backend automatically. This
     is how the sibling `config-<format>` modules are built; see the
-    [non-YAML format adapters spec](../development/specs/2026-07-20-non-yaml-format-adapters.md).
+    [non-YAML format adapters spec](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0004-non-yaml-format-adapters).
     Reach for a full `Backend`, below, when your source is *not* a file on a filesystem.
 
 !!! tip "The code here is compiled"

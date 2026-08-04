@@ -12,7 +12,7 @@ plugged into shared file machinery, a backend owns its whole conversation with a
 reading, versioning, staging, committing, watching. This page explains how the Consul backend does
 each of those, and why it is shaped the way it is. For the task recipes, see
 [Read and write Consul](../how-to/consul.md); for the decision record, the
-[config-consul spec](../development/specs/2026-07-22-config-consul.md).
+[config-consul spec](https://gitlab.com/phpboyscout/go/config-consul/-/wikis/specs/0001-consul-kv-backend).
 
 ## The client is injected; the adapter owns no credentials
 
@@ -66,7 +66,7 @@ codec never turns a scalar key into a load error.
 Reusing `config.Codec` rather than inventing a decoder is deliberate: the machinery already exists,
 you inject the one format your store actually holds so the adapter takes no codec dependency of its
 own, and the same question faces every byte-valued backend. It is the family convention, recorded
-as revision **R1** of the [dynamic backend adapters spec](../development/specs/2026-07-21-dynamic-backend-adapters.md).
+as revision **R1** of the [dynamic backend adapters spec](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0005-dynamic-backend-adapters).
 
 ## Conflict detection: the version is captured at Load
 
@@ -128,4 +128,4 @@ dependency — or a stray import — fails the build rather than arriving quietl
 
 - [Backends and capabilities](backends.md) — the general backend contract this implements
 - [Write a custom backend](../how-to/custom-backend.md) — the seam, walked end to end
-- [config-consul spec](../development/specs/2026-07-22-config-consul.md) — the full decision record
+- [config-consul spec](https://gitlab.com/phpboyscout/go/config-consul/-/wikis/specs/0001-consul-kv-backend) — the full decision record

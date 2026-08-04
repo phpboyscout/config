@@ -93,7 +93,7 @@ the file machinery — including the conflict-detection subtlety that is easy to
 get wrong, where the fingerprint must be taken at load rather than at write — is
 written once and shared, rather than reimplemented and mis-implemented per format.
 → [Write a custom backend](../how-to/custom-backend.md) · the
-[non-YAML format adapters spec](../development/specs/2026-07-20-non-yaml-format-adapters.md)
+[non-YAML format adapters spec](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0004-non-yaml-format-adapters)
 
 ## What `Capabilities` is for, and what it is not
 

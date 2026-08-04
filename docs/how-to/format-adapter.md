@@ -187,7 +187,7 @@ not ask to change. A backend that cannot write is skipped by routing, so a write
 holds lands in the next writable layer beneath. The moment it *can* write, that same write
 routes at the new backend instead. Nothing in the consumer's code changed, and their edits
 now land somewhere else. Say so in the note. The mechanics are in
-[the format adapters spec](../development/specs/2026-07-20-non-yaml-format-adapters.md).
+[the format adapters spec](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0004-non-yaml-format-adapters).
 
 ## Related
 
