@@ -1,3 +1,9 @@
+---
+title: Read AWS SSM Parameter Store
+description: Make AWS Systems Manager Parameter Store a config layer with config-aws-ssm — value types, why it is read-only, how SecureString values stay protected, and the polling cadence.
+tags: [how-to, adapters, backends, aws, ssm]
+---
+
 # Read AWS SSM Parameter Store
 
 Configuration in [AWS Systems Manager Parameter Store](https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html)

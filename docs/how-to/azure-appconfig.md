@@ -1,3 +1,9 @@
+---
+title: Read and write Azure App Configuration
+description: Make Azure App Configuration a config layer with config-azure-appconfig — labels, prefix scoping, ETag compare-and-swap writes, and the polling cadence.
+tags: [how-to, adapters, backends, azure, appconfig]
+---
+
 # Read and write Azure App Configuration
 
 [Azure App Configuration](https://learn.microsoft.com/azure/azure-app-configuration/overview) becomes

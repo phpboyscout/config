@@ -1,3 +1,9 @@
+---
+title: Read GCP Parameter Manager
+description: Make GCP Parameter Manager a config layer with config-gcp-parameter — one parameter as a document or a prefix of many, why it is read-only, and the polling cadence.
+tags: [how-to, adapters, backends, gcp, parameter-manager]
+---
+
 # Read GCP Parameter Manager
 
 [Google Cloud Parameter Manager](https://cloud.google.com/secret-manager/parameter-manager/docs/overview)

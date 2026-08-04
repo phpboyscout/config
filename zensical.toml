@@ -8,6 +8,113 @@ repo_url = "https://gitlab.com/phpboyscout/go/config"
 repo_name = "phpboyscout/go/config"
 copyright = "Copyright &copy; 2026 Matt Cockayne"
 
+# Curated navigation, ordered by the Diátaxis quadrants (tutorial → how-to →
+# explanation → reference), because alphabetical order by directory puts "about"
+# and "development" in front of the tutorial a first-time reader needs.
+#
+# The first entry in each section is that section's index page, which
+# navigation.indexes turns into the section landing page rather than a child of
+# it. Adding a page means adding it here — the cost of curating the order.
+nav = [
+  { Home = "index.md" },
+
+  { Tutorials = [
+    "tutorials/index.md",
+    { "Getting started" = "tutorials/getting-started.md" },
+    { "Layer defaults, a file, the environment and flags" = "tutorials/layering.md" },
+    { "Ship defaults inside the binary" = "tutorials/embedded-defaults.md" },
+    { "Compose a project config over a global one" = "tutorials/composing-stores.md" },
+    { "Configure a service from Consul" = "tutorials/consul.md" },
+  ] },
+
+  { "How-to guides" = [
+    "how-to/index.md",
+    { "Working with a store" = [
+      { "Load and merge" = "how-to/load-and-merge.md" },
+      { "Read values" = "how-to/read-values.md" },
+      { "Write configuration" = "how-to/write-config.md" },
+      { "Validate configuration" = "how-to/validate-config.md" },
+      { "Hot-reload" = "how-to/hot-reload.md" },
+      { "Typed sections" = "how-to/typed-sections.md" },
+      { "Bind CLI flags" = "how-to/bind-cli-flags.md" },
+      { "Compose stores" = "how-to/compose-stores.md" },
+      { "Filter a backend" = "how-to/filter-a-backend.md" },
+      { "Test with mocks" = "how-to/test-with-mocks.md" },
+      { "Write a custom backend" = "how-to/custom-backend.md" },
+      { "Write a format adapter" = "how-to/format-adapter.md" },
+    ] },
+    { "File formats" = [
+      { JSON = "how-to/json.md" },
+      { TOML = "how-to/toml.md" },
+      { HCL = "how-to/hcl.md" },
+      { XML = "how-to/xml.md" },
+      { dotenv = "how-to/dotenv.md" },
+      { INI = "how-to/ini.md" },
+      { "Java properties" = "how-to/properties.md" },
+    ] },
+    { Filesystems = [
+      { afero = "how-to/afero.md" },
+      { "io/fs" = "how-to/iofs.md" },
+      { "go-billy" = "how-to/billy.md" },
+      { SFTP = "how-to/sftp.md" },
+      { "AWS S3" = "how-to/aws-s3.md" },
+      { "GCP Cloud Storage" = "how-to/gcp-gcs.md" },
+      { "Azure Blob" = "how-to/azure-blob.md" },
+    ] },
+    { "Remote backends" = [
+      { Consul = "how-to/consul.md" },
+      { "AWS SSM" = "how-to/aws-ssm.md" },
+      { "Azure App Configuration" = "how-to/azure-appconfig.md" },
+      { "GCP Parameter Manager" = "how-to/gcp-parameter.md" },
+      { Vault = "how-to/vault.md" },
+      { "AWS Secrets Manager" = "how-to/aws-secrets.md" },
+      { "Azure Key Vault" = "how-to/azure-keyvault.md" },
+      { "GCP Secret Manager" = "how-to/gcp-secret.md" },
+      { "OS keychain" = "how-to/keychain.md" },
+      { "filekv" = "how-to/filekv.md" },
+    ] },
+  ] },
+
+  { Explanation = [
+    "explanation/index.md",
+    { "The Store" = "explanation/the-store.md" },
+    { "Precedence & merge model" = "explanation/precedence-and-merge.md" },
+    { Provenance = "explanation/provenance.md" },
+    { "What survives a write" = "explanation/write-fidelity.md" },
+    { "Hot-reload safety" = "explanation/hot-reload-safety.md" },
+    { "Backends and capabilities" = "explanation/backends.md" },
+    { "The adapter ecosystem" = "explanation/adapters.md" },
+    { "How filesystem adapters work" = "explanation/filesystem-adapters.md" },
+    { "How dynamic backends work" = "explanation/dynamic-backends.md" },
+    { "How the Consul backend works" = "explanation/consul-backend.md" },
+  ] },
+
+  { Reference = [
+    "reference/index.md",
+    { "Keys and paths" = "reference/keys-and-paths.md" },
+    { "Environment variables" = "reference/environment-variables.md" },
+    { "Struct tags" = "reference/struct-tags.md" },
+    { Errors = "reference/errors.md" },
+    { "Defaults and limits" = "reference/defaults-and-limits.md" },
+    { Limitations = "reference/limitations.md" },
+    { "Go API (pkg.go.dev)" = "https://pkg.go.dev/gitlab.com/phpboyscout/go/config" },
+  ] },
+
+  { About = [
+    "about/index.md",
+    { "Migrating from viper" = "about/migrating.md" },
+    { History = "about/history.md" },
+    { Branding = "about/branding.md" },
+  ] },
+
+  { Development = [
+    "development/index.md",
+    { Testing = "development/testing.md" },
+    { "Feature specifications" = "development/specs/index.md" },
+    { "Specs (wiki)" = "https://gitlab.com/phpboyscout/go/config/-/wikis/specs/home" },
+  ] },
+]
+
 [project.theme]
 logo = "images/branding/logo_transparent.svg"
 favicon = "images/branding/favicon.svg"

@@ -10,3 +10,65 @@
 # The tutorial moved into the tutorials/ quadrant (2026-08).
 /getting-started/ /tutorials/getting-started/ 301
 /getting-started/index.html /tutorials/getting-started/ 301
+
+# The specs moved to the forge wikis (2026-08). A spec now lives in the wiki of
+# the project it decides, so the adapter specs point at the adapters' own wikis.
+# Verified: GitLab Pages honours an absolute destination (see the blog's
+# /terraform-aws-bootstrap/ rule, which returns a live 301).
+/development/specs/ https://gitlab.com/phpboyscout/go/config/-/wikis/specs/home 301
+/development/specs/index.html https://gitlab.com/phpboyscout/go/config/-/wikis/specs/home 301
+/development/specs/2026-07-18-structure-preserving-config-writes/ https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0001-comment-safe-layer-correct-config-writes 301
+/development/specs/2026-07-18-structure-preserving-config-writes/index.html https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0001-comment-safe-layer-correct-config-writes 301
+/development/specs/2026-07-19-store-architecture/ https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0002-store-architecture 301
+/development/specs/2026-07-19-store-architecture/index.html https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0002-store-architecture 301
+/development/specs/2026-07-20-filesystem-abstraction/ https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0003-filesystem-abstraction 301
+/development/specs/2026-07-20-filesystem-abstraction/index.html https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0003-filesystem-abstraction 301
+/development/specs/2026-07-20-non-yaml-format-adapters/ https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0004-non-yaml-format-adapters 301
+/development/specs/2026-07-20-non-yaml-format-adapters/index.html https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0004-non-yaml-format-adapters 301
+/development/specs/2026-07-21-dynamic-backend-adapters/ https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0005-dynamic-backend-adapters 301
+/development/specs/2026-07-21-dynamic-backend-adapters/index.html https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0005-dynamic-backend-adapters 301
+/development/specs/2026-07-22-config-aws-s3/ https://gitlab.com/phpboyscout/go/config-aws-s3/-/wikis/specs/0001-aws-s3-object-store-filesystem-adapter 301
+/development/specs/2026-07-22-config-aws-s3/index.html https://gitlab.com/phpboyscout/go/config-aws-s3/-/wikis/specs/0001-aws-s3-object-store-filesystem-adapter 301
+/development/specs/2026-07-22-config-aws-ssm/ https://gitlab.com/phpboyscout/go/config-aws-ssm/-/wikis/specs/0001-aws-ssm-parameter-store-backend 301
+/development/specs/2026-07-22-config-aws-ssm/index.html https://gitlab.com/phpboyscout/go/config-aws-ssm/-/wikis/specs/0001-aws-ssm-parameter-store-backend 301
+/development/specs/2026-07-22-config-azure-appconfig/ https://gitlab.com/phpboyscout/go/config-azure-appconfig/-/wikis/specs/0001-azure-app-configuration-backend 301
+/development/specs/2026-07-22-config-azure-appconfig/index.html https://gitlab.com/phpboyscout/go/config-azure-appconfig/-/wikis/specs/0001-azure-app-configuration-backend 301
+/development/specs/2026-07-22-config-azure-blob/ https://gitlab.com/phpboyscout/go/config-azure-blob/-/wikis/specs/0001-azure-blob-container-as-a-filesystem 301
+/development/specs/2026-07-22-config-azure-blob/index.html https://gitlab.com/phpboyscout/go/config-azure-blob/-/wikis/specs/0001-azure-blob-container-as-a-filesystem 301
+/development/specs/2026-07-22-config-billy/ https://gitlab.com/phpboyscout/go/config-billy/-/wikis/specs/0001-go-billy-as-a-filesystem 301
+/development/specs/2026-07-22-config-billy/index.html https://gitlab.com/phpboyscout/go/config-billy/-/wikis/specs/0001-go-billy-as-a-filesystem 301
+/development/specs/2026-07-22-config-consul/ https://gitlab.com/phpboyscout/go/config-consul/-/wikis/specs/0001-consul-kv-backend 301
+/development/specs/2026-07-22-config-consul/index.html https://gitlab.com/phpboyscout/go/config-consul/-/wikis/specs/0001-consul-kv-backend 301
+/development/specs/2026-07-22-config-gcp-gcs/ https://gitlab.com/phpboyscout/go/config-gcp-gcs/-/wikis/specs/0001-gcp-cloud-storage-filesystem 301
+/development/specs/2026-07-22-config-gcp-gcs/index.html https://gitlab.com/phpboyscout/go/config-gcp-gcs/-/wikis/specs/0001-gcp-cloud-storage-filesystem 301
+/development/specs/2026-07-22-config-gcp-parameter/ https://gitlab.com/phpboyscout/go/config-gcp-parameter/-/wikis/specs/0001-gcp-parameter-manager-backend 301
+/development/specs/2026-07-22-config-gcp-parameter/index.html https://gitlab.com/phpboyscout/go/config-gcp-parameter/-/wikis/specs/0001-gcp-parameter-manager-backend 301
+/development/specs/2026-07-22-config-iofs/ https://gitlab.com/phpboyscout/go/config-iofs/-/wikis/specs/0001-io-fs-as-a-read-only-filesystem 301
+/development/specs/2026-07-22-config-iofs/index.html https://gitlab.com/phpboyscout/go/config-iofs/-/wikis/specs/0001-io-fs-as-a-read-only-filesystem 301
+/development/specs/2026-07-22-config-sftp/ https://gitlab.com/phpboyscout/go/config-sftp/-/wikis/specs/0001-sftp-remote-filesystem 301
+/development/specs/2026-07-22-config-sftp/index.html https://gitlab.com/phpboyscout/go/config-sftp/-/wikis/specs/0001-sftp-remote-filesystem 301
+/development/specs/2026-07-22-config-vault/ https://gitlab.com/phpboyscout/go/config-vault/-/wikis/specs/0001-vault-kv-v2-secrets-backend 301
+/development/specs/2026-07-22-config-vault/index.html https://gitlab.com/phpboyscout/go/config-vault/-/wikis/specs/0001-vault-kv-v2-secrets-backend 301
+/development/specs/2026-07-22-filesystem-adapters/ https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0006-filesystem-adapters 301
+/development/specs/2026-07-22-filesystem-adapters/index.html https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0006-filesystem-adapters 301
+/development/specs/2026-07-25-config-aws-secrets/ https://gitlab.com/phpboyscout/go/config-aws-secrets/-/wikis/specs/0001-aws-secrets-manager-backend 301
+/development/specs/2026-07-25-config-aws-secrets/index.html https://gitlab.com/phpboyscout/go/config-aws-secrets/-/wikis/specs/0001-aws-secrets-manager-backend 301
+/development/specs/2026-07-25-config-azure-keyvault/ https://gitlab.com/phpboyscout/go/config-azure-keyvault/-/wikis/specs/0001-azure-key-vault-secrets-backend 301
+/development/specs/2026-07-25-config-azure-keyvault/index.html https://gitlab.com/phpboyscout/go/config-azure-keyvault/-/wikis/specs/0001-azure-key-vault-secrets-backend 301
+/development/specs/2026-07-27-config-gcp-secret/ https://gitlab.com/phpboyscout/go/config-gcp-secret/-/wikis/specs/0001-gcp-secret-manager-backend 301
+/development/specs/2026-07-27-config-gcp-secret/index.html https://gitlab.com/phpboyscout/go/config-gcp-secret/-/wikis/specs/0001-gcp-secret-manager-backend 301
+/development/specs/2026-07-27-config-keychain/ https://gitlab.com/phpboyscout/go/config-keychain/-/wikis/specs/0001-the-os-keychain-as-a-config-layer 301
+/development/specs/2026-07-27-config-keychain/index.html https://gitlab.com/phpboyscout/go/config-keychain/-/wikis/specs/0001-the-os-keychain-as-a-config-layer 301
+/development/specs/2026-07-28-backend-key-filtering/ https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0008-backend-key-filtering 301
+/development/specs/2026-07-28-backend-key-filtering/index.html https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0008-backend-key-filtering 301
+/development/specs/2026-07-28-store-aggregation/ https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0009-store-aggregation 301
+/development/specs/2026-07-28-store-aggregation/index.html https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0009-store-aggregation 301
+/development/specs/2026-07-28-write-target-options/ https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0007-write-target-options 301
+/development/specs/2026-07-28-write-target-options/index.html https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0007-write-target-options 301
+/development/specs/2026-07-29-config-etcd/ https://gitlab.com/phpboyscout/go/config-etcd/-/wikis/specs/0001-etcd-as-a-config-backend 301
+/development/specs/2026-07-29-config-etcd/index.html https://gitlab.com/phpboyscout/go/config-etcd/-/wikis/specs/0001-etcd-as-a-config-backend 301
+/development/specs/2026-07-29-config-filekv/ https://gitlab.com/phpboyscout/go/config-filekv/-/wikis/specs/0001-a-directory-of-files-as-a-config-layer 301
+/development/specs/2026-07-29-config-filekv/index.html https://gitlab.com/phpboyscout/go/config-filekv/-/wikis/specs/0001-a-directory-of-files-as-a-config-layer 301
+
+# The code review report moved to the wiki as a report.
+/CODE_REVIEW_REPORT/ https://gitlab.com/phpboyscout/go/config/-/wikis/reports/2026-07-19-config-and-yamldoc-code-review 301

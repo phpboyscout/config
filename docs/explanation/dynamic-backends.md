@@ -1,3 +1,9 @@
+---
+title: How dynamic backends work
+description: What every remote backend adapter shares — the data model, watch strategies, conflict detection and the sensitive-layer rules — and where members of the family legitimately differ.
+tags: [explanation, backends, remote, adapters, secrets]
+---
+
 # How dynamic backends work
 
 A *dynamic backend* is a source of configuration that is not a file — Consul, a cloud parameter
