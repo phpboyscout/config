@@ -316,3 +316,19 @@ The Go API reference — every type, method and signature — lives on
 **[pkg.go.dev](https://pkg.go.dev/gitlab.com/phpboyscout/go/config)**, which is where a
 language API reference belongs: generated from the source it documents, so it cannot drift
 from it.
+
+## Further reading
+
+The blog carries a curated route through this subject: **[Building a command-line tool in Go](https://phpboyscout.uk/topics/building-a-cli-in-go/)** collects
+everything written about it, ordered so you can start at the beginning rather
+than newest-first.
+
+!!! tip "Ask phpbotscout"
+
+    ![phpbotscout](https://phpboyscout.uk/images/projects/logo-phpbotscout.png){ width="84" align=left style="border-radius:10px;margin-right:1rem" }
+
+    He answers questions about the projects over on the Discord, citing the docs
+    where they already cover it, and offering to raise an issue where they don't.
+    Bring a bug, an idea, or a questionable engineering decision.
+
+    [Join the Discord](https://discord.gg/mQzGbmGyzZ){ .md-button .md-button--primary }
