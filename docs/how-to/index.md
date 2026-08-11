@@ -71,6 +71,7 @@ provenance and hot-reload exactly as a file does.
 | Guide | System | Writes | Sensitive |
 |---|---|:---:|:---:|
 | [Consul](consul.md) | HashiCorp Consul KV | ✓ | — |
+| [etcd](etcd.md) | etcd v3 | ✓ | — |
 | [AWS SSM](aws-ssm.md) | AWS Parameter Store | — | per-value |
 | [Azure App Configuration](azure-appconfig.md) | Azure App Configuration | ✓ | — |
 | [GCP Parameter Manager](gcp-parameter.md) | GCP Parameter Manager | — | — |

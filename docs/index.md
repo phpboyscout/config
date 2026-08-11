@@ -45,6 +45,7 @@ hide:
 
   <span class="cfg-eco__label">Backends</span>
   <a class="cfg-pill" href="how-to/consul/">Consul</a>
+  <a class="cfg-pill" href="how-to/etcd/">etcd</a>
   <a class="cfg-pill" href="how-to/aws-ssm/">AWS SSM</a>
   <a class="cfg-pill" href="how-to/azure-appconfig/">Azure App Config</a>
   <a class="cfg-pill" href="how-to/gcp-parameter/">GCP Parameter</a>
@@ -203,8 +204,10 @@ cloud **parameter stores** are released:
 - **A directory of single-value files** — [config-filekv](how-to/filekv.md) reads a mounted
   Kubernetes ConfigMap, Docker secrets or systemd credentials, where each filename is a key. It
   adds no dependency at all.
-- **Cloud-native key–value** *(roadmap)* — [etcd](explanation/adapters.md#roadmap), specified and
-  next to build, with a native change feed rather than polling. Kubernetes ConfigMaps are
+- **Cloud-native key–value** — [config-etcd](how-to/etcd.md) makes an etcd v3 prefix a layer, and
+  is the strongest write path in the family: a real compare-and-swap on the revision each key held
+  at load, batches that commit atomically across keys, and a native change feed that replays from
+  the load revision so nothing is missed while the watch attaches. Kubernetes ConfigMaps are
   deliberately **not** on this list: one already reaches a pod as a file or an environment
   variable, so `config-filekv` above covers the gap without a 38-module API client.
 

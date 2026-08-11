@@ -218,7 +218,7 @@ before it is built**. The grouping is a planned order, not a commitment date.
 | [`config-gcp-secret`](../how-to/gcp-secret.md) | GCP Secret Manager | B | **Released** *(read-only; [not yet exercised against a real project](../how-to/gcp-secret.md))* |
 | [`config-keychain`](../how-to/keychain.md) | OS keychain | — not in the umbrella | **Released** *(read **and** write)* |
 | [`config-filekv`](../how-to/filekv.md) | a directory of single-value files | — not in the umbrella | **Released** *(read, opt-in write)* |
-| `config-etcd` | etcd | C — cloud-native key–value | **Specified** *(native watch, read+write)* |
+| [`config-etcd`](../how-to/etcd.md) | etcd v3 | C — cloud-native key–value | **Released** *(read **and** write, native watch, atomic across keys)* |
 | ~~`config-k8s`~~ | Kubernetes ConfigMaps | C | **Rejected** — a ConfigMap already reaches a pod as a file or an environment variable ([umbrella R4](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0005-dynamic-backend-adapters)) |
 
 Secrets managers ship **read-only by default** — a config tool writing a secret is a rarer and

@@ -63,6 +63,7 @@ nav = [
     ] },
     { "Remote backends" = [
       { Consul = "how-to/consul.md" },
+      { etcd = "how-to/etcd.md" },
       { "AWS SSM" = "how-to/aws-ssm.md" },
       { "Azure App Configuration" = "how-to/azure-appconfig.md" },
       { "GCP Parameter Manager" = "how-to/gcp-parameter.md" },
