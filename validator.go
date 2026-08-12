@@ -102,7 +102,38 @@ func (s *Store) Validate(paths ...string) *ValidationResult {
 		return &ValidationResult{}
 	}
 
-	return validateAgainst(s.View().Snapshot(), s.validators, paths)
+	snap := s.View().Snapshot()
+	result := validateAgainst(snap, s.validators, paths)
+
+	// Source constraints judge what one backend supplied, so they need that
+	// backend's layers rather than the merged result. The snapshot keeps its
+	// layers and each carries the source that produced it, which is how they
+	// are found again after the merge.
+	for _, b := range s.backends {
+		c, ok := b.(sourceConstraint)
+		if !ok {
+			continue
+		}
+
+		if own := layersOf(snap, b.ID()); len(own) > 0 {
+			c.constrain(own, result)
+		}
+	}
+
+	return result
+}
+
+// layersOf returns the layers a named source contributed.
+func layersOf(snap *Snapshot, id string) []Layer {
+	var out []Layer
+
+	for _, l := range snap.Layers() {
+		if l.Source.Name == id {
+			out = append(out, l)
+		}
+	}
+
+	return out
 }
 
 // validateAgainst runs the mounts that fall within paths against snap.

@@ -444,12 +444,21 @@ func (s *Store) validate(loaded []backendLayers) error {
 // omitting a key its overlay supplies — so only the resolved result can be
 // judged.
 func (s *Store) violations(loaded []backendLayers) []ValidationError {
-	if isNil(s.schema) && len(s.validators) == 0 {
+	if isNil(s.schema) && len(s.validators) == 0 && !anyConstrained(loaded) {
 		return nil
 	}
 
 	snap := newSnapshot(0, flatten(loaded))
 	result := &ValidationResult{}
+
+	// Per-source constraints first: they judge what a single backend supplied,
+	// which is a question the merged snapshot can no longer answer because it
+	// has forgotten which layer a value came from.
+	for _, bl := range loaded {
+		if c, ok := bl.backend.(sourceConstraint); ok {
+			c.constrain(bl.layers, result)
+		}
+	}
 
 	if !isNil(s.schema) {
 		s.schema.Validate(snap, "", result)
@@ -1473,4 +1482,15 @@ func flatten(loaded []backendLayers) []Layer {
 	}
 
 	return flat
+}
+
+// anyConstrained reports whether any loaded backend carries a source constraint.
+func anyConstrained(loaded []backendLayers) bool {
+	for _, bl := range loaded {
+		if _, ok := bl.backend.(sourceConstraint); ok {
+			return true
+		}
+	}
+
+	return false
 }
