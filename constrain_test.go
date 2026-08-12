@@ -225,3 +225,43 @@ func assertSameCapabilities(t *testing.T, plain, wrapped config.Backend) {
 			plainWatchable, wrappedWatchable)
 	}
 }
+
+func TestConstrained_AForbiddenWriteHasItsOwnSentinel(t *testing.T) {
+	t.Parallel()
+
+	// Found by manual testing. The refusal used to wrap ErrInvalidConfig and
+	// read "source supplied a forbidden key" — but the configuration is fine
+	// and nothing was supplied. A policy refusal needs its own sentinel so a
+	// caller can tell it from a value that failed its shape check.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "app.yaml"), []byte("safe: yes\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	fsys, err := config.Dir(dir)
+	if err != nil {
+		t.Fatalf("Dir: %v", err)
+	}
+
+	store, err := config.NewStore(context.Background(),
+		config.WithBackend(config.Constrained(
+			config.NewFileBackend(fsys, "app.yaml"), config.Forbid("credentials.*"))),
+	)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	_, err = store.Apply(context.Background(), config.Set("credentials.token", "x"))
+	if err == nil {
+		t.Fatal("want the write refused")
+	}
+
+	if !errors.Is(err, config.ErrForbiddenKey) {
+		t.Errorf("want ErrForbiddenKey, so a policy refusal is distinguishable "+
+			"from an invalid value, got %v", err)
+	}
+
+	if strings.Contains(err.Error(), "supplied") {
+		t.Errorf("a refused WRITE must not say the key was supplied: %v", err)
+	}
+}

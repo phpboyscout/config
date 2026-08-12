@@ -5,12 +5,20 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
 
-// ErrForbiddenKey is returned when a source supplies, or is asked to write, a
-// key its constraint forbids. Match it with errors.Is to tell a policy refusal
-// apart from a value that merely failed its shape check.
-var errForbiddenKey = fmt.Errorf("%w: source supplied a forbidden key", ErrInvalidConfig)
+// ErrForbiddenKey is returned when a source is asked to write a key its
+// constraint forbids. Match it with errors.Is to tell a policy refusal apart
+// from a value that merely failed its shape check.
+//
+// It is its own sentinel rather than an [ErrInvalidConfig], because the
+// configuration is not invalid — the write was refused. That is the same
+// distinction [ErrSensitiveLeak] draws, and a caller acts on the two
+// differently: one is repaired by fixing a value, the other by writing
+// somewhere else.
+var ErrForbiddenKey = errors.NewSentinel("config.forbidden_key", "config: forbidden key")
 
 // Constrained bounds what a source is allowed to CONTRIBUTE, and reports it
 // when the source oversteps.
@@ -199,7 +207,7 @@ func (c *constrainedWritable) Prepare(ctx context.Context, edits []Edit) (Pendin
 	for _, e := range edits {
 		if c.forbids(e.Path) {
 			return nil, fmt.Errorf("%w: %q may not be written to source %q",
-				errForbiddenKey, e.Path, c.ID())
+				ErrForbiddenKey, e.Path, c.ID())
 		}
 	}
 
