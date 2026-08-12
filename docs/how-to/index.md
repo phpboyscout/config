@@ -20,6 +20,7 @@ The twelve jobs that come up whatever your configuration lives in.
 | [Read values](read-values.md) | Getting typed values out, scoping a view, and asking where one came from. |
 | [Write configuration](write-config.md) | Planning and applying a change, where routing sends it, and how to pin it elsewhere. |
 | [Validate configuration](validate-config.md) | Schemas and struct-tag validation, at load and before a write lands. |
+| [Compose schemas](compose-schemas.md) | Mounting each component's schema where it lives, and bounding what a source may supply. |
 | [Hot-reload](hot-reload.md) | Watching sources, observing changes, and what happens when a reload fails. |
 | [Typed sections](typed-sections.md) | Decoding a subtree into a struct, once or on every change. |
 | [Bind CLI flags](bind-cli-flags.md) | Making a `pflag` set a layer, and remapping a flag name to a key. |

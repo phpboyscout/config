@@ -378,6 +378,7 @@ assert.Contains(t, err.Error(), "log.level")
 
 ## Related
 
+- [Compose schemas from several components](compose-schemas.md) — several components, each validating its own subtree
 - [Load & merge configuration](load-and-merge.md) — building a store and ordering sources
 - [Use typed sections](typed-sections.md) — decode and validate one subtree
 - [React to changes with hot-reload](hot-reload.md)

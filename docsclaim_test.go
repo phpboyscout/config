@@ -2,6 +2,8 @@ package config_test
 
 import (
 	"context"
+	"errors"
+	"sort"
 	"strings"
 	"testing"
 
@@ -81,4 +83,95 @@ features:
 	if strings.Contains(string(got), "log:") {
 		t.Error("an embedded default was materialised into the user's file")
 	}
+}
+
+// TestComposeSchemasDocClaims pins the output docs/how-to/compose-schemas.md
+// quotes verbatim. The page's argument is that an aggregate report names who
+// objected, so the strings it shows a reader are part of the contract.
+//
+// If this fails, that page is now quoting messages the module does not produce.
+func TestComposeSchemasDocClaims(t *testing.T) {
+	t.Parallel()
+
+	server, err := config.NewSchema(config.WithStructSchema(struct {
+		Host string `config:"host" validate:"required"`
+	}{}))
+	if err != nil {
+		t.Fatalf("NewSchema: %v", err)
+	}
+
+	fsys := config.NewMemFS()
+	if err := fsys.WriteFile("/app.yaml",
+		[]byte("other: x\ncredentials:\n  token: literal-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := config.NewStore(context.Background(),
+		config.WithBackend(config.Constrained(
+			config.NewFileBackend(fsys, "/app.yaml"),
+			config.Forbid("credentials.*"),
+			config.ConstraintName("project-config-file"),
+		)),
+		config.WithSchemaAt("server", server, config.Required),
+	)
+	if err != nil && !errors.Is(err, config.ErrInvalidConfig) {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	// What the page prints, as "key: message [contributor]".
+	got := map[string]bool{}
+	for _, e := range store.Validate().Errors {
+		got[e.Key+": "+e.Message+" ["+e.Contributor+"]"] = true
+	}
+
+	for _, want := range []string{
+		"server: required configuration section is missing [server]",
+		"credentials.token: supplied by a source that is forbidden to carry it [project-config-file]",
+	} {
+		if !got[want] {
+			t.Errorf("the page quotes %q, which the module no longer produces.\ngot: %v", want, keysOf(got))
+		}
+	}
+
+}
+
+// TestComposeSchemasDocWriteRefusal pins the refusal message the same page
+// quotes, and the sentinel it tells the reader to match.
+func TestComposeSchemasDocWriteRefusal(t *testing.T) {
+	t.Parallel()
+
+	fsys := config.NewMemFS()
+	if err := fsys.WriteFile("/app.yaml", []byte("safe: yes\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := config.NewStore(context.Background(),
+		config.WithBackend(config.Constrained(
+			config.NewFileBackend(fsys, "/app.yaml"), config.Forbid("credentials.*"))),
+	)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	_, err = store.Apply(context.Background(), config.Set("credentials.token", "sneaky"))
+
+	const wantMsg = `config: forbidden key: "credentials.token" may not be written to source "/app.yaml"`
+	if err == nil || err.Error() != wantMsg {
+		t.Errorf("the page quotes the refusal as %q, got %v", wantMsg, err)
+	}
+
+	if !errors.Is(err, config.ErrForbiddenKey) {
+		t.Error("the page tells the reader to match ErrForbiddenKey")
+	}
+}
+
+func keysOf(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+
+	sort.Strings(out)
+
+	return out
 }

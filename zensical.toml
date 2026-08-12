@@ -34,6 +34,7 @@ nav = [
       { "Read values" = "how-to/read-values.md" },
       { "Write configuration" = "how-to/write-config.md" },
       { "Validate configuration" = "how-to/validate-config.md" },
+      { "Compose schemas" = "how-to/compose-schemas.md" },
       { "Hot-reload" = "how-to/hot-reload.md" },
       { "Typed sections" = "how-to/typed-sections.md" },
       { "Bind CLI flags" = "how-to/bind-cli-flags.md" },

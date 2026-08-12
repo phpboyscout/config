@@ -20,13 +20,14 @@ matched back to a name.
 
 ## Which errors you must handle
 
-Most callers need three:
+Most callers need these four:
 
 | Situation | Error | What to do |
 |---|---|---|
 | Building a store | [`ErrInvalidConfig`](#errinvalidconfig) | The store is still usable. Fail fast in a service; carry on in a repair tool. |
 | Writing | [`ErrConflict`](#errconflict) | Something else changed the file. Reload and re-plan. |
 | Writing | [`ErrSensitiveLeak`](#errsensitiveleak) | You are about to write a secret into a plain file. Do not retry — fix the target. |
+| Writing | [`ErrForbiddenKey`](#errforbiddenkey) | The source is not permitted to hold this key. Do not retry — write it somewhere else. |
 
 Everything else is either a programming mistake caught early, or an environment failure you
 would report rather than recover from.
@@ -159,6 +160,23 @@ is hiding, because a deny list must not quietly turn a secret into a plaintext w
 
 **Pinning the target does not opt out.** This is a safety invariant, not a routing
 preference. A removal is exempt, because a removal writes no value and so cannot leak one.
+
+### `ErrForbiddenKey`
+
+`config: forbidden key`
+
+Returned when a write targets a key the source's [`Constrained`](../how-to/compose-schemas.md#writes-to-a-forbidden-key-are-refused)
+policy forbids — a credential aimed at a project config file, say. The full message names
+both the key and the source that refused it.
+
+It is its own sentinel rather than an `ErrInvalidConfig`, because the configuration is not
+invalid: the write was refused. A caller acts on the two differently — one is repaired by
+fixing a value, the other by writing somewhere else. That is the same distinction
+[`ErrSensitiveLeak`](#errsensitiveleak) draws.
+
+The read side of the same policy is not an error at all. A forbidden key a source
+*supplies* stays visible and is reported through validation, so the leak is on the record
+rather than silently dropped.
 
 ### `ErrConflict`
 
