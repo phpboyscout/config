@@ -1,5 +1,15 @@
 # Changelog
 
+## [v0.14.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.14.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.13.3...v0.14.0)
+
+### Features
+
+- **validation**: constrain what a source may contribute, and forbid keys ([c1d3787](https://gitlab.com/phpboyscout/go/config/-/commit/c1d37879b368a354ba3d0f61d5a05cea5f87ca48))
+- **validation**: Schema names the concept; StructSchema is the tag-derived one ([44c8c5d](https://gitlab.com/phpboyscout/go/config/-/commit/44c8c5d38bdff64045c637cd8d78a83a36894b2b))
+- **validation**: composable schemas with attributed results ([95e9a96](https://gitlab.com/phpboyscout/go/config/-/commit/95e9a96cc11652e29cc3809f317c2f981b0d8187))
+
 ## [v0.13.3](https://gitlab.com/phpboyscout/go/config/-/releases/v0.13.3)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.13.2...v0.13.3)
