@@ -13,8 +13,14 @@ import (
 // than having none: the caller believes their configuration is checked.
 var ErrEmptySchema = errors.NewSentinel("config.empty_schema", "config: schema has no fields defined")
 
-// Schema defines the expected structure and constraints for configuration values.
-type Schema struct {
+// StructSchema is a schema derived from Go struct tags — the ergonomic front
+// end for declaring configuration, and one implementation of [Schema].
+//
+// Its vocabulary is deliberately small: a coarse type, required, enum and
+// unknown-key detection. Richer constraints are what a JSON Schema document
+// expresses, and `config-schema` supplies that without this module growing a
+// dialect of its own.
+type StructSchema struct {
 	fields map[string]FieldSchema
 	strict bool
 }
@@ -57,8 +63,13 @@ func WithStructSchema(v any) SchemaOption {
 	}
 }
 
-// NewSchema creates a Schema from the provided options.
-func NewSchema(opts ...SchemaOption) (*Schema, error) {
+// NewSchema derives a schema from struct tags.
+//
+// It returns the concrete [StructSchema] rather than the [Schema] interface,
+// because a caller often wants Fields. It satisfies Schema, so it can be handed
+// to [WithSchema], [WithSchemaAt] or [View.Validate] wherever a schema is asked
+// for — a tag-derived schema is one kind of schema, not a separate concept.
+func NewSchema(opts ...SchemaOption) (*StructSchema, error) {
 	cfg := &schemaConfig{
 		fields: make(map[string]FieldSchema),
 	}
@@ -71,14 +82,14 @@ func NewSchema(opts ...SchemaOption) (*Schema, error) {
 		return nil, ErrEmptySchema
 	}
 
-	return &Schema{
+	return &StructSchema{
 		fields: cfg.fields,
 		strict: cfg.strict,
 	}, nil
 }
 
 // Fields returns the schema field definitions.
-func (s *Schema) Fields() map[string]FieldSchema {
+func (s *StructSchema) Fields() map[string]FieldSchema {
 	return s.fields
 }
 

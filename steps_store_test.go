@@ -41,7 +41,7 @@ type world struct {
 	// channel a rejected reload travels on.
 	reloadErrors []error
 	// schema, when set, is attached to the next store built.
-	schema *Schema
+	schema *StructSchema
 	// backend, when set, is the read-only layer a store is built beneath.
 	backend Backend
 	// watcher lets a scenario decide exactly when a change is reported.

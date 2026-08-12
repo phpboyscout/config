@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -14,8 +15,8 @@ import (
 // config-schema can supply a different one.
 //
 // The seam is named Validator rather than made out of Schema deliberately: the
-// concrete *Schema keeps its identity, so View.Validate(*Schema) and every
-// existing consumer compile unchanged, and *Schema is simply one Validator.
+// concrete *StructSchema keeps its identity, so View.Validate(*StructSchema) and every
+// existing consumer compile unchanged, and *StructSchema is simply one Validator.
 
 // stubSchema is an out-of-module implementation, standing in for config-schema.
 // It fails any key whose value is the string "bad".
@@ -47,36 +48,53 @@ func (s *stubSchema) Validate(snap *config.Snapshot, at string, r *config.Valida
 func storeWith(t *testing.T, yaml string, opts ...config.StoreOption) *config.Store {
 	t.Helper()
 
-	all := append([]config.StoreOption{
-		config.WithReaders(config.NamedSource{Name: "test", Content: []byte(yaml)}),
-	}, opts...)
+	store, err := newStore(yaml, opts...)
 
-	store, err := config.NewStore(context.Background(), all...)
-	if err != nil {
+	// The documented idiom: a configuration that parses but violates a schema
+	// comes back ALONGSIDE ErrInvalidConfig, not instead of a Store. A tool
+	// whose job is to repair configuration needs the Store to repair it
+	// through, so only a genuinely unusable load is fatal here.
+	if err != nil && !errors.Is(err, config.ErrInvalidConfig) {
 		t.Fatalf("NewStore: %v", err)
+	}
+
+	if store == nil {
+		t.Fatal("NewStore returned no store")
 	}
 
 	return store
 }
 
-func TestValidatorSeam_AnOutOfModuleImplementationSatisfiesIt(t *testing.T) {
+// newStore returns the load error rather than failing, because a registered
+// schema gates the load: a configuration that violates one never becomes a
+// Store at all, and that refusal is the behaviour under test.
+func newStore(yaml string, opts ...config.StoreOption) (*config.Store, error) {
+	all := append([]config.StoreOption{
+		config.WithReaders(config.NamedSource{Name: "test", Content: []byte(yaml)}),
+	}, opts...)
+
+	return config.NewStore(context.Background(), all...)
+}
+
+func TestSchemaSeam_AnOutOfModuleImplementationSatisfiesIt(t *testing.T) {
 	t.Parallel()
 
-	// The compile-time assertion is the test: if config.Validator's method set
+	// The compile-time assertion is the test: if config.Schema's method set
 	// changes, this stops building — which is the failure a consumer outside
 	// this module would hit.
-	var _ config.Validator = (*stubSchema)(nil)
+	var _ config.Schema = (*stubSchema)(nil)
 }
 
 func TestValidationError_CarriesTheContributor(t *testing.T) {
 	t.Parallel()
 
-	// D3: aggregation is useless without attribution.
+	// D3: aggregation is useless without attribution. Observed at load, because
+	// D15 makes a registered schema fail-closed — a violating configuration
+	// never becomes a Store.
 	store := storeWith(t, "server:\n  host: bad\n",
 		config.WithSchemaAt("server", &stubSchema{name: "server-component"}))
 
 	res := store.Validate()
-
 	if res.Valid() {
 		t.Fatal("want a failure, got a clean result")
 	}
@@ -95,10 +113,8 @@ func TestWithSchemaAt_PassesTheMountPrefixToTheImplementation(t *testing.T) {
 	// applying the prefix for it would stop a schema knowing its own scope.
 	stub := &stubSchema{name: "cache"}
 
-	store := storeWith(t, "plugins:\n  cache:\n    ttl: bad\n",
+	_, _ = newStore("plugins:\n  cache:\n    ttl: bad\n",
 		config.WithSchemaAt("plugins.cache", stub))
-
-	_ = store.Validate()
 
 	if stub.sawAt != "plugins.cache" {
 		t.Errorf("implementation saw at=%q, want %q", stub.sawAt, "plugins.cache")
@@ -115,10 +131,6 @@ func TestStoreValidate_AggregatesEveryContributor(t *testing.T) {
 	)
 
 	res := store.Validate()
-
-	if len(res.Errors) != 2 {
-		t.Fatalf("want 2 errors from 2 contributors, got %d", len(res.Errors))
-	}
 
 	seen := map[string]bool{}
 	for _, e := range res.Errors {
@@ -137,6 +149,8 @@ func TestStoreValidate_ScopesToANamedBranch(t *testing.T) {
 	t.Parallel()
 
 	// D14: Store.Validate("branch") checks one subtree.
+	// D14: scoping. The configuration violates both mounts, and asking about one
+	// branch must report only that branch's contributor.
 	store := storeWith(t,
 		"server:\n  host: bad\nplugins:\n  cache:\n    ttl: bad\n",
 		config.WithSchemaAt("server", &stubSchema{name: "server-component"}),
@@ -146,7 +160,7 @@ func TestStoreValidate_ScopesToANamedBranch(t *testing.T) {
 	res := store.Validate("plugins.cache")
 
 	if len(res.Errors) != 1 {
-		t.Fatalf("want only the cache-plugin failure, got %d errors", len(res.Errors))
+		t.Fatalf("want only the cache-plugin failure, got %d", len(res.Errors))
 	}
 
 	if got := res.Errors[0].Contributor; got != "cache-plugin" {
@@ -255,10 +269,8 @@ func TestSchema_TheSameSchemaMountsTwice(t *testing.T) {
 		config.WithSchemaAt("plugins.session", schema),
 	)
 
-	res := store.Validate()
-
 	keys := map[string]bool{}
-	for _, e := range res.Errors {
+	for _, e := range store.Validate().Errors {
 		keys[e.Key] = true
 	}
 
@@ -276,5 +288,37 @@ func TestValidationError_StringNamesTheContributor(t *testing.T) {
 	e := config.ValidationError{Key: "a.b", Message: "boom", Contributor: "widget"}
 	if got := e.String(); !strings.Contains(got, "widget") {
 		t.Errorf("String() = %q, want it to name the contributor", got)
+	}
+}
+
+func TestFailClosed_ReturnsAUsableStoreAlongsideTheError(t *testing.T) {
+	t.Parallel()
+
+	// The resolution of what looked like a conflict between gating the load and
+	// validating on demand: both hold, because a violating configuration comes
+	// back as a Store AND an error. A service fails fast on `if err != nil`; a
+	// repair tool checks for ErrInvalidConfig and carries on with the store it
+	// was handed.
+	store, err := newStore("server:\n  host: bad\n",
+		config.WithSchemaAt("server", &stubSchema{name: "server-component"}))
+
+	if !errors.Is(err, config.ErrInvalidConfig) {
+		t.Fatalf("want ErrInvalidConfig, got %v", err)
+	}
+
+	if store == nil {
+		t.Fatal("want the store back alongside the error — a tool that repairs " +
+			"configuration cannot repair it through a nil store")
+	}
+
+	// And the same failures are reachable on demand, which is what makes
+	// Store.Validate worth having rather than a tautology.
+	res := store.Validate()
+	if res.Valid() {
+		t.Fatal("want Store.Validate to report the same violation the load found")
+	}
+
+	if got := res.Errors[0].Contributor; got != "server-component" {
+		t.Errorf("Contributor = %q, want server-component", got)
 	}
 }

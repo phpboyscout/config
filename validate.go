@@ -93,12 +93,21 @@ func (r *ValidationResult) addWarning(key, message, hint string) {
 // A scoped view validates its own subtree, so a schema written for a section
 // applies to that section rather than to the whole configuration. The result
 // carries errors and warnings separately; check [ValidationResult.Valid].
-func (v *View) Validate(schema *Schema) *ValidationResult {
-	if v == nil {
-		return &ValidationResult{}
+func (v *View) Validate(schema Schema) *ValidationResult {
+	result := &ValidationResult{}
+
+	if v == nil || isNil(schema) {
+		return result
 	}
 
-	return validateView(v, schema)
+	// Delegating rather than reaching into the schema is what lets a caller
+	// hand in any implementation — a JSON Schema document from config-schema
+	// validates a scoped view exactly as a tag-derived one does. The view's own
+	// prefix is the mount point, so a schema written for a section is applied
+	// to that section.
+	schema.Validate(v.pinned(), v.prefix, result)
+
+	return result
 }
 
 // Validate makes a tag-derived schema a [Validator], so the same schema a
@@ -109,7 +118,7 @@ func (v *View) Validate(schema *Schema) *ValidationResult {
 // validates plugins.cache.enabled. Failures are reported with the FULL path,
 // because a user reading the report needs the key they would edit, not the one
 // the component happened to call it.
-func (s *Schema) Validate(snap *Snapshot, at string, r *ValidationResult) {
+func (s *StructSchema) Validate(snap *Snapshot, at string, r *ValidationResult) {
 	if s == nil || snap == nil {
 		return
 	}
@@ -132,20 +141,6 @@ func (s *Schema) Validate(snap *Snapshot, at string, r *ValidationResult) {
 	}
 }
 
-// validateSnapshot checks a snapshot against a schema.
-//
-// It validates the resolved configuration rather than any single layer,
-// because a layer can be legitimately incomplete on its own: a base file may
-// omit a key that an overlay supplies, and rejecting that would reject a
-// perfectly valid setup.
-func validateSnapshot(snap *Snapshot, schema *Schema) *ValidationResult {
-	if snap == nil {
-		return &ValidationResult{}
-	}
-
-	return validateView(NewView(snap), schema)
-}
-
 // validateView checks whatever the reader describes against a schema.
 //
 // Going through the reader rather than the snapshot is what makes a scoped view
@@ -156,7 +151,7 @@ func validateSnapshot(snap *Snapshot, schema *Schema) *ValidationResult {
 // It takes [Reader] rather than *View because it only ever calls Get, Has, Keys
 // and Shadowed, all of which Reader has. That is what lets [ValidateStruct]
 // accept a mock — see its doc comment.
-func validateView(view Reader, schema *Schema) *ValidationResult {
+func validateView(view Reader, schema *StructSchema) *ValidationResult {
 	result := &ValidationResult{}
 
 	// isNil rather than view == nil: a (*View)(nil) stored in a Reader is a
@@ -222,27 +217,24 @@ func validateField(key string, field FieldSchema, value any, present bool, resul
 	}
 }
 
-// isNil reports whether a Reader is unusable, covering both an interface that
-// holds nothing and one holding a nil pointer.
+// isNil reports whether an interface value is nil, or holds a nil pointer.
 //
-// The second case is why this exists. Before validation took an interface, a
-// plain view == nil caught a nil *View. Boxed in a Reader that comparison is
-// false — the interface has a type — so the guard would have passed a nil
-// pointer through to Get and panicked, on the exact input it was written to
-// protect against.
-func isNil(r Reader) bool {
-	if r == nil {
+// The distinction matters: a (*View)(nil) stored in an interface is a non-nil
+// interface holding a nil pointer, so a plain == nil comparison stops catching
+// the case it was written for the moment the parameter becomes an interface.
+func isNil(v any) bool {
+	if v == nil {
 		return true
 	}
 
-	value := reflect.ValueOf(r)
+	value := reflect.ValueOf(v)
 
 	switch value.Kind() {
 	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan:
 		return value.IsNil()
 	default:
-		// A non-nilable kind — a struct value implementing Reader — is always
-		// usable.
+		// A non-nilable kind — a struct value implementing the interface — is
+		// always usable.
 		return false
 	}
 }

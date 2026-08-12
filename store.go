@@ -64,7 +64,7 @@ type Store struct {
 
 	// schema, when set, is checked against every candidate before it is
 	// published. A configuration that does not satisfy it never becomes live.
-	schema *Schema
+	schema Schema
 
 	// validators are the contributions registered with WithSchemaAt, in
 	// registration order. Fixed at construction — see WithSchemaAt.
@@ -147,7 +147,7 @@ func WithFlags(flags *pflag.FlagSet, opts ...FlagOption) StoreOption {
 // A reload that fails validation leaves the previous configuration in place:
 // running on the last known good values is better than running on values the
 // application has said it cannot use.
-func WithSchema(schema *Schema) StoreOption {
+func WithSchema(schema Schema) StoreOption {
 	return func(s *Store) {
 		s.schema = schema
 	}
@@ -444,13 +444,24 @@ func (s *Store) validate(loaded []backendLayers) error {
 // omitting a key its overlay supplies — so only the resolved result can be
 // judged.
 func (s *Store) violations(loaded []backendLayers) []ValidationError {
-	if s.schema == nil {
+	if isNil(s.schema) && len(s.validators) == 0 {
 		return nil
 	}
 
-	flat := flatten(loaded)
+	snap := newSnapshot(0, flatten(loaded))
+	result := &ValidationResult{}
 
-	return validateSnapshot(newSnapshot(0, flat), s.schema).Errors
+	if !isNil(s.schema) {
+		s.schema.Validate(snap, "", result)
+	}
+
+	// Registered contributions gate the load exactly as the whole-config schema
+	// does. A component that declared configuration it needs and did not get it
+	// would otherwise run against a snapshot already known to be wrong, with the
+	// failure discoverable only if somebody thought to ask. See D15.
+	result.Errors = append(result.Errors, validateAgainst(snap, s.validators, nil).Errors...)
+
+	return result.Errors
 }
 
 // validateChange refuses a write that introduces a schema violation, while
@@ -468,7 +479,7 @@ func (s *Store) violations(loaded []backendLayers) []ValidationError {
 // lands, and is then rejected by the reload it triggers, leaving the file
 // changed and the process on last-known-good.
 func (s *Store) validateChange(before, after []backendLayers) error {
-	if s.schema == nil {
+	if isNil(s.schema) && len(s.validators) == 0 {
 		return nil
 	}
 

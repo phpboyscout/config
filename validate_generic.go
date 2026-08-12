@@ -9,7 +9,7 @@ import (
 // schemaCache memoises schemas derived from a type's struct tags. A schema for a
 // given type built without extra options is immutable, so it is safe to reuse
 // across calls and goroutines.
-var schemaCache sync.Map // reflect.Type -> *Schema
+var schemaCache sync.Map // reflect.Type -> *StructSchema
 
 // SchemaOf returns a Schema derived from the struct tags of T. For the
 // option-free call the result is cached per type, so repeated calls for the same
@@ -17,11 +17,11 @@ var schemaCache sync.Map // reflect.Type -> *Schema
 // schema is built fresh and not cached, since options can change the result.
 //
 // T must be a struct; see WithStructSchema for the supported tags.
-func SchemaOf[T any](opts ...SchemaOption) (*Schema, error) {
+func SchemaOf[T any](opts ...SchemaOption) (*StructSchema, error) {
 	if len(opts) == 0 {
 		t := reflect.TypeFor[T]()
 		if cached, ok := schemaCache.Load(t); ok {
-			return cached.(*Schema), nil
+			return cached.(*StructSchema), nil
 		}
 
 		schema, err := NewSchema(WithStructSchema(*new(T)))

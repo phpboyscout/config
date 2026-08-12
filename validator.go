@@ -2,7 +2,7 @@ package config
 
 import "strings"
 
-// Validator is the seam an out-of-module schema implementation plugs into.
+// Schema is the seam an out-of-module schema implementation plugs into.
 //
 // This module defines what validating a configuration MEANS and takes no
 // position on how a schema is expressed. The tag-derived [Schema] this package
@@ -15,7 +15,7 @@ import "strings"
 // it costs them nothing.
 //
 // See the composable schema validation spec, D7.
-type Validator interface {
+type Schema interface {
 	// Validate checks the configuration in snap and appends what it objects to.
 	//
 	// at is the mount prefix this validator was registered under — "" for the
@@ -31,8 +31,8 @@ type Validator interface {
 
 // mounted is one registered validator and where it sits.
 type mounted struct {
-	at string
-	v  Validator
+	at     string
+	schema Schema
 
 	// required makes the mount point itself mandatory.
 	//
@@ -56,18 +56,18 @@ type mounted struct {
 // running configuration. Components self-register before the store is
 // constructed, which is already how assets work, so nothing needs to add one
 // later.
-func WithSchemaAt(prefix string, v Validator, opts ...MountOption) StoreOption {
-	return func(s *Store) {
-		if v == nil {
+func WithSchemaAt(prefix string, schema Schema, opts ...MountOption) StoreOption {
+	return func(store *Store) {
+		if schema == nil {
 			return
 		}
 
-		m := mounted{at: normalisePath(prefix), v: v}
+		m := mounted{at: normalisePath(prefix), schema: schema}
 		for _, opt := range opts {
 			opt(&m)
 		}
 
-		s.validators = append(s.validators, m)
+		store.validators = append(store.validators, m)
 	}
 }
 
@@ -131,7 +131,7 @@ func validateAgainst(snap *Snapshot, mounts []mounted, paths []string) *Validati
 			continue
 		}
 
-		m.v.Validate(snap, m.at, result)
+		m.schema.Validate(snap, m.at, result)
 	}
 
 	return result

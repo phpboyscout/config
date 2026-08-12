@@ -26,7 +26,7 @@ type portOnly struct {
 	}
 }
 
-func portOnlySchema(t *testing.T) *Schema {
+func portOnlySchema(t *testing.T) *StructSchema {
 	t.Helper()
 
 	schema, err := NewSchema(WithStructSchema(portOnly{}))

@@ -20,7 +20,7 @@ type serverConfig struct {
 	}
 }
 
-func portSchema(t *testing.T) *Schema {
+func portSchema(t *testing.T) *StructSchema {
 	t.Helper()
 
 	schema, err := NewSchema(WithStructSchema(serverConfig{}))
