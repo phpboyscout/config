@@ -29,6 +29,22 @@ type Schema interface {
 	Validate(snap *Snapshot, at string, r *ValidationResult)
 }
 
+// Named is an optional interface a [Schema] may implement to say what it is
+// called.
+//
+// A report that aggregates several components is only actionable if it can say
+// whose expectation was violated, and the schema is the one thing that knows.
+// An implementation that reports its own Contributor keeps it; one that does not
+// gets named from here, so attribution never depends on an implementation
+// remembering to do it.
+//
+// It is optional because a schema is not obliged to have a name — an anonymous
+// one is attributed to its mount point instead, which is still something a
+// reader can act on.
+type Named interface {
+	Name() string
+}
+
 // mounted is one registered validator and where it sits.
 type mounted struct {
 	at     string
@@ -153,19 +169,61 @@ func validateAgainst(snap *Snapshot, mounts []mounted, paths []string) *Validati
 			// The mount decides which it is; implementations do not have to.
 			if m.required {
 				result.AddError(ValidationError{
-					Key:     m.at,
-					Message: "required configuration section is missing",
-					Hint:    "the component mounted here cannot run without it",
+					Key:         m.at,
+					Message:     "required configuration section is missing",
+					Hint:        "the component mounted here cannot run without it",
+					Contributor: m.contributor(),
 				})
 			}
 
 			continue
 		}
 
+		before, warnings := len(result.Errors), len(result.Warnings)
+
 		m.schema.Validate(snap, m.at, result)
+
+		attribute(result, before, warnings, m.contributor())
 	}
 
 	return result
+}
+
+// contributor names the component behind a mount: what the schema calls itself,
+// or failing that where it was mounted.
+func (m mounted) contributor() string {
+	if named, ok := m.schema.(Named); ok {
+		if name := named.Name(); name != "" {
+			return name
+		}
+	}
+
+	return m.at
+}
+
+// attribute fills in the contributor on everything a mount just raised that did
+// not name one.
+//
+// Backfilling rather than overwriting is the point: an implementation composing
+// several documents knows better than the mount does which one objected, and
+// keeps what it set. This only catches what would otherwise reach the reader as
+// an anonymous complaint.
+func attribute(r *ValidationResult, fromError, fromWarning int, name string) {
+	if name == "" {
+		return
+	}
+
+	for i := fromError; i < len(r.Errors); i++ {
+		if r.Errors[i].Contributor == "" {
+			r.Errors[i].Contributor = name
+		}
+	}
+
+	for i := fromWarning; i < len(r.Warnings); i++ {
+		if r.Warnings[i].Contributor == "" {
+			r.Warnings[i].Contributor = name
+		}
+	}
 }
 
 // withinAny reports whether a mount should run for the requested paths. No
