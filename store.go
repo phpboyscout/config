@@ -65,6 +65,10 @@ type Store struct {
 	// schema, when set, is checked against every candidate before it is
 	// published. A configuration that does not satisfy it never becomes live.
 	schema *Schema
+
+	// validators are the contributions registered with WithSchemaAt, in
+	// registration order. Fixed at construction — see WithSchemaAt.
+	validators []mounted
 }
 
 // backendLayers pairs a backend with what it contributed.

@@ -18,10 +18,21 @@ type ValidationError struct {
 	Message string
 	// Hint is an actionable fix suggestion.
 	Hint string
+	// Contributor names the validator that raised this failure.
+	//
+	// Empty for the tag-derived schema handed to WithSchema, which is the whole
+	// configuration's and has nobody else to be distinguished from. Set for a
+	// registered contribution, because a report aggregating several components
+	// is not actionable if it cannot say whose expectation was violated.
+	Contributor string
 }
 
 func (e ValidationError) String() string {
 	s := fmt.Sprintf("%s: %s", e.Key, e.Message)
+	if e.Contributor != "" {
+		s = fmt.Sprintf("%s [%s]", s, e.Contributor)
+	}
+
 	if e.Hint != "" {
 		s += fmt.Sprintf(" (hint: %s)", e.Hint)
 	}
@@ -57,6 +68,18 @@ func (r *ValidationResult) Error() string {
 	return sb.String()
 }
 
+// AddError appends a failure. It is exported so a [Validator] implemented
+// outside this module can report through the same result every other
+// contributor uses, which is what lets one report aggregate them all.
+func (r *ValidationResult) AddError(e ValidationError) {
+	r.Errors = append(r.Errors, e)
+}
+
+// AddWarning appends a warning. Warnings do not affect [ValidationResult.Valid].
+func (r *ValidationResult) AddWarning(e ValidationError) {
+	r.Warnings = append(r.Warnings, e)
+}
+
 func (r *ValidationResult) addError(key, message, hint string) {
 	r.Errors = append(r.Errors, ValidationError{Key: key, Message: message, Hint: hint})
 }
@@ -76,6 +99,37 @@ func (v *View) Validate(schema *Schema) *ValidationResult {
 	}
 
 	return validateView(v, schema)
+}
+
+// Validate makes a tag-derived schema a [Validator], so the same schema a
+// consumer already writes can be mounted as one contribution among several.
+//
+// The schema's keys are relative to the mount point, matching every other
+// contribution: a schema describing "enabled" mounted at "plugins.cache"
+// validates plugins.cache.enabled. Failures are reported with the FULL path,
+// because a user reading the report needs the key they would edit, not the one
+// the component happened to call it.
+func (s *Schema) Validate(snap *Snapshot, at string, r *ValidationResult) {
+	if s == nil || snap == nil {
+		return
+	}
+
+	view := NewView(snap)
+	if at != "" {
+		view = &View{snap: snap, prefix: at}
+	}
+
+	scoped := validateView(view, s)
+
+	for _, e := range scoped.Errors {
+		e.Key = joinPath(at, e.Key)
+		r.AddError(e)
+	}
+
+	for _, w := range scoped.Warnings {
+		w.Key = joinPath(at, w.Key)
+		r.AddWarning(w)
+	}
 }
 
 // validateSnapshot checks a snapshot against a schema.
