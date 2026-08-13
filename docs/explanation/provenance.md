@@ -1,6 +1,6 @@
 ---
 title: Provenance
-description: What Origin, Shadowed and Explain can and cannot tell you about where a value came from.
+description: What Origin, Shadowed, Explain and Shadows can and cannot tell you about where a value came from.
 tags: [explanation, provenance]
 ---
 
@@ -16,9 +16,9 @@ the information about who contributed what is gone, and no amount of inspection
 afterwards can recover it. You are left with `grep` across your config files and a guess.
 
 This module records provenance **during** the merge, because that is the only moment it
-exists. `Origin`, `Shadowed` and `Explain` are how you ask for it back.
+exists. `Origin`, `Shadowed`, `Explain` and `Shadows` are how you ask for it back.
 
-## Three questions, three methods
+## Four questions, four methods
 
 The three are not variations on one another. They answer genuinely different questions,
 and reaching for the wrong one is how you end up with a misleading diagnostic.
@@ -78,8 +78,30 @@ the path is not set at all it says so plainly rather than returning an empty lin
 db.host is not set
 ```
 
+**`Shadows() []Shadow` — what is shadowed *anywhere*?**
+
+The three above answer for a path you already know. `Shadows` answers when you do not:
+
+```go
+for _, sh := range view.Shadows() {
+	fmt.Printf("%s: %s wins over %d other layer(s)\n",
+		sh.Path, sh.InEffect.Name, len(sh.Shadowed))
+}
+```
+
+```text
+server.port: project wins over 1 other layer(s)
+token: APP_TOKEN wins over 2 other layer(s)
+```
+
+"What in this file is doing nothing?" is the same question as "why is my edit not taking
+effect?", asked without knowing which key to ask about — and not knowing the key is
+usually the situation you are in. Composing `Keys` with `Shadowed` gives the same answer
+in about a dozen lines; this exists because every consumer was writing those dozen lines.
+
 The rule of thumb: `Origin` when you are going to branch on the answer, `Shadowed` when
-you need the whole picture, `Explain` when a person is going to read it.
+you need the whole picture for one path, `Explain` when a person is going to read it, and
+`Shadows` when you do not yet know which paths are interesting.
 
 ## Why provenance is leaf-only
 
@@ -94,7 +116,13 @@ last layer to touch the subtree, which is the one a user is least likely to want
 Rather than invent an answer, the merge deletes provenance for any path that turns out to
 have entries beneath it, and `Origin` reports not-found. `Shadowed("db")` still works and
 returns every layer contributing to that subtree, which is what the question was actually
-reaching for. `Explain` follows the same rule and says so out loud:
+reaching for.
+
+`Shadows()` follows `Origin` rather than `Shadowed` here: a populated subtree never
+appears in the report, because every entry has to name the layer in effect and for `db`
+there isn't one to name honestly. It also omits paths only one layer defines — those are
+not shadowed, and including them would mean filtering the report before you could use it.
+Those are the only two ways it differs from asking `Shadowed` per key. `Explain` follows the same rule and says so out loud:
 
 ```
 db is a subtree assembled from /etc/app/base.yaml, /etc/app/prod.yaml
@@ -174,6 +202,13 @@ Worth stating plainly, so you do not go looking for it:
 - **Values are not provenance.** `Shadowed` names the layers that define a path; it does
   not tell you what each of them says. If you need the losing values, you have the layer
   identities and can read the files.
+
+  `Shadows` holds the same line, and there it is a deliberate refusal rather than a
+  consequence. The report exists to be printed, and the case that motivated it is a
+  credential doctor that is forbidden from putting secret values anywhere near a log —
+  a report carrying values would put them one `%+v` away. It would also buy nothing: a
+  literal credential sitting under a working environment reference wants removing whether
+  or not it matches the value in effect.
 
 ## Related
 

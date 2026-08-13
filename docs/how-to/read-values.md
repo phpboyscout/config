@@ -177,6 +177,36 @@ for _, key := range view.Keys() {
 `store.Snapshot().Values()` returns the whole merged tree as a map — a copy, so mutating
 it cannot affect the store.
 
+## Find what is set in more than one place
+
+`Keys` tells you what exists. `Shadows` tells you what is set more than once, and which
+copy is losing:
+
+```go
+for _, sh := range view.Shadows() {
+	fmt.Printf("%s = from %s, shadowing %d\n",
+		sh.Path, sh.InEffect.Name, len(sh.Shadowed))
+}
+```
+
+```text
+server.port = from project, shadowing 1
+token = from APP_TOKEN, shadowing 2
+```
+
+Only paths that more than one layer defines appear, so there is nothing to filter. It
+reports leaves only — a populated subtree has no single winning layer to name — and it
+carries paths and sources, never values.
+
+Through a scoped view the paths are scoped too, so you can hand one straight back:
+
+```go
+srv := view.Sub("server")
+for _, sh := range srv.Shadows() {
+	fmt.Println(sh.Path, srv.Get(sh.Path)) // "port", 2
+}
+```
+
 ## Keep a set of reads consistent
 
 A `View` is already pinned to one snapshot, so reads through it cannot straddle a reload.
@@ -204,7 +234,7 @@ if err != nil {
 
 - [Use typed sections](typed-sections.md) — decode a subtree onto your own struct
 - [Load & merge configuration](load-and-merge.md) — where the values come from
-- [Provenance](../explanation/provenance.md) — and why each one won
+- [Provenance](../explanation/provenance.md) — `Origin`, `Shadowed`, `Explain`, `Shadows`, and why each value won
 - [Keys and paths](../reference/keys-and-paths.md) — what a path can and cannot address
 - [Struct tags](../reference/struct-tags.md) — the tags decoding reads, and the types that decode from text
 - [Defaults and limits](../reference/defaults-and-limits.md#sizes) — the binary suffixes `GetSizeInBytes` understands
