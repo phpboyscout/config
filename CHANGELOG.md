@@ -1,5 +1,14 @@
 # Changelog
 
+## [v0.15.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.15.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.14.0...v0.15.0)
+
+### Features
+
+- **validation**: give a refused write its own error ([bab24a7](https://gitlab.com/phpboyscout/go/config/-/commit/bab24a7248a5d0ddfe8f22201ea5443a737da43e))
+- **validation**: name the component behind every validation failure ([31f59df](https://gitlab.com/phpboyscout/go/config/-/commit/31f59dfeb0d6edd250fdcba7739323d9ad773bbc))
+
 ## [v0.14.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.14.0)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.13.3...v0.14.0)
