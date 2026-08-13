@@ -225,6 +225,30 @@ Secrets managers ship **read-only by default** — a config tool writing a secre
 riskier thing than reading one, so write support for those is opt-in and specified per adapter.
 Feature-flag systems are deliberately out of scope.
 
+## Not every sibling module is a backend
+
+An adapter teaches the store about a **source**. One module in the family does something
+else entirely, and it is easy to miss when scanning the tables above for a system name.
+
+| Module | Provides | Source |
+|---|---|---|
+| [`config-schema`](../how-to/compose-schemas.md) | JSON Schema validation — `FromJSON` for a schema document, `FromStruct` for one derived from `config:` tags | [gitlab](https://gitlab.com/phpboyscout/go/config-schema) |
+
+The core defines what validating a configuration *means* — the `Schema` interface, mounting a
+contribution with `WithSchemaAt`, aggregating the results — and takes no position on how a
+schema is written. `config-schema` supplies the JSON Schema dialect, its library and its
+ingestion.
+
+That split is the same dependency-footprint argument the adapters are built on, applied to a
+capability rather than a source. Twenty-five adapters depend on `config`, and each pins its
+footprint; a JSON Schema library linked into the core would widen every one of them for
+something most do not use. Behind an interface it costs them nothing, and a consumer who wants
+it adds one module.
+
+The tag-derived `config.NewSchema` stays in the core, so the common case needs no extra module
+at all. Reach for `config-schema` when the schema is a **document** — one you already publish,
+share with a non-Go consumer, or generate.
+
 ## Build your own
 
 Nothing here is a closed set. The same two seams the family is built on are yours to use:

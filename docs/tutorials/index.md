@@ -42,7 +42,8 @@ shape it establishes, so the tutorial doubles as the map for the other fifteen.
 ## One page per adapter, once you know the shape
 
 There are twenty-five adapter modules — seven file formats, seven filesystems and eleven remote
-backends. They do not get a tutorial each, because once you have done one of the three
+backends — plus [`config-schema`](../how-to/compose-schemas.md), which is not an adapter at all
+but supplies JSON Schema validation. They do not get a tutorial each, because once you have done one of the three
 above, the rest differ only in details a [how-to guide](../how-to/load-and-merge.md) states
 faster than a narrative can. [The adapter ecosystem](../explanation/adapters.md) lists all of
 them with what each one reads, writes and costs.

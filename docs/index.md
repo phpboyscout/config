@@ -211,6 +211,14 @@ cloud **parameter stores** are released:
   deliberately **not** on this list: one already reaches a pod as a file or an environment
   variable, so `config-filekv` above covers the gap without a 38-module API client.
 
+### Not an adapter — JSON Schema validation
+
+<div class="grid cards" markdown>
+
+- :material-check-decagram: **[config-schema](how-to/compose-schemas.md)** — validate against a JSON Schema **document**, composed from several components and mounted where each one lives. The tag-derived schema stays in the core; reach for this when the schema is a document you publish, share or generate.
+
+</div>
+
 **[→ The full adapter ecosystem, with status and roadmap](explanation/adapters.md)**
 
 ## Should you use this?
