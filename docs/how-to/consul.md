@@ -47,6 +47,15 @@ store.View().GetString("server.host") // "localhost"
 store.View().GetInt("server.port")    // 8080
 ```
 
+## When you do *not* need this
+
+If your configuration is static and ships with the deploy, a file is simpler and adds
+no runtime dependency on anything being reachable.
+
+Reach for Consul when a value has to change **without a redeploy**, or when several
+services must agree on one source of truth. Its watch is a blocking query, so a change
+reaches the store without polling.
+
 ## Values are strings, or decoded documents
 
 Consul stores bytes, so by default every value is a scalar **string** and the View's typed

@@ -19,6 +19,15 @@ You build and configure the Parameter Manager client — project, location and c
 yours. Parameter Manager parameters are heavyweight, versioned, document-shaped resources, so the
 adapter reads them **two ways**.
 
+## When you do *not* need this
+
+If the values are static, or already arrive as environment variables, `WithEnv` covers
+them with no SDK.
+
+Reach for Parameter Manager when values are managed centrally and change without a
+deploy. Read-only here, so pair it with a writable layer if your application persists
+anything.
+
 ## Single document (default)
 
 One named parameter is one layer: its latest version's payload is the whole document. Pass a

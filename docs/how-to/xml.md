@@ -26,6 +26,14 @@ store, err := config.NewStore(ctx,
 )
 ```
 
+## When you do *not* need this
+
+XML here is **read-only**, so it cannot be the layer your application writes back to.
+If you own the format, YAML or JSON will serve you better in every respect.
+
+Reach for XML when the file is not yours — an existing enterprise or legacy document
+you have to consume where it is, rather than convert and keep in step.
+
 ## Attributes and elements share one namespace
 
 Real configuration XML is attribute-heavy — log4j and .NET `appSettings` are almost entirely

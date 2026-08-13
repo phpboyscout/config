@@ -40,6 +40,14 @@ host := store.View().GetString("server.host") // "localhost"
 port := store.View().GetInt("server.port")    // 8080
 ```
 
+## When you do *not* need this
+
+The core reads YAML, and YAML is the cheaper answer when **you** choose the format —
+no module, no extra dependency.
+
+Reach for TOML when the file is not yours to choose: a format your users already
+write, or one a neighbouring tool in the same repo already emits.
+
 ## Writing preserves the file
 
 Re-serialising a decoded TOML document destroys it — comments gone, sections alphabetised,

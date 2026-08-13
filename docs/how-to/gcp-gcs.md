@@ -37,6 +37,14 @@ store, err := config.NewStore(ctx,
 The `config.FS` name is the object name — `Wrap(client, "my-bucket")` reads and writes the object
 `config.yaml`.
 
+## When you do *not* need this
+
+If you read one object once at startup, fetching it and handing the bytes to
+[`WithReaders`](load-and-merge.md) needs no adapter.
+
+Reach for `config-gcp-gcs` when the bucket should behave like a filesystem — several
+files, writes routed back, or hot-reload noticing a change made elsewhere.
+
 ## A base context, because the SDK needs one
 
 Every `storage` call takes a `context.Context`, but the `config.FS` methods do not, so `Wrap`

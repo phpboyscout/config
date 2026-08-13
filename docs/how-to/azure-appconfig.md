@@ -40,6 +40,15 @@ provenance and hot-reload like a file. Values are scalar strings by default; pas
 `config.Codec` with `WithValueCodec` to decode a document-valued setting. The declared
 content-type is **not** used to pick a codec — decoding is always the one you inject.
 
+## When you do *not* need this
+
+If the values are static, or already arrive as environment variables, `WithEnv` covers
+them with no SDK.
+
+Reach for App Configuration when values are managed centrally and change without a
+redeploy — and for its labels, which let one store serve several environments from the
+same keys.
+
 ## Labels
 
 App Configuration keys are identified by **(key, label)**. Scope a backend to one label with

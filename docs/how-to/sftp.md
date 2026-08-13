@@ -39,6 +39,15 @@ store, err := config.NewStore(ctx,
 `Wrap` is the whole API, and the layer reads **and writes** — a `store.Apply` stages beside the
 target and renames over it, so a remote reader never sees a half-written file.
 
+## When you do *not* need this
+
+If the file can be fetched at deploy time, or the remote path is already mounted
+locally, the core reads it with no adapter and no SSH dependency at runtime.
+
+Reach for SFTP when the file must be read **where it lives** — because it changes
+independently of your deploys, or because your process is the thing that writes it
+back.
+
 ## Atomicity depends on the server
 
 The commit prefers the `posix-rename@openssh.com` extension for an **atomic overwrite** where the

@@ -37,6 +37,14 @@ billy filesystem through its native rename, so an edit lands atomically and stru
 Paths are forward-slash and **relative to the filesystem's root**, like `config.Dir` and unlike
 `config.OS()`: an `osfs.New("/etc/app")` reads `"config.yaml"`, not `"/etc/app/config.yaml"`.
 
+## When you do *not* need this
+
+If the file is on local disk, `config.OS()` or `config.Dir(path)` already cover it.
+
+Reach for `config-billy` when something upstream handed you a billy filesystem and you
+have to pass it through — most often a go-git worktree, in-memory or on disk, where the
+configuration lives inside the repository you are operating on.
+
 ## Read-only billy filesystems
 
 A `billy.Filesystem` can be mounted without write capability. When it is, `config-billy` maps that to

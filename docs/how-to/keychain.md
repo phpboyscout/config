@@ -36,6 +36,16 @@ store, err := config.NewStore(ctx,
 )
 ```
 
+## When you do *not* need this
+
+The OS keychain needs a **logged-in desktop session**. On a headless server, in a
+container or in CI there is nothing to unlock, and this adapter is the wrong tool
+however convenient it looks on a laptop — use the environment, a mounted file or a
+secrets manager there.
+
+Reach for `config-keychain` in a CLI a human runs on their own machine, where the
+alternative is a token sitting in a dotfile.
+
 ## What the layer ordering buys you
 
 Two behaviours fall out of routing the core already does. Neither needs a special case, and both
@@ -159,7 +169,8 @@ replacing it.
 | | |
 |---|---|
 | Modules added | **21** — 9 for the `config` graph, 12 for `credentials` |
-| Requires | `config` **v0.10.0+** — the release adding `BoundedKeySpace`, which a declared-key backend needs — and `credentials` **v0.2.2+**, the release in which the keychain backend began honouring its context |
+| Requires | the `config` version named in this module's `go.mod` — `go get` brings it |
+| Capability since | `config` **v0.10.0**, the release adding `BoundedKeySpace`, which a declared-key backend needs; and `credentials` **v0.2.2**, the release in which the keychain backend began honouring its context |
 
 Both floors are hard rather than preferences. Against an earlier `credentials` a locked keyring
 blocks with nothing able to recover it, and against an earlier `config` the conformance suite

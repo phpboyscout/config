@@ -26,6 +26,16 @@ store, err := config.NewStore(ctx,
 )
 ```
 
+## When you do *not* need this
+
+If the values are already **exported** into the process environment — a container
+runtime, a systemd unit, a CI job — then [`WithEnv`](load-and-merge.md) reads them with
+no module and no file.
+
+Reach for `config-dotenv` when a `.env` file exists but nothing has applied it: local
+development, or a compose file whose `env_file` your process never sees. It is
+read-only, so it is a source of values and never a write target.
+
 ## Keys nest on underscores
 
 A dotenv key is lower-cased and its underscores become dotted-key separators:

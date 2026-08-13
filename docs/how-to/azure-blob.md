@@ -41,6 +41,14 @@ so `config-azure-blob` never creates it; provisioning the container is yours, as
 Because the adapter takes only the SDK client, `azidentity` stays *your* dependency and never enters
 the adapter's own graph.
 
+## When you do *not* need this
+
+If you read one blob once at startup, fetching it and handing the bytes to
+[`WithReaders`](load-and-merge.md) needs no adapter.
+
+Reach for `config-azure-blob` when the container should behave like a filesystem —
+several files, writes routed back, or hot-reload noticing a change made elsewhere.
+
 ## Testing against a fake
 
 Alongside `Wrap`, the module exports a narrow `BlobStore` interface and `New(BlobStore)`, so a fake

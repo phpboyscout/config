@@ -37,6 +37,17 @@ store, err := config.NewStore(ctx,
 `Wrap` is the whole API. It takes any `io/fs.FS` — `embed.FS`, `os.DirFS`, `zip.Reader`,
 `tar`-derived, `fstest.MapFS` in a test — and returns a `config.FS`.
 
+## When you do *not* need this
+
+For a **single** embedded defaults document, [`WithReaders`](load-and-merge.md) takes
+bytes you already have and needs no module — the
+[layering tutorial](../tutorials/layering.md) does exactly that.
+
+Reach for `config-iofs` when the defaults have outgrown a string literal: several files,
+a directory you want to keep as files, or a zip or tar you are reading in place. It is
+read-only, which is the point for embedded defaults — see
+[Ship defaults inside the binary](../tutorials/embedded-defaults.md).
+
 ## It is read-only, and says so
 
 `io/fs.FS` is read-only *by design*: the interface has no write, rename or remove. So `config-iofs`

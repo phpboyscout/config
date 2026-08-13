@@ -26,6 +26,14 @@ store, err := config.NewStore(ctx,
 )
 ```
 
+## When you do *not* need this
+
+If the file is yours, YAML costs nothing extra.
+
+Reach for `.properties` when you are sharing configuration with a JVM application that
+already reads one, so both sides consume the same file rather than one generating the
+other. Read-only, so it is an input rather than a write target.
+
 ## Keys nest on dots
 
 A properties key is dotted already, and each dot is a nesting separator:

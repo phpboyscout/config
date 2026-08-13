@@ -42,6 +42,15 @@ Parameter names are `/`-separated paths, so `/app/server/port` under prefix `/ap
 store.View().GetInt("server.port") // 8080, from SSM
 ```
 
+## When you do *not* need this
+
+If the values are static, or your platform already injects them as environment
+variables, [`WithEnv`](load-and-merge.md) covers it with no SDK.
+
+Reach for Parameter Store when values are managed centrally and change without a
+deploy. It is read-only here, so keep a writable layer for anything your application
+persists itself.
+
 ## Value types
 
 - **`String`** — a scalar string; the View's typed accessors coerce it, and a JSON/YAML document

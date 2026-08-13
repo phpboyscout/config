@@ -25,6 +25,13 @@ store, err := config.NewStore(ctx,
 )
 ```
 
+## When you do *not* need this
+
+If you pick the format, YAML costs nothing extra and the core reads it.
+
+Reach for HCL when the file is shared with tooling that already speaks it, so your
+configuration sits alongside the rest of a stack rather than translating it.
+
 ## HCL as a configuration format — not Terraform
 
 This module serves HCL the way Nomad, Consul, Vault, Packer and purpose-built HCL DSLs use it,

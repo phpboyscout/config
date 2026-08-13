@@ -42,6 +42,15 @@ individually would reject a perfectly correct setup.
     The store gains a schema in [attach the schema to the store](#attach-the-schema-to-the-store);
     until then the examples validate a view explicitly.
 
+!!! tip "If your schema is a JSON Schema document"
+
+    This page covers the schema `config` builds from struct tags, which needs no extra
+    module. If your schema is a **document** — one you already publish, share with a
+    non-Go consumer, or generate — use
+    [`config-schema`](https://gitlab.com/phpboyscout/go/config-schema) instead. It
+    satisfies the same interface, so everything below applies unchanged. See
+    [Compose schemas](compose-schemas.md).
+
 ## Describe the shape with tags
 
 A schema is derived from a tagged struct:

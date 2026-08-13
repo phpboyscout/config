@@ -52,6 +52,14 @@ there** — a test in the module asserts that it never appears.
 
 The vault access policy or RBAC role needs **get** and **list** on secrets.
 
+## When you do *not* need this
+
+If the secret already arrives as an environment variable or a file mounted by the CSI
+driver, `WithEnv` or `WithFiles` read it with no SDK.
+
+Reach for Key Vault when your process should fetch and authenticate for itself —
+rotation picked up without a restart, or an audit trail naming your application.
+
 ## Names are keys, verbatim
 
 Key Vault secret names allow only letters, digits and hyphens — no dots, no slashes. There is **no
@@ -170,7 +178,8 @@ for the reasoning. If a key needs to be writable, do not source it from Key Vaul
 | | |
 |---|---|
 | Modules added | **15** — 6 for the Key Vault SDK, 9 for the `config` graph |
-| Requires | `config` **v0.7.0+** — the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
+| Requires | the `config` version named in this module's `go.mod` — `go get` brings it |
+| Capability since | `config` **v0.7.0**, the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
 
 Pinned by an allowlist test in both directions, so a version bump that widens *or* narrows the graph
 fails the build rather than arriving quietly.

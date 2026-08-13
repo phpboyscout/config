@@ -175,7 +175,8 @@ Two things worth knowing:
 | | |
 |---|---|
 | Modules added | **none** — everything it links comes from the `config` graph, and a test fails if that changes |
-| Requires | `config` **v0.12.0+**, the release adding `config.DirLister` — the optional interface needed to enumerate a directory at all |
+| Requires | the `config` version named in this module's `go.mod` — `go get` brings it |
+| Capability since | `config` **v0.12.0**, the release adding `config.DirLister` — the optional interface needed to enumerate a directory at all |
 
 That zero is the point. The alternative — a Kubernetes API client to read a ConfigMap
 the pod has already mounted — costs 38 modules, plus RBAC on configmaps and a service

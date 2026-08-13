@@ -50,6 +50,15 @@ store.View().GetString("server.host") // "localhost"
 store.View().GetInt("server.port")    // 8080
 ```
 
+## When you do *not* need this
+
+If nothing needs to change between deploys, a file is simpler and cannot be
+unreachable at start-up.
+
+Reach for etcd when values change at runtime, when you need a **write across several
+keys to be atomic**, or when you already run etcd and would rather not add a second
+system.
+
 ## Values are strings, or decoded documents
 
 etcd stores bytes, so by default every value is a scalar **string** and the View's typed
@@ -171,7 +180,7 @@ absent at the next load.
 | | |
 |---|---|
 | Modules added | **25** — 15 for the etcd client, 10 for the `config` graph |
-| Requires | `config` **v0.13.0+** and etcd **v3** |
+| Requires | the `config` version named in this module's `go.mod` — `go get` brings it — and etcd **v3** |
 
 The etcd client weighs the same as Consul's and less than half of the Kubernetes `client-go` —
 the measurement that decided this adapter was worth building while a ConfigMap adapter was not,

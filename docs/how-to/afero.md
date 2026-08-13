@@ -40,6 +40,8 @@ Two implementations ship with `config`, and between them they cover most cases:
 | a directory nothing can escape | `config.Dir(path)` |
 | a throwaway directory in a test | `config.Dir(t.TempDir())` |
 
+## When you do *not* need this
+
 That last row is worth stating plainly, because reaching for an in-memory filesystem in a test
 is the habit it replaces. `config.Dir(t.TempDir())` needs no dependency, gives real file
 semantics including watching, and exercises the same code path production does.

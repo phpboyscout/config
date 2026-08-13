@@ -6,9 +6,11 @@ tags: [how-to, formats, json]
 
 # Read and write JSON
 
-The core reads and writes only YAML. JSON and [JSON Lines](https://jsonlines.org) come from a
-sibling module, [`config-json`](https://gitlab.com/phpboyscout/go/config-json), so a consumer
-who needs JSON takes it and one who does not pays nothing for it.
+[JSON Lines](https://jsonlines.org) and structure-preserving JSON writes come from a sibling
+module, [`config-json`](https://gitlab.com/phpboyscout/go/config-json), so a consumer who needs
+them takes it and one who does not pays nothing.
+
+**Plain JSON reading is already in the core**, and the section below says when that is enough.
 
 ```bash
 go get gitlab.com/phpboyscout/go/config-json
@@ -30,6 +32,29 @@ store, err := config.NewStore(ctx,
 A JSON layer takes part in precedence, per-key merge, provenance and write routing exactly as a
 YAML file does. `New` reads a single JSON document; `NewLines` reads JSON Lines — one object per
 line.
+
+## When you do *not* need this
+
+YAML 1.2 is a superset of JSON, so the core's YAML codec **reads a JSON document unaided** —
+`WithFiles(fsys, "app.json")` works with no module at all, and the values come back typed as
+you would expect.
+
+It writes one back, too, and the result is still valid JSON. What it does not do is preserve
+the *layout*: a pretty-printed document comes back reflowed onto one line.
+
+```json
+{"server": {"host": "h", "port": 9090}}
+```
+
+So reach for `config-json` when you need either of the two things the core cannot do:
+
+- **A file a human reads.** Structure-preserving writes keep the indentation and key order the
+  file already had, so a config file in review does not turn into a one-line diff.
+- **JSON Lines.** The core refuses it — a multi-document stream is not a YAML document, and it
+  fails at load with `config.ErrBackendParse` rather than half-reading it.
+
+Everything else — precedence, merge, provenance, hot reload — is identical either way, because
+both are ordinary layers.
 
 ## Reading
 

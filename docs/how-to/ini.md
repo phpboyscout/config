@@ -26,6 +26,14 @@ store, err := config.NewStore(ctx,
 )
 ```
 
+## When you do *not* need this
+
+If you own the format, the core's YAML needs no module.
+
+Reach for INI when the file already exists in that shape and is not yours to change —
+a tool's own config, or something a user is used to editing. It is read-only, so pair
+it with a writable layer if your application has to persist anything.
+
 ## Sections and keys nest on dots
 
 A `[section]` header prefixes the keys beneath it:

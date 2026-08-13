@@ -42,6 +42,15 @@ The `config.FS` name is the object key — `Wrap(client, "my-bucket")` reads and
 configawss3.Wrap(client, "my-bucket", configawss3.WithKeyPrefix("apps/mytool/"))
 ```
 
+## When you do *not* need this
+
+If you read one object once at startup, fetching it with the AWS SDK and handing the
+bytes to [`WithReaders`](load-and-merge.md) needs no adapter at all.
+
+Reach for `config-aws-s3` when you want the bucket to behave like a filesystem: several
+files, writes routed back to the object, or hot-reload picking up a change someone else
+made.
+
 ## The write is a copy-then-delete, and that is fine
 
 S3 has no atomic rename, so the commit is `CopyObject` + `DeleteObject`. The **target is still

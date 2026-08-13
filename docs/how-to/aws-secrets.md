@@ -44,6 +44,14 @@ app/cache/url    = "redis://…"   →    store.View().GetString("cache.url")   
 app/region       = "eu-west-2"        store.View().GetString("region")       // "eu-west-2"
 ```
 
+## When you do *not* need this
+
+If the secret already arrives as an environment variable or a mounted file — which is
+what most task and pod definitions do — `WithEnv` or `WithFiles` read it with no SDK.
+
+Reach for Secrets Manager when your process should fetch for itself: rotation a running
+process must pick up, or a per-caller audit trail.
+
 ## Prefix mode is the default here — unlike Vault
 
 If you have read [the Vault how-to](vault.md), note the reversal. There a prefix walk is opt-in,
@@ -164,7 +172,8 @@ for the reasoning. If a key needs to be writable, do not source it from Secrets 
 | | |
 |---|---|
 | Modules added | **14** — 5 for the AWS SDK, 9 for the `config` graph |
-| Requires | `config` **v0.7.0+** — the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
+| Requires | the `config` version named in this module's `go.mod` — `go get` brings it |
+| Capability since | `config` **v0.7.0**, the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
 
 Five modules for the SDK is the **leanest of any backend adapter in this toolkit**: the AWS SDK for
 Go v2 ships per service, so reading secrets does not drag in the rest of AWS. Note what is absent —

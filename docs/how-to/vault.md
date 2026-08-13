@@ -47,6 +47,16 @@ Unlike the byte-valued stores — Consul, the parameter stores — Vault returns
 JSON, so nested maps, slices, booleans and nulls all survive the round trip. There is no value
 codec here and none is needed.
 
+## When you do *not* need this
+
+If your platform already delivers the secret — an injected environment variable, or a
+file mounted by an agent or sidecar — then `WithEnv`, [`WithFiles`](load-and-merge.md)
+or [`config-filekv`](filekv.md) read it with no Vault SDK and no token to manage.
+
+Reach for `config-vault` when your process should authenticate and fetch for itself:
+short-lived credentials, values that rotate under a running process, or an audit trail
+that has to name your application rather than the agent.
+
 ## Authenticate however you like — the adapter never does
 
 `config-vault` has no auth method, no address and no credential anywhere in its API. It uses the
@@ -199,7 +209,8 @@ namespace-agnostic and takes no parameter for it.
 | | |
 |---|---|
 | Modules added | **26** — 17 for the Vault SDK, 9 for the `config` graph |
-| Requires | `config` **v0.7.0+** — the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
+| Requires | the `config` version named in this module's `go.mod` — `go get` brings it |
+| Capability since | `config` **v0.7.0**, the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
 
 A backend adapter carries its system's client, and the Vault SDK is the largest thing here. That
 cost is pinned by an allowlist test in the module, so a version bump that widens the graph fails

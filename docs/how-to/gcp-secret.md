@@ -49,6 +49,14 @@ The empty third argument is the location: `""` reads the project-global parent, 
 reads a regional one. The adapter never authenticates — every GCP credential mechanism works
 because it knows about none of them.
 
+## When you do *not* need this
+
+If the secret already arrives as an environment variable or a mounted file, `WithEnv`
+or `WithFiles` read it with no SDK.
+
+Reach for Secret Manager when your process should fetch for itself: a version that
+moves under a running process, or an audit trail naming your application.
+
 ## Names are keys, verbatim
 
 Secret IDs allow only letters, digits, hyphens and underscores — no dots, no slashes. There is **no
@@ -171,7 +179,8 @@ _, err := store.Apply(ctx, config.Set("db-password", "rotated"))
 | | |
 |---|---|
 | Modules added | **39** — 30 for the Secret Manager SDK, 9 for the `config` graph |
-| Requires | `config` **v0.7.0+** — the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
+| Requires | the `config` version named in this module's `go.mod` — `go get` brings it |
+| Capability since | `config` **v0.7.0**, the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
 
 This is **the heaviest adapter in the toolkit** — roughly five times AWS Secrets Manager's five
 modules or Azure Key Vault's six, because the Google API client stack is large and shared. Worth
