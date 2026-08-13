@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.16.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.16.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.15.0...v0.16.0)
+
+### Features
+
+- **provenance**: report every shadowed path in one call ([1d30f61](https://gitlab.com/phpboyscout/go/config/-/commit/1d30f61c9f73ce8da754b841f4286f0174db6521))
+
 ## [v0.15.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.15.0)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.14.0...v0.15.0)
