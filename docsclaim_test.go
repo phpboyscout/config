@@ -175,3 +175,66 @@ func keysOf(m map[string]bool) []string {
 
 	return out
 }
+
+// TestJSONDocClaims pins what docs/how-to/json.md now tells a reader they do NOT
+// need config-json for. The page previously said the core "reads and writes only
+// YAML", which sent people to a module for something already in the box.
+func TestJSONDocClaims(t *testing.T) {
+	t.Parallel()
+
+	// Claim 1: the core reads a JSON document unaided, YAML 1.2 being a superset.
+	store, err := config.NewStore(context.Background(),
+		config.WithReaders(config.NamedSource{Name: "app.json", Content: []byte(
+			`{"server": {"host": "h", "port": 8080}}`)}),
+	)
+	if err != nil {
+		t.Fatalf("the page says a JSON document loads with no module: %v", err)
+	}
+
+	if got := store.View().GetInt("server.port"); got != 8080 {
+		t.Errorf("server.port = %d, want 8080 — values must come back typed", got)
+	}
+
+	// Claim 2: it refuses JSON Lines, which is half of why config-json exists.
+	_, err = config.NewStore(context.Background(),
+		config.WithReaders(config.NamedSource{Name: "s.jsonl", Content: []byte("{\"a\":1}\n{\"b\":2}\n")}),
+	)
+	if err == nil {
+		t.Error("the page says the core refuses JSON Lines; it accepted them")
+	}
+}
+
+func TestJSONDocClaims_CoreWriteReflowsButStaysValid(t *testing.T) {
+	t.Parallel()
+
+	// Claim 3, and the reason to reach for config-json: a core write to a .json
+	// file produces valid JSON but loses the layout it had.
+	fsys := config.NewMemFS()
+	if err := fsys.WriteFile("/app.json",
+		[]byte("{\n  \"server\": {\n    \"host\": \"h\",\n    \"port\": 8080\n  }\n}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := config.NewStore(context.Background(), config.WithFiles(fsys, "/app.json"))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	if _, err := store.Apply(context.Background(), config.Set("server.port", 9090)); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	got, err := fsys.ReadFile("/app.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const want = `{"server": {"host": "h", "port": 9090}}`
+	if strings.TrimSpace(string(got)) != want {
+		t.Errorf("the page quotes the reflowed result as\n  %s\ngot\n  %s", want, got)
+	}
+
+	if strings.Count(strings.TrimSpace(string(got)), "\n") != 0 {
+		t.Error("the page's point is that the layout collapses to one line")
+	}
+}
