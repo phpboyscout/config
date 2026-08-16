@@ -28,6 +28,34 @@ var (
 // handling and failure modes that differ enormously between a local file and a
 // remote parameter store. One interface pretending they are the same would
 // either lie about those differences or degrade to the weakest member.
+//
+// # Backends that resolve their own connection
+//
+// Most backends are handed a client the consumer built. One that instead
+// resolves its own — from an ambient credential chain, say — must still be
+// constructible without touching the network, because a Store is assembled
+// before anything is read:
+//
+//   - ID and Capabilities must be answerable with no connection. The Store
+//     calls both while ordering layers, routing writes and deciding what to
+//     watch, long before the first Load. A backend that connected to answer
+//     either would turn NewStore into a network operation, and fail there
+//     rather than at the Load that actually needs the data.
+//   - Load is where the connection is acquired, and it has a context to bound
+//     the attempt with.
+//   - Failing to connect is an ordinary error from Load — never a panic, and
+//     never [io/fs.ErrNotExist]. That sentinel means the source is legitimately
+//     absent, which the Store may tolerate, so reporting an unreachable
+//     connection with it turns a hard failure into a silently missing layer.
+//     Absent and unreachable are different answers.
+//   - A failed connection must not be remembered. A Store is long-lived and
+//     reloads; a credential chain that was not ready at startup must be picked
+//     up by the next Load rather than requiring a restart. This rules out
+//     [sync.OnceValues], which caches the first error for the life of the
+//     process.
+//
+// [config/backendconformance] checks all four; an adapter opts in by supplying
+// its Suite.NewUnreachable.
 type Backend interface {
 	// ID identifies the backend for diagnostics and provenance.
 	//
@@ -35,6 +63,9 @@ type Backend interface {
 	// again when routing a write, by matching a layer's Source.Name against
 	// it. Those two must therefore agree: a backend whose Load reports layers
 	// named something other than what ID returns cannot receive writes.
+	//
+	// It must be answerable without a connection — see the note on
+	// [Backend] about backends that resolve their own.
 	ID() string
 
 	// Load returns the layers this backend contributes, in precedence order.

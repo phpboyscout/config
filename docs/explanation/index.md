@@ -44,6 +44,7 @@ the merge as an ordinary layer.
 | [How filesystem adapters work](filesystem-adapters.md) | The `config.FS` contract, and how an embedded filesystem, a remote host and a cloud object store all satisfy the same six methods. |
 | [How dynamic backends work](dynamic-backends.md) | What every remote backend shares — watch strategies, conflict detection, sensitive layers — and where the systems legitimately differ. |
 | [How the Consul backend works](consul-backend.md) | The reference implementation in detail: its data model, its compare-and-swap writes and its native watch. |
+| [Who owns the connection](connection-ownership.md) | The four ways an adapter gets its client, why injection stays the default, and why sharing one credential resolution is always deliberate. |
 
 ## Elsewhere
 

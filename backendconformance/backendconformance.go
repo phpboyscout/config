@@ -39,6 +39,7 @@ package backendconformance
 
 import (
 	"context"
+	"io/fs"
 	"sort"
 	"strings"
 	"testing"
@@ -109,6 +110,27 @@ type Suite struct {
 	// removes coverage, and a backend that merely finds a key inconvenient
 	// should fail closed instead.
 	BoundedKeySpace bool
+
+	// NewUnreachable builds a backend whose connection cannot be established,
+	// plus a heal func that makes it establishable — the same backend, the same
+	// value, now able to connect.
+	//
+	// It exists because a backend that resolves its own connection has three
+	// obligations no other subtest reaches: that it can still say what it is
+	// before it has one, that failing to get one is an error rather than a panic,
+	// and that the failure is not remembered. The last is the one that bites: a
+	// backend memoising its connection with sync.OnceValues caches the first
+	// error forever, so a credential chain that was briefly unavailable at
+	// startup wedges the process until it restarts.
+	//
+	// Optional. A backend that owns no connection — a file, an in-memory store,
+	// one handed an already-built client — leaves it nil and the connection
+	// subtests are skipped. Supplying it is how an adapter with a zero-conf rung
+	// proves that rung behaves.
+	//
+	// The unreachable state must be reached without a network: point the backend
+	// at a fake whose dial fails, not at a real endpoint expected to be down.
+	NewUnreachable func(t *testing.T) (b config.Backend, heal func())
 }
 
 // Control stands in for another client of the same backing store. It is how the
@@ -181,6 +203,96 @@ func Run(t *testing.T, s Suite) {
 
 	if _, ok := probe.(config.WatchableBackend); ok {
 		t.Run("foreign_change_reaches_observers", s.foreignChangeReachesObservers)
+	}
+
+	if s.NewUnreachable != nil {
+		t.Run("identity_without_a_connection", s.identityWithoutAConnection)
+		t.Run("connection_failure_is_an_error", s.connectionFailureIsAnError)
+		t.Run("connection_failure_is_not_cached", s.connectionFailureIsNotCached)
+	}
+}
+
+// identityWithoutAConnection confirms a backend can say what it is before it has
+// a connection, and without acquiring one to answer.
+//
+// The Store calls ID and Capabilities while assembling itself — to order layers,
+// to route writes, to decide what to watch — long before anything calls Load. A
+// backend that reached for its connection to answer either would turn store
+// construction into a network operation, and a store built against an
+// unreachable backend would fail at NewStore rather than at the Load that
+// actually needs the data.
+func (s Suite) identityWithoutAConnection(t *testing.T) {
+	backend, _ := s.NewUnreachable(t)
+
+	if id := backend.ID(); id == "" {
+		t.Error("ID() is empty on a backend that has no connection; it must be " +
+			"answerable from the backend's own configuration, not from the remote")
+	}
+
+	// Capabilities is a value type with no error return, so the assertion is that
+	// the call completes at all: a backend that dialled here would block or panic.
+	_ = backend.Capabilities()
+}
+
+// connectionFailureIsAnError confirms an unreachable connection surfaces from
+// Load as an error.
+//
+// Not a panic, and not a silent empty layer set. An empty result is the worse
+// failure of the two: it looks exactly like a source that is legitimately absent,
+// so the Store carries on with the configuration silently missing whatever this
+// backend was supposed to contribute.
+func (s Suite) connectionFailureIsAnError(t *testing.T) {
+	backend, _ := s.NewUnreachable(t)
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("Load panicked on an unreachable connection: %v — a connection "+
+				"that cannot be established is an ordinary error", r)
+		}
+	}()
+
+	layers, err := backend.Load(t.Context(), nil)
+	if err == nil {
+		t.Fatalf("Load returned no error against an unreachable connection, and %d "+
+			"layers; an unreachable backend must not read as an absent source",
+			len(layers))
+	}
+
+	// The error must not be fs.ErrNotExist. That sentinel means "this source is
+	// legitimately not there", which the Store is entitled to tolerate — so
+	// reporting an unreachable connection with it converts a hard failure into a
+	// silently missing layer, and the configuration comes up short with nothing
+	// said. Absent and unreachable are different answers and must stay different.
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Load reported an unreachable connection as fs.ErrNotExist: %v\n"+
+			"That sentinel means the source is legitimately absent, which the Store "+
+			"may tolerate — so this turns a connection failure into a silently "+
+			"missing layer. Return the connection error instead.", err)
+	}
+}
+
+// connectionFailureIsNotCached confirms a backend retries after a failed
+// connection rather than remembering the failure.
+//
+// This is the one that catches sync.OnceValues, which caches the first error for
+// the life of the process. A configuration store is long-lived and reloads: an
+// SSO session that was not yet established when the tool started, an instance
+// role that arrives a second later, a network that returns — every one of those
+// must be picked up by the next Load rather than requiring a restart.
+func (s Suite) connectionFailureIsNotCached(t *testing.T) {
+	backend, heal := s.NewUnreachable(t)
+
+	if _, err := backend.Load(t.Context(), nil); err == nil {
+		t.Fatal("Load succeeded before heal; the fixture is not actually unreachable")
+	}
+
+	heal()
+
+	if _, err := backend.Load(t.Context(), nil); err != nil {
+		t.Errorf("Load still fails after the connection became reachable: %v\n"+
+			"The failure was cached. Memoise success and clear the in-flight state "+
+			"on failure — sync.OnceValues cannot do this, because it caches the "+
+			"first error forever.", err)
 	}
 }
 

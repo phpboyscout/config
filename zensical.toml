@@ -85,6 +85,7 @@ nav = [
     { "What survives a write" = "explanation/write-fidelity.md" },
     { "Hot-reload safety" = "explanation/hot-reload-safety.md" },
     { "Backends and capabilities" = "explanation/backends.md" },
+    { "Who owns the connection" = "explanation/connection-ownership.md" },
     { "The adapter ecosystem" = "explanation/adapters.md" },
     { "How filesystem adapters work" = "explanation/filesystem-adapters.md" },
     { "How dynamic backends work" = "explanation/dynamic-backends.md" },
