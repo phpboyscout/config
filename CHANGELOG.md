@@ -1,5 +1,19 @@
 # Changelog
 
+## [v0.17.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.17.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.16.0...v0.17.0)
+
+### Features
+
+- **backendconformance**: assert the contract a self-connecting backend must meet ([4c446fc](https://gitlab.com/phpboyscout/go/config/-/commit/4c446fc1263caae826cca9ebcd42317f1e430573))
+
+### Bug Fixes
+
+- **deps**: require go 1.26.6 for the stdlib advisories ([571a6fb](https://gitlab.com/phpboyscout/go/config/-/commit/571a6fb5c4ca7efd086139062faf6da4e77ce8c3))
+- **ci**: bump the cicd components to v0.36.0 for Go 1.26.6 ([9b01395](https://gitlab.com/phpboyscout/go/config/-/commit/9b013958a5950f83b7717e096275dabd1eb8b631))
+- **docs**: the core reads JSON, so json.md was sending people to a module ([e717117](https://gitlab.com/phpboyscout/go/config/-/commit/e7171172b74cc60a8a8b9771f4d4defe11004e3f))
+
 ## [v0.16.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.16.0)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.15.0...v0.16.0)
