@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.17.1](https://gitlab.com/phpboyscout/go/config/-/releases/v0.17.1)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.17.0...v0.17.1)
+
+### Bug Fixes
+
+- **backendconformance**: an empty source after heal is a pass, not a cached failure ([8cd7cd7](https://gitlab.com/phpboyscout/go/config/-/commit/8cd7cd73d29a994473fb46b1fe0104bf002bb92e))
+
 ## [v0.17.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.17.0)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.16.0...v0.17.0)
