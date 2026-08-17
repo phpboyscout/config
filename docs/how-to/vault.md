@@ -231,6 +231,30 @@ To share one Vault client across this adapter, `go/signing` and `go/encryption`,
 use [`go/vaultclient`](https://gitlab.com/phpboyscout/go/vaultclient) and hand the
 client to `FromClient`.
 
+### The token is read once, and no rung renews it
+
+`vaultapi.NewClient` reads `VAULT_TOKEN` a single time and holds it for the life
+of the client. Nothing re-reads the environment and nothing renews the lease, so
+a backend carries whatever token was set when it was built for as long as your
+`Store` holds it.
+
+For a command that is fine — it rarely outlives its token. For a **long-lived
+process reloading configuration it is not**: once the TTL expires every
+subsequent `Load` fails with a permission error, and there is no path back,
+because the backend cannot learn that its credential lapsed.
+
+This is a property of Vault's client rather than of any one rung — `FromClient`
+has always behaved the same way. But `Default` is where it is easiest to meet
+without noticing, precisely because you never handle the token yourself. If the
+process outlives the TTL, build the client, keep a `vaultapi.LifetimeWatcher`
+renewing it, and pass it to `FromClient`:
+
+```go
+client, err := vaultapi.NewClient(vaultapi.DefaultConfig())
+// ... start a LifetimeWatcher renewing client's token ...
+b := configvault.FromClient(client, "secret", "app/config")
+```
+
 ## What it costs
 
 | | |
