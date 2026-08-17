@@ -167,6 +167,30 @@ _, err := store.Apply(ctx, config.Set("db.password", "rotated"))
 See [sensitive read-only backends](../explanation/dynamic-backends.md#sensitive-read-only-backends)
 for the reasoning. If a key needs to be writable, do not source it from Secrets Manager.
 
+## Getting a client
+
+Building the client yourself is the default. Two further rungs exist, each in
+both shapes, and the ambient one lives in a **subpackage**:
+
+```go
+// You resolved the config; the adapter builds the client.
+b, err := configawssecrets.FromConfig(cfg, "app/")
+b, err := configawssecrets.FromConfigSecret(cfg, "app/config", codec)
+
+// Nothing at all — note the separate import.
+import secretsambient "gitlab.com/phpboyscout/go/config-aws-secrets/ambient"
+
+b, err := secretsambient.Default(ctx, "app/")
+b, err := secretsambient.DefaultSecret(ctx, "app/config", codec)
+```
+
+**The subpackage is not decoration.** Resolving the ambient AWS credential chain
+costs ten further modules, so it is kept out of the adapter's own graph — with a
+test asserting the parent's footprint has not grown.
+
+**There is no default region.** AWS documents none, so an empty one is
+`ErrNoRegion` rather than a guess.
+
 ## What it costs
 
 | | |

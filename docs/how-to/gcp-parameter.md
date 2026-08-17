@@ -80,6 +80,30 @@ The adapter joins hot-reload by **polling** for a new latest version or a change
 (`NativeWatch: false`); `WithPollInterval` sets the cadence (60s default, since each poll is a
 billed call).
 
+## Getting a client
+
+Building the client yourself is the default. Two further rungs exist, each in
+both shapes:
+
+```go
+// You hold client options — an emulator endpoint, an explicit credentials file,
+// or a credential resolved once with go/gcpclient and shared.
+b, err := configgcpparameter.FromOptions(ctx, "my-project", "global", "app-config", opts)
+b, err := configgcpparameter.FromOptionsPrefix(ctx, "my-project", "global", "app-", opts)
+
+// Application Default Credentials.
+b, err := configgcpparameter.Default(ctx, "my-project", "global", "app-config")
+defer b.Close()
+```
+
+**All four return `*OwnedBackend`, which you should `Close`** — see
+[gcp-secret](gcp-secret.md) for why.
+
+**Two things are still required.** Like Secret Manager these rungs need the
+**project**, because credentials name a principal rather than a project. Unlike
+it they also need the **location**: Parameter Manager has no project-level parent,
+so every parameter lives under one and `global` is the ordinary value.
+
 ## What it costs
 
 | | |

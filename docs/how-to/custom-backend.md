@@ -437,6 +437,72 @@ read-only layer is a perfectly good citizen: routing skips it, `Apply` lands in 
 writable layer down, and a write that would have gone to it is reported as shadowed rather
 than silently failing.
 
+## If your backend resolves its own connection
+
+Everything above assumes the client is handed to you. If your backend instead
+resolves its own — from an ambient credential chain, say — it takes on three
+further obligations, and the
+[conformance suite](https://gitlab.com/phpboyscout/go/config/-/tree/main/backendconformance)
+checks all three once you supply `Suite.NewUnreachable`.
+
+```go
+backendconformance.Run(t, backendconformance.Suite{
+	NewBackend: /* … as above … */,
+	Seed:       /* … */,
+	Defines:    /* … */,
+
+	// A backend whose connection cannot be established, plus a heal that makes
+	// it establishable.
+	NewUnreachable: newUnreachableBackend,
+})
+```
+
+**`ID` and `Capabilities` must answer without a connection.** The Store calls
+both while ordering layers, routing writes and deciding what to watch — long
+before the first `Load`. A backend that connected to answer either would turn
+`NewStore` into a network operation.
+
+**A connection failure is an ordinary error from `Load`** — never a panic, and
+never `fs.ErrNotExist`. That sentinel means the source is legitimately absent,
+which the Store may tolerate, so reporting an unreachable connection with it
+turns a hard failure into a silently missing layer. Absent and unreachable are
+different answers.
+
+**A failed connection must not be remembered.** A Store is long-lived and
+reloads; a credential chain that was not ready at startup must be picked up by the
+next `Load` rather than requiring a restart. This rules out `sync.OnceValues`,
+which caches the first error for the life of the process. If you want the
+memoise-success-but-never-failure behaviour without writing it, take
+[`go/clientlifecycle`](https://gitlab.com/phpboyscout/go/clientlifecycle) — it is
+that state machine and nothing else, with no dependencies.
+
+### Writing the `heal` correctly
+
+There is one way to get the fixture wrong that makes the third check pass against
+the exact defect it exists to catch.
+
+**`heal` must change the world, never your backend.** Flip a flag the *client*
+reads, or make the fake server start answering. If `heal` hands back a new backend
+— or swaps the one you gave it — it erases any failure the backend had cached, and
+a backend that caches its failure will sail through.
+
+```go
+// WRONG: replaces the thing under test, hiding the bug
+heal := func() { backend.dial = workingDial }
+
+// RIGHT: changes the world the backend reads
+var reachable atomic.Bool
+dial := func() (*client, error) {
+	if !reachable.Load() { return nil, errUnreachable }
+	return realClient, nil
+}
+heal := func() { reachable.Store(true) }
+```
+
+Serving real data after healing rather than an empty source is worth the extra
+lines where you can afford it: an empty source proves only that the connection was
+re-made, whereas a value proves the healed path *read* it.
+
 ## Shipping read-only first, and adding writes later
 
 Shipping a backend that reads before it writes is a normal and supported path — often the

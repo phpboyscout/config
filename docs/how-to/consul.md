@@ -99,6 +99,27 @@ returns the moment anything under the prefix changes, so foreign-change latency 
 store.Watch(ctx) // a change in Consul now reaches your observers
 ```
 
+## Getting a client
+
+Building the client yourself is the default and stays recommended — it is where
+every address, token, TLS and datacenter decision lives. Two further rungs exist
+for when you would rather not:
+
+```go
+// You assembled the config; the adapter builds the client.
+b, err := configconsul.FromConfig(cfg, "app/")
+
+// Nothing at all: CONSUL_HTTP_ADDR and friends, as capi.DefaultConfig reads them.
+b, err := configconsul.Default("app/")
+```
+
+`Default` inherits **Consul's own** documented `127.0.0.1:8500`, not one this
+adapter invented — which is why [`config-etcd`](etcd.md) has no equivalent.
+
+Neither rung contacts Consul: `capi.NewClient` does no network I/O, so a failure
+here is a malformed config and reaching the agent stays deferred to the first
+load.
+
 ## What it costs
 
 | | |

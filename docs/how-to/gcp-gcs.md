@@ -71,6 +71,29 @@ An object store has no local path, so it is watched by **polling**. Because each
 object read, `config-gcp-gcs` declares a **60-second** default through `config.PollIntervalHinter`,
 overridable with `WithPollInterval`.
 
+## Getting a client
+
+Building the client yourself is the default. Two further rungs exist:
+
+```go
+// You hold client options — an emulator endpoint, an explicit credentials file,
+// or a credential resolved once with go/gcpclient and shared.
+fsys, err := configgcpgcs.FromOptions(ctx, "my-bucket", opts)
+
+// Application Default Credentials.
+fsys, err := configgcpgcs.Default(ctx, "my-bucket")
+defer fsys.Close()
+```
+
+**Both return `*OwnedFS`, which you can `Close`.** The obligation is real but
+weaker than its Secret Manager sibling's: `storage.Client` is HTTP-backed and its
+documentation says `Close` "need not be called at program exit", where
+`secretmanager.Client` says it "must be Closed".
+
+This is the **simplest zero-conf rung in the family**: a bucket name is globally
+unique, so unlike Secret Manager and Parameter Manager there is no project or
+location to supply.
+
 ## What it costs
 
 | | |

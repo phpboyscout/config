@@ -76,6 +76,33 @@ The adapter joins hot-reload by **polling** (`NativeWatch: false`). The efficien
 conditional GET on a **sentinel key** (`WithSentinelKey`) — one cheap request that 304s until the
 sentinel's ETag changes — falling back to a full re-list. `WithPollInterval` sets the cadence.
 
+## Getting a client
+
+Building the client yourself is the default. Rung 3 has **two shapes** here,
+because App Configuration genuinely does:
+
+```go
+// A principal, with the endpoint supplied separately.
+b, err := configazureappconfig.FromCredential(cred, endpoint, "app/")
+
+// A connection string, which carries the endpoint AND the secret together.
+b, err := configazureappconfig.FromConnectionString(conn, "app/")
+
+// Nothing but the endpoint — note the separate import.
+import acambient "gitlab.com/phpboyscout/go/config-azure-appconfig/ambient"
+
+b, err := acambient.Default(ctx, endpoint, "app/")
+```
+
+Neither rung-3 shape is a special case of the other, so both are rungs.
+
+**The connection string is a secret** — it embeds an access key. This adapter
+never logs it, and reports a malformed one without echoing the input, because
+that is how a secret reaches a log. Treat it as you would a password.
+
+**The endpoint is always required**, and a nil credential is refused including a
+typed nil.
+
 ## What it costs
 
 | | |

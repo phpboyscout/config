@@ -204,6 +204,33 @@ metadata for the watch to compare, and lists through a different path.
 Vault Enterprise **namespaces** are set on the client (`client.SetNamespace(…)`), so the adapter is
 namespace-agnostic and takes no parameter for it.
 
+## Getting a client
+
+Building the client yourself is the default. Two further rungs exist, each in
+both shapes:
+
+```go
+// You assembled the config; the adapter builds the client.
+b, err := configvault.FromConfig(cfg, "secret", "app/config")
+b, err := configvault.FromConfigPrefix(cfg, "secret", "app/")
+
+// Nothing at all: VAULT_ADDR, VAULT_TOKEN and friends.
+b, err := configvault.Default("secret", "app/config")
+b, err := configvault.DefaultPrefix("secret", "app/")
+```
+
+`Default` inherits **Vault's own** documented `https://127.0.0.1:8200`, not one
+this adapter invented.
+
+Every rung checks something the SDK makes easy to miss: `vaultapi.DefaultConfig`
+reports failure by populating the `Error` **field** on the config it returns
+rather than by returning an error, so a config that looks fine can already be
+broken.
+
+To share one Vault client across this adapter, `go/signing` and `go/encryption`,
+use [`go/vaultclient`](https://gitlab.com/phpboyscout/go/vaultclient) and hand the
+client to `FromClient`.
+
 ## What it costs
 
 | | |

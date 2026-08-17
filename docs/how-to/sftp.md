@@ -72,6 +72,38 @@ stop, _ := store.Watch(ctx)   // re-reads over SFTP on the chosen cadence
 defer stop()
 ```
 
+## Getting a client
+
+Building the `*sftp.Client` yourself is the default. One further rung exists:
+
+```go
+conn, err := ssh.Dial("tcp", host, sshCfg)   // yours; you close it
+defer conn.Close()
+
+fsys, err := configsftp.FromSSH(conn)
+defer fsys.Close()                            // closes the SFTP subsystem only
+```
+
+`FromSSH` **does I/O**, unlike every other rung of its kind here: an SFTP client
+*is* a subsystem channel plus a version handshake, so obtaining one is a round
+trip by definition. The connection is already established, so it is one exchange
+rather than a dial.
+
+`Close` releases the subsystem and **never your SSH connection** — that transport
+is yours and may carry other things.
+
+### There is deliberately no zero-conf rung
+
+SFTP *has* an ambient convention — an agent, `~/.ssh/config`, `known_hosts` — and
+this adapter deliberately does not take it, because using it would mean choosing a
+**host-key verification policy** on your behalf. Trust-on-first-use silently
+accepts a man in the middle; requiring `known_hosts` fails exactly the unattended
+machines most likely to want zero configuration; skipping verification is not
+something a configuration library should ship.
+
+Build the `ssh.ClientConfig` yourself, decide your own `HostKeyCallback`, and hand
+over the connection.
+
 ## What it costs
 
 | | |

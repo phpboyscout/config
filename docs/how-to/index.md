@@ -89,6 +89,17 @@ beneath it, so a secret cannot be copied into a config file by an ordinary save.
 keychain is the one writable secrets backend, and [why it is the
 exception](../explanation/dynamic-backends.md) is worth reading before you use it.
 
+## Getting a client for a remote adapter
+
+Every guide below that talks to a remote system has a **Getting a client** section
+listing the ways to obtain one: inject the client you built, hand over the
+provider's native config, or — for most of them — take the ambient credential
+chain and supply nothing but the target.
+
+Injection is the default and stays recommended. The reasoning, the cost of each
+ambient rung, and the two adapters that deliberately have none are in
+[who owns the connection](../explanation/connection-ownership.md).
+
 ## Elsewhere
 
 - **[The adapter ecosystem](../explanation/adapters.md)** — every adapter with its

@@ -12,10 +12,10 @@ rungs, not alternatives: each is a thinner layer over the one below.
 
 | Rung | What you supply | When you want it |
 |---|---|---|
-| **1 — narrow interface** | a value satisfying the adapter's own small interface | tests, and fakes; this is the seam the unit suites use |
+| **1 — narrow interface** | a value satisfying the adapter's own small interface | tests and fakes; this is the seam the unit suites use |
 | **2 — SDK client** | a built `*ssm.Client`, `*azsecrets.Client`, `*capi.Client` … | you already build clients for other reasons |
-| **3 — native config** | the provider's own config or credential | you want **one** credential resolution feeding several clients |
-| **4 — ambient** | nothing | you just want it to work |
+| **3 — native config** | the provider's own config, credential or options | you want **one** credential resolution feeding several clients |
+| **4 — ambient** | nothing but the target | you just want it to work |
 
 ```go
 // 1 — the testing seam
@@ -25,11 +25,15 @@ configawsssm.New(fakeParamStore{}, "/app")
 configawsssm.FromClient(ssm.NewFromConfig(cfg), "/app")
 
 // 3 — you resolved the config; the adapter builds its own client
-configawsssm.FromConfig(cfg, "/app")
+b, err := configawsssm.FromConfig(cfg, "/app")
 
-// 4 — you supplied nothing
-ssmambient.Default("/app")
+// 4 — you supplied nothing but the prefix
+b, err := ssmambient.Default(ctx, "/app")
 ```
+
+Rungs 3 and 4 return an `error` where rungs 1 and 2 do not. That is not
+inconsistency: those rungs *validate* something, and failing at construction is
+better than failing at the first read.
 
 ## Injection is the default, and stays that way
 
@@ -58,7 +62,7 @@ graph each adapter actually hands a consumer:
 | AWS | free | **+7 to +10 modules** |
 | Azure | free | **+7 modules** |
 | GCP | free | free |
-| Vault, Consul, etcd | free | free |
+| Vault, Consul | free | free |
 
 Where the ambient rung is free, it sits in the adapter's main package and you
 call `Default(…)`. Where it is not, it sits in a subpackage:
@@ -66,12 +70,16 @@ call `Default(…)`. Where it is not, it sits in a subpackage:
 ```go
 import ssmambient "gitlab.com/phpboyscout/go/config-aws-ssm/ambient"
 
-b, err := ssmambient.Default("/app")
+b, err := ssmambient.Default(ctx, "/app")
 ```
 
 One extra import, and in exchange the adapter's own dependency footprint is
-exactly what it always was. If you never want ambient credentials, you never pay
-for them — which is the whole reason each adapter states its cost in a test.
+exactly what it always was. Each of those subpackages carries a test asserting
+its parent's graph has not grown — so if the split ever leaks, the build says so.
+
+AWS costs 7 on `config-aws-s3` and 10 on the other two, because S3's larger
+service graph already carries three of the credential modules. Each adapter
+measures its own rather than quoting a sibling's.
 
 ## Sharing a connection is deliberate, never automatic
 
@@ -80,23 +88,71 @@ Two adapters that each take their ambient default resolve the provider chain
 
 A hidden process-wide cache would be worse than the duplication it saves: it
 would silently share credentials between components that may deliberately differ
-— a different profile, an assumed role, a distinct endpoint — and it would make
-one component's transient failure everybody's, invisibly.
+— a different profile, an assumed role, a distinct tenant — and it would make one
+component's transient failure everybody's, invisibly.
 
-If you want one resolution feeding several adapters, say so. That is what rung 3
-is for:
+If you want one resolution feeding several adapters, say so:
 
 ```go
-src := awsclient.Ambient()   // resolved once, lazily, on first use
+src := awsclient.Ambient(awsclient.WithRegion("eu-west-2"))
 
-store, err := config.NewStore(ctx,
-    config.WithBackend(configawsssm.FromSource(src, "/app")),
-    config.WithFiles(configawss3.FSFromSource(src, "my-bucket"), "config.yaml"),
-)
+ssmBackend, err := ssmambient.FromSource(ctx, src, "/app")
+s3fs, err       := s3ambient.FSFromSource(ctx, src, "my-bucket")
 ```
 
-The same source can feed `go/signing` and `go/encryption` too — it is an estate
-module, not a config one.
+The same source can feed [`go/signing`](https://gitlab.com/phpboyscout/go/signing)
+and [`go/encryption`](https://gitlab.com/phpboyscout/go/encryption) too — it is an
+estate module, not a config one.
+
+## An ambient rung supplies credentials, never the target
+
+This is the rule that holds across every adapter, and it is worth stating because
+it explains a lot of `error` returns.
+
+The ambient rung answers **who am I**. It never answers **what am I talking to**.
+Every adapter refuses when the target is missing, rather than guessing:
+
+| Refused | Adapters |
+|---|---|
+| region | `aws-ssm`, `aws-secrets`, `aws-s3` |
+| project | `gcp-secret`, `gcp-parameter` |
+| location | `gcp-parameter` |
+| bucket, container | `gcp-gcs`, `aws-s3`, `azure-blob` |
+| vault URL, endpoint, service URL | `azure-keyvault`, `azure-appconfig`, `azure-blob` |
+| address | `vault` |
+
+There is one deliberate exception in the other direction. `config-vault`'s
+`Default` inherits Vault's own documented `127.0.0.1:8200`, because **adopting a
+provider's documented default is not the same act as inventing one**. AWS
+documents no default region, so `config-aws-ssm` refuses instead.
+
+## Some rungs hand you something to close
+
+Where a rung **builds** the client, it owns it — and if that client holds a
+connection, the rung returns a concrete type carrying `Close` rather than the
+bare interface:
+
+```go
+b, err := configgcpsecret.Default(ctx, "my-project", "")
+if err != nil { return err }
+defer b.Close()          // a service closes it; a CLI simply does not
+
+store, err := config.NewStore(ctx, config.WithBackend(b))
+```
+
+The obligation follows **who built the client** *and* **whether the SDK gives you
+anything to release**:
+
+| Adapter | Client | Returns |
+|---|---|---|
+| `config-gcp-secret`, `config-gcp-parameter` | gRPC — *"must be Closed"* | `*OwnedBackend` |
+| `config-gcp-gcs` | HTTP — *"need not be called at program exit"* | `*OwnedFS` |
+| `config-sftp` | a subsystem channel | `*OwnedFS` — closes the subsystem, **never your SSH connection** |
+| `config-azure-blob` | HTTP — no `Close` at all | plain `config.FS` |
+| everything else | nothing to release | plain `config.Backend` |
+
+Rungs 1 and 2 never return an owned type: there, you built the client and still
+own it.
 
 ## What a self-connecting backend guarantees
 
@@ -116,16 +172,23 @@ checks it:
   restart. This is why none of these adapters use `sync.OnceValues` — it caches
   the first error for the life of the process.
 
-## Two adapters that do not have rung 4
+## Three adapters that stop short, and why
 
-**`config-sftp`** stops at rung 3, deliberately. An ambient SSH default would
-have to choose a host-key verification policy on your behalf, and every option is
-wrong for somebody: trust-on-first-use silently accepts a man in the middle,
-requiring `known_hosts` fails exactly the machines most likely to want zero
-configuration, and skipping verification is not something a configuration library
-should ever ship. Build the `*ssh.Client` yourself.
+**`config-etcd` has no ambient rung, permanently.** `clientv3` has neither an
+ambient credential chain nor endpoint discovery — unlike every other provider
+here, *both* halves would have to be invented. A `Default()` could only be
+`FromConfig` with made-up environment parsing bolted on, and everything of
+substance there is already `FromConfig`. Use `FromConfig` with the endpoints you
+know.
 
-**`config-keychain`** already has rung 4 under a different name.
+**`config-sftp` stops at rung 3.** An ambient SSH default would have to choose a
+host-key verification policy on your behalf, and every option is wrong for
+somebody: trust-on-first-use silently accepts a man in the middle, requiring
+`known_hosts` fails exactly the machines most likely to want zero configuration,
+and skipping verification is not something a configuration library should ever
+ship. Dial the `*ssh.Client` yourself and hand it to `FromSSH`.
+
+**`config-keychain` already has rung 4 under a different name.**
 `configkeychain.Registered()` resolves through the credentials registry, so what
 you get depends on whether you blank-imported the keychain backend — and if you
 did not, it reports unavailable rather than pretending. That name says more than

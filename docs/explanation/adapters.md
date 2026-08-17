@@ -37,6 +37,10 @@ whole family:
   owns the key, and structure (comments, order, quoting) is preserved.
 - **Fail-closed reload** — a source that will not parse or fails your schema is rejected;
   last-known-good stays live.
+- **A ladder to its client**, for every adapter that has one. You can inject the narrow
+  interface, the built SDK client, or the provider's native config — and most also offer a
+  zero-conf rung that resolves the ambient credential chain for you. Injection stays the default;
+  see [who owns the connection](connection-ownership.md).
 
 ## File & format adapters
 

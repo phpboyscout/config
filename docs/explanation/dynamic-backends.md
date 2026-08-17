@@ -16,11 +16,18 @@ implementation in depth, see [How the Consul backend works](consul-backend.md); 
 
 ## The shape they all share
 
-- **The client is injected; the adapter owns no credentials.** You build and configure the
-  system's client — address, auth, region, TLS — and hand it in behind a narrow interface the
+- **The client is injected by default; the adapter owns no credentials.** You build and configure
+  the system's client — address, auth, region, TLS — and hand it in behind a narrow interface the
   adapter defines. The adapter re-decides none of it, and a fake satisfying that interface drives
   the whole unit suite with no network. Every cloud authenticates differently and the consumer has
   already chosen; the adapter has no business duplicating that.
+- **…but you can hand in less, if you want to.** Every adapter also takes the provider's *native*
+  config or credential and builds the client for you, and most offer a zero-conf rung that resolves
+  the ambient chain and takes nothing but the target. Injection stays the recommended path for
+  anything long-lived; the shorter rungs exist so a casual consumer is not made to wire a client to
+  read a setting. Which rungs each adapter has, what an ambient one costs your dependency graph,
+  and why two adapters deliberately stop short, are all in
+  [who owns the connection](connection-ownership.md).
 - **A prefix scopes; keys are paths that nest.** A remote store is a flat, path-keyed namespace. A
   backend takes a prefix, reads only beneath it, strips it, and nests the remaining segments into
   the layer's tree — so provenance can name the full remote key and precedence works per-key.
@@ -184,11 +191,22 @@ pretend otherwise:
   against it would be weaker evidence than an honestly acknowledged gap, because it looks like
   proof.
 
-For `config-azure-keyvault` the consequence is written into its plan: several of its behaviours are
-documented rather than observed, each is listed in its spec as a **claim** with a test that asserts
-it directly, and the release waits on running that suite against a real vault. If a claim turns out
-false it becomes a dated revision before v0.1.0 — which is the point of recording them as claims
-instead of assumptions.
+`config-azure-keyvault` was the family's long-standing example, and its story is worth keeping
+because it went both ways. Several of its behaviours were documented rather than observed, each
+recorded in its spec as a **claim** with a test asserting it directly, and its own suite stated that
+the release would wait on running against a real vault.
+
+**The release did not wait.** It shipped unproven, and the suite's own comment had predicted the
+consequence: "the moment one adapter ships unproven, the bar is lowered for every one after it."
+
+It was finally run against a real vault on 2026-08-17. **Every claim held** — but the suite itself
+failed three ways, none of them visible to a fake: secret names derived from Go test names carry
+underscores Key Vault rejects; `DeleteSecret` soft-deletes, so the suite worked exactly once per
+vault and then failed with `409 Conflict`; and a cleanup that purged immediately after deleting did
+nothing at all, because deletion is asynchronous.
+
+That is the argument for real-service testing in miniature. The adapter was right; the *harness*
+was wrong in three places, and only reality could say so.
 
 ## Related
 

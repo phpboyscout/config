@@ -173,6 +173,35 @@ _, err := store.Apply(ctx, config.Set("db-password", "rotated"))
 See [sensitive read-only backends](../explanation/dynamic-backends.md#sensitive-read-only-backends)
 for the reasoning. If a key needs to be writable, do not source it from Key Vault.
 
+## Getting a client
+
+Building the client yourself is the default. Two further rungs exist, each in
+both shapes, and the ambient one lives in a **subpackage**:
+
+```go
+// You hold a credential; the adapter builds the client.
+b, err := configazurekeyvault.FromCredential(cred, vaultURL)
+b, err := configazurekeyvault.FromCredentialSecret(cred, vaultURL, "app-config", codec)
+
+// Nothing but the vault — note the separate import.
+import kvambient "gitlab.com/phpboyscout/go/config-azure-keyvault/ambient"
+
+b, err := kvambient.Default(ctx, vaultURL)
+```
+
+**The subpackage is not decoration.** Resolving the ambient Azure identity chain
+costs seven further modules — `azidentity`, MSAL, `golang-jwt` and, notably,
+`pkg/browser`, so an interactive credential can open a sign-in page. Reasonable
+for a developer tool to carry, odd for a service.
+
+**The vault URL is always required.** Unlike an AWS region there is nothing
+ambient to fall back on: an Azure credential names a *principal* and carries no
+endpoint.
+
+A nil credential is refused — **including a typed nil**, which is what a dropped
+constructor error leaves you holding and which would otherwise panic at the first
+request.
+
 ## What it costs
 
 | | |

@@ -174,6 +174,30 @@ _, err := store.Apply(ctx, config.Set("db-password", "rotated"))
 // errors.Is(err, config.ErrSensitiveLeak) — refused, and app.yaml is untouched
 ```
 
+## Getting a client
+
+Building the client yourself is the default. Two further rungs exist:
+
+```go
+// You hold client options — an emulator endpoint, an explicit credentials file,
+// or a credential resolved once with go/gcpclient and shared.
+b, err := configgcpsecret.FromOptions(ctx, "my-project", "", opts)
+
+// Application Default Credentials.
+b, err := configgcpsecret.Default(ctx, "my-project", "")
+defer b.Close()
+```
+
+**Both return `*OwnedBackend`, which you should `Close`.**
+`secretmanager.NewClient` opens a gRPC connection its own documentation says must
+be closed, and `config.Backend` has no `Close` — so a client the adapter built for
+itself would otherwise live for the whole process. Nothing for a one-shot CLI; a
+leak for a long-lived service.
+
+**The project is still required.** Application Default Credentials authenticate a
+*principal* — they do not name the project whose secrets to read, and guessing
+would read another project's. `ErrNoProject` refuses at construction.
+
 ## What it costs
 
 | | |

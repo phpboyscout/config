@@ -175,6 +175,28 @@ absent at the next load.
     It is worth knowing before it surprises you. If you did not mean the keys to be
     ephemeral, use an unleased prefix.
 
+## Getting a client
+
+Building the client yourself is the default. One further rung exists:
+
+```go
+// You assembled the config; the adapter builds the client.
+b, err := configetcd.FromConfig(clientv3.Config{Endpoints: []string{"localhost:2379"}}, "app/")
+```
+
+### There is deliberately no zero-conf rung
+
+Every other remote adapter here offers a `Default()` over its SDK's own ambient
+convention. **etcd has none.** `clientv3` has no `DefaultConfig`, and its only
+environment variable is `ETCD_CLIENT_DEBUG` — a debug flag, not an endpoint or a
+credential. It has neither an ambient credential chain *nor* endpoint discovery,
+so both halves would have to be invented.
+
+Adopting a provider's documented default is not the same act as inventing one, so
+`config-etcd` stops at `FromConfig` and `ErrNoEndpoints` says so where you meet
+it. This is settled rather than pending — see
+[who owns the connection](../explanation/connection-ownership.md).
+
 ## What it costs
 
 | | |

@@ -76,6 +76,35 @@ The adapter joins hot-reload by **polling** `GetParametersByPath` (`NativeWatch:
 no change feed. The default interval is conservative because of SSM's API rate limits;
 `WithPollInterval` overrides it.
 
+## Getting a client
+
+Building the client yourself is the default. Two further rungs exist, and the
+second lives in a **subpackage**:
+
+```go
+// You resolved the config; the adapter builds the client.
+b, err := configawsssm.FromConfig(cfg, "/app")
+
+// Nothing at all — note the separate import.
+import ssmambient "gitlab.com/phpboyscout/go/config-aws-ssm/ambient"
+
+b, err := ssmambient.Default(ctx, "/app")
+```
+
+**The subpackage is not decoration.** Resolving the ambient AWS credential chain
+costs ten further modules — `sso`, `ssooidc`, `sts`, `imds` and the rest — so it
+is kept out of the adapter's own graph. Import it and you pay for it; do not and
+your footprint is exactly what it was. There is a test asserting precisely that.
+
+**There is no default region.** AWS documents none, so an empty one is
+`ErrNoRegion` rather than a guess. Pass `ssmambient.WithRegion(…)` if yours comes
+from a flag.
+
+To share one resolved chain across several adapters — and across `go/signing` and
+`go/encryption` — resolve it with
+[`go/awsclient`](https://gitlab.com/phpboyscout/go/awsclient) and use
+`ssmambient.FromSource`.
+
 ## What it costs
 
 | | |

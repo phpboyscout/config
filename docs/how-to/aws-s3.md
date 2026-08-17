@@ -67,6 +67,29 @@ An object store has no local path, so it is watched by **polling**. Because each
 `GetObject`, `config-aws-s3` declares a **60-second** default through `config.PollIntervalHinter` —
 far calmer than the 2-second local default, and overridable with `WithPollInterval`.
 
+## Getting a client
+
+Building the client yourself is the default. Two further rungs exist, and the
+second lives in a **subpackage**:
+
+```go
+// You resolved the config; the adapter builds the client.
+fsys, err := configawss3.FSFromConfig(cfg, "my-bucket")
+
+// Nothing at all — note the separate import.
+import s3ambient "gitlab.com/phpboyscout/go/config-aws-s3/ambient"
+
+fsys, err := s3ambient.Default(ctx, "my-bucket")
+```
+
+**The subpackage is not decoration**, and it costs less here than for its
+siblings: seven further modules rather than ten, because S3's larger service graph
+already carries `internal/v4a`, `accept-encoding` and `presigned-url`. Each
+adapter measures its own rather than quoting another's.
+
+**There is no default region**, and the bucket is required. AWS documents no
+region default, so an empty one is `ErrNoRegion` rather than a guess.
+
 ## What it costs
 
 | | |

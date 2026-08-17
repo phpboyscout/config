@@ -81,6 +81,35 @@ A blob has no local path, so it is watched by **polling**. Because each poll is 
 `config-azure-blob` declares a **60-second** default through `config.PollIntervalHinter`, overridable
 with `WithPollInterval`.
 
+## Getting a client
+
+Building the client yourself is the default. Rung 3 has **two shapes**, and the
+ambient rung lives in a **subpackage**:
+
+```go
+// A principal, with the account URL supplied separately.
+fsys, err := configazureblob.FSFromCredential(cred, serviceURL, "config")
+
+// A connection string, which carries the account URL AND the secret together.
+fsys, err := configazureblob.FSFromConnectionString(conn, "config")
+
+// Nothing but the target — note the separate import.
+import blobambient "gitlab.com/phpboyscout/go/config-azure-blob/ambient"
+
+fsys, err := blobambient.Default(ctx, serviceURL, "config")
+```
+
+**Nothing here needs closing.** `azblob.Client` has no `Close` at all — it is
+HTTP-backed with no connection to release — so these rungs return a plain
+`config.FS` rather than an owned type. Where an SDK gives nothing to release,
+inventing a `Close` would be ceremony.
+
+**The connection string is a secret** — it embeds the account key, is never
+logged, and a malformed one is reported without echoing the input.
+
+**The service URL and container are both required**, and a nil credential is
+refused including a typed nil.
+
 ## What it costs
 
 | | |
