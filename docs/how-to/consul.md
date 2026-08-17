@@ -120,6 +120,27 @@ Neither rung contacts Consul: `capi.NewClient` does no network I/O, so a failure
 here is a malformed config and reaching the agent stays deferred to the first
 load.
 
+### The token is read once, and no rung renews it
+
+`capi.NewClient` resolves the ACL token a single time and copies it onto the
+client. Nothing re-reads the environment afterwards — and `CONSUL_HTTP_TOKEN_FILE`
+is read at construction too, not per request, even though a token file is exactly
+the mechanism you would use to rotate one.
+
+Consul ACL tokens may carry an expiry. Where yours does, a **long-lived process
+reloading configuration** fails every `Load` once it lapses, with no path back:
+the backend cannot learn its credential expired, and it will not pick up a
+rotated token file.
+
+For a command this rarely matters. For a daemon with an expiring token, build the
+client yourself and rebuild it when the token rotates, then use `FromClient`. A
+token with no expiry set is unaffected.
+
+[`config-vault`](vault.md) has the same shape for the same reason — both SDKs
+model the client as *configured with a token* rather than as *configured with a
+way to get one*. The AWS, Azure and GCP adapters do not: their credential objects
+refresh underneath you.
+
 ## What it costs
 
 | | |

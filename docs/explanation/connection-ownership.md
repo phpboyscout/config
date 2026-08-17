@@ -172,6 +172,57 @@ checks it:
   restart. This is why none of these adapters use `sync.OnceValues` — it caches
   the first error for the life of the process.
 
+## A credential, or a way to get one
+
+That last guarantee is about a failure the adapter can retry. There is one it
+cannot, and which rung 4 makes easier to meet — because rung 4 hands the adapter
+a credential you never see.
+
+The property that decides it:
+
+> **Does the object the adapter holds know how to obtain a fresh credential, or
+> is it already a credential?**
+
+Where it is a *means*, the SDK renews underneath you and a process can run for
+weeks:
+
+| Provider | What is held | Renews? |
+|---|---|---|
+| AWS | a provider chain behind `aws.NewCredentialsCache` | yes, on expiry |
+| Azure | a `TokenCredential` the pipeline re-calls | yes, before expiry |
+| GCP | a cached token provider | yes, once stale |
+| etcd | a username and password | yes — it re-authenticates |
+| keychain | nothing at all; every call re-resolves | not applicable |
+
+Where it is an already-minted **token**, nothing renews it:
+
+| Provider | What is held | Renews? |
+|---|---|---|
+| Vault | the token `VAULT_TOKEN` carried | **no** |
+| Consul | the resolved ACL token | **no** |
+
+Both HashiCorp SDKs model their client as *configured with a token* rather than
+*configured with a way to get a token*, and neither re-reads its environment.
+Consul additionally reads `CONSUL_HTTP_TOKEN_FILE` once, at construction, though
+a token file is precisely the mechanism you would rotate.
+
+The consequence only bites a **long-lived process reloading configuration**: once
+the token's lifetime passes, every `Load` fails and nothing recovers, because a
+backend cannot tell "my credential expired" from "I am not allowed" — and those
+want opposite responses. A command that runs for a second and exits never notices.
+
+**The ladder did not cause this.** `FromClient` always behaved this way. What
+rung 4 changes is *visibility*: when you built the client, the token was in your
+hands; when the adapter builds it, nobody confronts it. So the two adapters where
+it is true say so on `Default` itself.
+
+If your process outlives its token, build the client, renew or rebuild it, and
+hand it to `FromClient` — rung 2 doing exactly the job rung 2 exists for.
+
+For completeness: a connection string is a static secret, and Azure's may carry a
+SAS with an expiry. That rung is injected rather than ambient, so the credential
+is already in your hands — the same hazard, but not a hidden one.
+
 ## Three adapters that stop short, and why
 
 **`config-etcd` has no ambient rung, permanently.** `clientv3` has neither an
