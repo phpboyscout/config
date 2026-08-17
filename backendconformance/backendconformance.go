@@ -288,12 +288,42 @@ func (s Suite) connectionFailureIsNotCached(t *testing.T) {
 
 	heal()
 
-	if _, err := backend.Load(t.Context(), nil); err != nil {
-		t.Errorf("Load still fails after the connection became reachable: %v\n"+
-			"The failure was cached. Memoise success and clear the in-flight state "+
-			"on failure — sync.OnceValues cannot do this, because it caches the "+
-			"first error forever.", err)
+	err := loadErr(t, backend)
+
+	// fs.ErrNotExist after healing is a PASS, not a failure. It means the
+	// connection was re-made and the source is simply empty — which is common,
+	// because a healed fixture that serves nothing is much less work to write
+	// than one that seeds data. Accepting it is safe precisely because
+	// connection_failure_is_an_error forbids reporting an unreachable connection
+	// with that sentinel: the two cases compose, so this one can trust it.
+	if err == nil || errors.Is(err, fs.ErrNotExist) {
+		return
 	}
+
+	t.Errorf("Load still fails after the connection became reachable: %v\n"+
+		"The failure was cached. Memoise success and clear the in-flight state "+
+		"on failure — sync.OnceValues cannot do this, because it caches the "+
+		"first error forever.\n"+
+		"If this error is your fixture rather than your backend — heal() not "+
+		"actually making the source reachable — fix the fixture: it must change "+
+		"the WORLD, never the backend, or it erases the caching this case exists "+
+		"to detect.", err)
+}
+
+// loadErr calls Load and returns its error, converting a panic into a failure
+// rather than letting it take the suite down.
+func loadErr(t *testing.T, backend config.Backend) (err error) {
+	t.Helper()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Load panicked after the connection became reachable: %v", r)
+		}
+	}()
+
+	_, err = backend.Load(t.Context(), nil)
+
+	return err
 }
 
 // participatesAsLayer confirms the backend's values merge per-key with a layer
