@@ -87,7 +87,7 @@ both shapes:
 
 ```go
 // You hold client options — an emulator endpoint, an explicit credentials file,
-// or a credential resolved once with go/gcpclient and shared.
+// or a credential resolved once with go/gcpclient and shared across adapters.
 b, err := configgcpparameter.FromOptions(ctx, "my-project", "global", "app-config", opts)
 b, err := configgcpparameter.FromOptionsPrefix(ctx, "my-project", "global", "app-", opts)
 
@@ -95,6 +95,13 @@ b, err := configgcpparameter.FromOptionsPrefix(ctx, "my-project", "global", "app
 b, err := configgcpparameter.Default(ctx, "my-project", "global", "app-config")
 defer b.Close()
 ```
+
+To detect Application Default Credentials **once** and feed several GCP adapters
+from it, resolve with
+[`go/gcpclient`](https://gitlab.com/phpboyscout/go/gcpclient) and pass the
+options it yields to `FromOptions`. It hands out client options rather than a
+client precisely because the three GCP adapters need three different client
+types.
 
 **All four return `*OwnedBackend`, which you should `Close`** — see
 [gcp-secret](gcp-secret.md) for why.
