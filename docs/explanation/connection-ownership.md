@@ -112,16 +112,16 @@ is built on, so each is imported only by consumers who want that provider.
 
 | Module | Yields | Notes |
 |---|---|---|
-| [`go/awsclient`](https://gitlab.com/phpboyscout/go/awsclient) | `aws.Config` | refuses to guess a region |
-| [`go/azureclient`](https://gitlab.com/phpboyscout/go/azureclient) | `azcore.TokenCredential` | guards the typed-nil interface case |
-| [`go/gcpclient`](https://gitlab.com/phpboyscout/go/gcpclient) | `[]option.ClientOption` | options, not a client — three GCP adapters need three client types |
-| [`go/vaultclient`](https://gitlab.com/phpboyscout/go/vaultclient) | `*vaultapi.Client` | for Vault the client *is* the prerequisite |
+| [`go/awsclient`](https://awsclient.go.phpboyscout.uk) | `aws.Config` | refuses to guess a region |
+| [`go/azureclient`](https://azureclient.go.phpboyscout.uk) | `azcore.TokenCredential` | guards the typed-nil interface case |
+| [`go/gcpclient`](https://gcpclient.go.phpboyscout.uk) | `[]option.ClientOption` | options, not a client — three GCP adapters need three client types |
+| [`go/vaultclient`](https://vaultclient.go.phpboyscout.uk) | `*vaultapi.Client` | for Vault the client *is* the prerequisite |
 
 Each offers the same shape: inject what you have, or take the ambient default —
 plus a non-memoising `PerCall` rung, because how long a component holds a
 credential is a security posture belonging to that component rather than to the
 module. All of them share one state machine,
-[`go/clientlifecycle`](https://gitlab.com/phpboyscout/go/clientlifecycle), which
+[`go/clientlifecycle`](https://clientlifecycle.go.phpboyscout.uk), which
 has no dependencies of its own and never caches a failure.
 
 Two of the five have no consumer in this family: the GCP adapters take

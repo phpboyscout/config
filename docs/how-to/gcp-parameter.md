@@ -98,7 +98,7 @@ defer b.Close()
 
 To detect Application Default Credentials **once** and feed several GCP adapters
 from it, resolve with
-[`go/gcpclient`](https://gitlab.com/phpboyscout/go/gcpclient) and pass the
+[`go/gcpclient`](https://gcpclient.go.phpboyscout.uk) and pass the
 options it yields to `FromOptions`. It hands out client options rather than a
 client precisely because the three GCP adapters need three different client
 types.

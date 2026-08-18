@@ -473,7 +473,7 @@ reloads; a credential chain that was not ready at startup must be picked up by t
 next `Load` rather than requiring a restart. This rules out `sync.OnceValues`,
 which caches the first error for the life of the process. If you want the
 memoise-success-but-never-failure behaviour without writing it, take
-[`go/clientlifecycle`](https://gitlab.com/phpboyscout/go/clientlifecycle) — it is
+[`go/clientlifecycle`](https://clientlifecycle.go.phpboyscout.uk) — it is
 that state machine and nothing else, with no dependencies.
 
 ### Writing the `heal` correctly
