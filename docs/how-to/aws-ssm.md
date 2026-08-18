@@ -102,7 +102,7 @@ from a flag.
 
 To share one resolved chain across several adapters — and across `go/signing` and
 `go/encryption` — resolve it with
-[`go/awsclient`](https://gitlab.com/phpboyscout/go/awsclient) and use
+[`go/awsclient`](https://awsclient.go.phpboyscout.uk) and use
 `ssmambient.FromSource`.
 
 ## What it costs

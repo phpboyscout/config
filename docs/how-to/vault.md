@@ -228,7 +228,7 @@ rather than by returning an error, so a config that looks fine can already be
 broken.
 
 To share one Vault client across this adapter, `go/signing` and `go/encryption`,
-use [`go/vaultclient`](https://gitlab.com/phpboyscout/go/vaultclient) and hand the
+use [`go/vaultclient`](https://vaultclient.go.phpboyscout.uk) and hand the
 client to `FromClient`.
 
 ### The token is read once, and no rung renews it
