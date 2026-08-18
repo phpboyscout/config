@@ -77,13 +77,20 @@ Building the client yourself is the default. Two further rungs exist:
 
 ```go
 // You hold client options — an emulator endpoint, an explicit credentials file,
-// or a credential resolved once with go/gcpclient and shared.
+// or a credential resolved once with go/gcpclient and shared across adapters.
 fsys, err := configgcpgcs.FromOptions(ctx, "my-bucket", opts)
 
 // Application Default Credentials.
 fsys, err := configgcpgcs.Default(ctx, "my-bucket")
 defer fsys.Close()
 ```
+
+To detect Application Default Credentials **once** and feed several GCP adapters
+from it, resolve with
+[`go/gcpclient`](https://gitlab.com/phpboyscout/go/gcpclient) and pass the
+options it yields to `FromOptions`. It hands out client options rather than a
+client precisely because the three GCP adapters need three different client
+types.
 
 **Both return `*OwnedFS`, which you can `Close`.** The obligation is real but
 weaker than its Secret Manager sibling's: `storage.Client` is HTTP-backed and its
