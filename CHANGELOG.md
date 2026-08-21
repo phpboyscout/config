@@ -1,5 +1,14 @@
 # Changelog
 
+## [v0.17.3](https://gitlab.com/phpboyscout/go/config/-/releases/v0.17.3)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.17.2...v0.17.3)
+
+### Bug Fixes
+
+- **deps**: update module github.com/stretchr/testify to v1.12.1 ([4c2402c](https://gitlab.com/phpboyscout/go/config/-/commit/4c2402cac2d4d2c0f7727afd9d9a869669dbe185))
+- **deps**: update module gitlab.com/phpboyscout/go/errors to v0.3.0 ([518ec8d](https://gitlab.com/phpboyscout/go/config/-/commit/518ec8d2e1c373da22c53d37a61f5058aad49c30))
+
 ## [v0.17.2](https://gitlab.com/phpboyscout/go/config/-/releases/v0.17.2)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.17.1...v0.17.2)
