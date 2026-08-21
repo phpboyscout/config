@@ -66,10 +66,12 @@ this one unmissable.
 
 **Two YAML parsers, and the boundary between them must not be crossed.**
 `YAMLCodec` reads each file twice on purpose. Values are decoded by
-`go.yaml.in/yaml/v3`; document structure (comments, positions, and whether the
-file can be edited safely at all) comes from `yamldoc`. The two disagree about
-scalar types, so values never come from yamldoc and documents never come from
-the value parser.
+`go.yaml.in/yaml/v3`; the document itself is parsed and re-emitted by `yamldoc`,
+which is what preserves comments and layout and what decides whether the file can
+be edited safely at all. The core never reads a comment or a position itself: it
+calls `Parse`, holds a `Document`, and writes the bytes back. The two parsers
+disagree about scalar types, so values never come from yamldoc and documents never
+come from the value parser.
 
 **`Filtered` and `Constrained` do opposite things to a denied key, on purpose.**
 Under `Filtered`, a visibility bound, a write to a denied key routes *past* that
