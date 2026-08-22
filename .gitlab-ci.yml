@@ -12,21 +12,21 @@
 # (docs/development/specs/2026-07-18-config-module-extraction.md).
 
 include:
-  - component: gitlab.com/phpboyscout/cicd/go-lint@v0.38.0
-  - component: gitlab.com/phpboyscout/cicd/go-test@v0.38.0
+  - component: gitlab.com/phpboyscout/cicd/go-lint@v0.39.0
+  - component: gitlab.com/phpboyscout/cicd/go-test@v0.39.0
     inputs:
       enable_e2e: false
       # Scope coverage to the real package. The published mocks package is
       # mockery-generated (no logic to test); counting it would dilute the badge
       # to ~55%. It is still compiled/checked by the lint and security jobs.
       paths: "."
-  - component: gitlab.com/phpboyscout/cicd/go-security@v0.38.0
-  - component: gitlab.com/phpboyscout/cicd/releaser-pleaser@v0.38.0
+  - component: gitlab.com/phpboyscout/cicd/go-security@v0.39.0
+  - component: gitlab.com/phpboyscout/cicd/releaser-pleaser@v0.39.0
     inputs:
       token: $RELEASER_PLEASER_TOKEN
       branch: main
       stage: release
-  - component: gitlab.com/phpboyscout/cicd/zensical-pages@v0.38.0
+  - component: gitlab.com/phpboyscout/cicd/zensical-pages@v0.39.0
 
 stages:
   - lint
