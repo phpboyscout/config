@@ -21,7 +21,7 @@ include:
       # to ~55%. It is still compiled/checked by the lint and security jobs.
       paths: "."
   - component: gitlab.com/phpboyscout/cicd/go-security@v0.39.4
-  - component: gitlab.com/phpboyscout/cicd/colophon@v0.42.0
+  - component: gitlab.com/phpboyscout/cicd/colophon@v0.42.1
     inputs:
       branch: main
       stage: release
