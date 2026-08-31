@@ -1,7 +1,7 @@
 # .gitlab-ci.yml — pipeline assembled from phpboyscout/cicd components.
 #
 #   merge_request_event → lint, test, security, canary-subset  (the merge gate)
-#   default branch      → releaser-pleaser, zensical-pages deploy, canary-full
+#   default branch      → colophon, zensical-pages deploy, canary-full
 #   Release MR          → + canary-full (the pre-release gate)
 #   tag v*.*.*          → zensical-pages docs for the release
 #   schedule            → renovate, canary-full
@@ -21,9 +21,8 @@ include:
       # to ~55%. It is still compiled/checked by the lint and security jobs.
       paths: "."
   - component: gitlab.com/phpboyscout/cicd/go-security@v0.39.4
-  - component: gitlab.com/phpboyscout/cicd/releaser-pleaser@v0.39.4
+  - component: gitlab.com/phpboyscout/cicd/colophon@v0.42.0
     inputs:
-      token: $RELEASER_PLEASER_TOKEN
       branch: main
       stage: release
   - component: gitlab.com/phpboyscout/cicd/zensical-pages@v0.39.4
@@ -78,7 +77,7 @@ variables:
 #     one KV backend, one format codec) runs on EVERY config MR, so the
 #     common breakages are caught on the feature branch.
 #   * canary-full — all 19 adapters run on the pre-release surfaces:
-#     the releaser-pleaser Release MR, default-branch pipelines, and the
+#     the colophon Release MR, default-branch pipelines, and the
 #     nightly schedule. This is where a break is caught before a release
 #     is cut, without paying 19 checkouts on every routine MR.
 #
