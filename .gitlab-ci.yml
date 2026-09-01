@@ -164,7 +164,7 @@ canary-subset:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
-    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "releaser-pleaser--branches--main"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "colophon/release/main"'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:
@@ -201,5 +201,5 @@ canary-full:
           - config-sftp
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
-    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "releaser-pleaser--branches--main"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "colophon/release/main"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
