@@ -681,9 +681,9 @@ func TestFidelity_InvisibleCharactersAreEscapedLosslessly(t *testing.T) {
 
 	const family = "\U0001F468\u200d\U0001F469\u200d\U0001F467\u200d\U0001F466"
 
-	s, filesystem := fileWith(t, "greeting: \"hi "+family+"\"\nother: keep\n")
+	s, filesystem := fileWith(t, "greeting: \"hi\"\nother: keep\n")
 
-	if _, err := s.Apply(context.Background(), Set("other", "changed")); err != nil {
+	if _, err := s.Apply(context.Background(), Set("greeting", "hi "+family)); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
 
@@ -708,6 +708,25 @@ func TestFidelity_InvisibleCharactersAreEscapedLosslessly(t *testing.T) {
 
 	if strings.Contains(got, "\u200d") {
 		t.Errorf("a zero-width joiner was written literally, leaving it invisible:\n%s", got)
+	}
+}
+
+// The counterpart: a value already in the file is the author's and is not
+// rewritten by an unrelated write, invisible characters included. yamldoc
+// preserves every untouched byte; escaping applies to what this module writes.
+func TestFidelity_UntouchedValuesAreNotRewritten(t *testing.T) {
+	t.Parallel()
+
+	const family = "\U0001F468\u200d\U0001F469\u200d\U0001F467\u200d\U0001F466"
+
+	s, filesystem := fileWith(t, "greeting: \"hi "+family+"\"\nother: keep\n")
+
+	if _, err := s.Apply(context.Background(), Set("other", "changed")); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	if got, want := contentOf(t, filesystem, "/app.yaml"), "greeting: \"hi "+family+"\"\nother: changed\n"; got != want {
+		t.Errorf("an untouched value was rewritten:\n got %q\nwant %q", got, want)
 	}
 }
 

@@ -39,19 +39,22 @@ YAML 1.2 is a superset of JSON, so the core's YAML codec **reads a JSON document
 `WithFiles(fsys, "app.json")` works with no module at all, and the values come back typed as
 you would expect.
 
-It writes one back, too, and the result is still valid JSON. What it does not do is preserve
-the *layout*: a pretty-printed document comes back reflowed onto one line.
+It writes one back, too, and the result is still valid JSON with the layout it had: the
+document is edited in place, so a pretty-printed file stays pretty-printed and a config
+file in review does not turn into a one-line diff.
 
 ```json
-{"server": {"host": "h", "port": 9090}}
+{
+  "server": {
+    "host": "h",
+    "port": 9090
+  }
+}
 ```
 
-So reach for `config-json` when you need either of the two things the core cannot do:
-
-- **A file a human reads.** Structure-preserving writes keep the indentation and key order the
-  file already had, so a config file in review does not turn into a one-line diff.
-- **JSON Lines.** The core refuses it — a multi-document stream is not a YAML document, and it
-  fails at load with `config.ErrBackendParse` rather than half-reading it.
+So reach for `config-json` when you need the one thing the core cannot do: **JSON
+Lines.** The core refuses it — a multi-document stream is not a YAML document, and it fails
+at load with `config.ErrBackendParse` rather than half-reading it.
 
 Everything else — precedence, merge, provenance, hot reload — is identical either way, because
 both are ordinary layers.

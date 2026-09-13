@@ -51,13 +51,14 @@ what supplying a whole map asserts — deep-merging it instead would make "this 
 exactly this" inexpressible. If you know what changed, issue targeted `Set` and `Remove`
 calls instead. *Deliberate;* see [What survives a write](../explanation/write-fidelity.md#why-replacing-a-map-is-different).
 
-### A write is not byte-for-byte reproducible
+### A write changes only what it was asked to
 
-Guaranteed to survive: the data, comments attached to their keys, key order, quoting style,
-block scalars, anchors, aliases and merge keys. **Not** guaranteed: blank lines, indentation,
-comment alignment, the `---` marker on a single-document file, or byte identity. Flow style
-may be normalised to block style. *Deliberate* — guaranteeing byte-level identity would mean
-never being able to fix anything about layout.
+Every byte outside the edit survives: comments and their alignment, blank lines,
+indentation, key order, quoting style, block scalars, anchors, aliases, merge keys and the
+`---` marker. What a write does change is spelt by yamldoc: a new key is appended in block
+style at the file's own indentation, and a new value is spelt so it reads back as the type
+you gave. *Deliberate*: the file is the author's, and the module fixes nothing about its
+layout on the way past.
 
 ### Key casing is not preserved for new keys
 

@@ -231,10 +231,9 @@ Stated plainly, because each is a real edge:
   defence, and it detects rather than prevents.
 - **Multi-read consistency by default.** Individual reads are always coherent; a sequence
   of them needs `With`, or a typed section.
-- **Byte-identical writes.** Comments stay with their keys and the structure is preserved.
-  Blank lines, indentation, comment alignment and byte identity are not.
-- **Every YAML document.** A multi-line flow collection with interior comments cannot be
-  round-tripped safely and is refused at load, naming the location.
+- **Every YAML document.** A document whose semantics are broken, such as an alias with
+  no anchor or a duplicated key, cannot be edited safely and is refused at load, naming
+  the location.
 - **Cross-backend atomicity.** Today there is one backend, so the question is moot. It will
   not stay moot, and a change set spanning a file and a remote parameter store cannot be
   made atomic.

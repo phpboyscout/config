@@ -188,8 +188,10 @@ func TestApply_RemoveAndCreate(t *testing.T) {
 		t.Error("parent was removed when its last entry went — emptiness is a value")
 	}
 
+	// The marker sits on the former child's line so a comment after the last
+	// entry keeps its owner (yamldoc spec 0008 D40).
 	out := readFile(t, filesystem, "/app.yaml")
-	if !strings.Contains(out, "nested: {}") {
+	if !strings.Contains(out, "nested:\n  {}") {
 		t.Errorf("emptied mapping not written as an explicit empty map:\n%s", out)
 	}
 }

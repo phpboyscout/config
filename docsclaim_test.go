@@ -35,7 +35,7 @@ features:
 	const want = `# Which port the public listener binds to.
 # Changing this needs a firewall change too — talk to platform first.
 server:
-  host: localhost # loopback only in dev
+  host: localhost   # loopback only in dev
   port: 9090
 
 # Feature flags. Keep alphabetical.
@@ -204,11 +204,11 @@ func TestJSONDocClaims(t *testing.T) {
 	}
 }
 
-func TestJSONDocClaims_CoreWriteReflowsButStaysValid(t *testing.T) {
+func TestJSONDocClaims_CoreWritePreservesLayout(t *testing.T) {
 	t.Parallel()
 
-	// Claim 3, and the reason to reach for config-json: a core write to a .json
-	// file produces valid JSON but loses the layout it had.
+	// Claim 3: a core write to a .json file produces valid JSON and keeps the
+	// layout it had, since a JSON document is YAML and yamldoc edits in place.
 	fsys := config.NewMemFS()
 	if err := fsys.WriteFile("/app.json",
 		[]byte("{\n  \"server\": {\n    \"host\": \"h\",\n    \"port\": 8080\n  }\n}\n"), 0o600); err != nil {
@@ -229,12 +229,8 @@ func TestJSONDocClaims_CoreWriteReflowsButStaysValid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const want = `{"server": {"host": "h", "port": 9090}}`
-	if strings.TrimSpace(string(got)) != want {
-		t.Errorf("the page quotes the reflowed result as\n  %s\ngot\n  %s", want, got)
-	}
-
-	if strings.Count(strings.TrimSpace(string(got)), "\n") != 0 {
-		t.Error("the page's point is that the layout collapses to one line")
+	const want = "{\n  \"server\": {\n    \"host\": \"h\",\n    \"port\": 9090\n  }\n}\n"
+	if string(got) != want {
+		t.Errorf("the page says the layout is kept; got\n%s", got)
 	}
 }

@@ -264,16 +264,16 @@ is edited in place, so **comments stay attached to the keys they describe**, and
 order, quoting, block scalars, anchors, aliases and merge keys are preserved. Repeated
 writes converge rather than drifting.
 
-Blank lines, indentation, comment alignment and byte-for-byte identity are **not**
-guaranteed — comment *retention* is promised, comment *style* is yours. Two things follow
-that are worth knowing before they surprise you:
+Every byte outside the edit comes back exactly, blank lines, indentation and comment
+alignment included. Two things are worth knowing before they surprise you:
 
 - **Some documents are refused at load**, with `ErrBackendUnsafe`, because they cannot be
-  round-tripped safely — a multi-line flow collection with interior comments is the one
-  you will meet. Reformat it onto one line, or move the comments out.
-- **Invisible characters are escaped on write.** Everything a reader can see survives
-  verbatim; bidirectional controls and zero-width characters become escapes, because they
-  make a document render one way and parse another.
+  edited safely: an alias with no anchor, or a mapping with two keys that are the same
+  value. Fix the file.
+- **Invisible characters are escaped in what you write.** Everything a reader can see
+  survives verbatim; bidirectional controls and zero-width characters in a value you set
+  become escapes, because they make a document render one way and parse another. A value
+  already in the file is left as it is.
 
 The full contract, and the reasoning behind both, is in
 [what survives a write](../explanation/write-fidelity.md).

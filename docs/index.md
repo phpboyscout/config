@@ -82,7 +82,7 @@ A user changes one setting. Here is what that does to their file:
     # Which port the public listener binds to.
     # Changing this needs a firewall change too — talk to platform first.
     server:
-      host: localhost # loopback only in dev
+      host: localhost   # loopback only in dev
       port: 9090
 
     # Feature flags. Keep alphabetical.

@@ -13,47 +13,50 @@ made on purpose. A write that discards all of that has technically persisted the
 and practically vandalised the file.
 
 So writing does not serialise the merged view over the top of your file. Each target
-document is **edited in place**: parsed into a structure that retains everything the
-parser saw, modified at the node addressed, and written back out.
+document is **edited in place** by yamldoc: the bytes of the edit's footprint are
+replaced, and every other byte is left exactly as it was.
 
 ## The contract
 
-**Guaranteed.** The data structure itself, and comments staying attached to the keys they
-describe. Key order, quoting style, block scalars, anchors, aliases and merge keys are
-preserved. Repeated writes converge rather than drifting further from the original each
-time.
+**Guaranteed.** Every byte you did not change: comments and the column they were aligned
+to, blank lines, indentation, key order, quoting style, block scalars, anchors, aliases
+and merge keys, the `---` marker, line endings, a byte order mark. A comment keeps the
+key it belongs to: one directly above a key or on its line goes with that key when the
+key is removed; one separated from the key by a blank line, or after the last key of a
+block, stays. Repeated writes cannot drift, because an unedited byte is never rewritten.
 
-**Not guaranteed.** Blank lines, indentation, comment alignment, the `---` marker on a
-single-document file, or byte-for-byte identity. Comment *style* is yours to choose;
-comment *retention* is what is promised. Normalising style on write — including flow
-style to block style — is within the contract.
+**Changed by a write, and only by a write.** The value you set, spelt so that it reads
+back as the type you gave: a string stays a string however it looks, a float stays a
+float. A new key, appended after the last existing key in the block style and indentation
+of the file around it. The keys a map-valued `Set` did not mention, which are removed.
 
-The line between those two lists is drawn at meaning. Anything that changes what the
-document says, or what a reader understands it to say, is preserved. Anything that is
-purely how it is laid out may be normalised, because guaranteeing byte-level identity
-would mean never being able to fix anything about the layout.
+The line between those two lists is drawn at the edit. yamldoc re-parses every write and
+checks it against an independent statement of what the edit meant, comment ownership and
+untouched bytes included, before anything reaches the file; a write that would change
+more than it was asked to is refused, and the file is left as it was.
 
 ## Two consequences
 
 ### Some documents are refused at load
 
-A multi-line flow collection with interior comments cannot be round-tripped safely — the
-closing delimiter is swallowed into the comment, producing YAML that no parser will
-accept.
+A file that is not YAML fails to parse, with `ErrBackendParse`. A file that is YAML but
+does not mean anything under its schema, such as one whose alias names no anchor or whose
+mapping has two keys that are the same value spelt differently, cannot be edited safely:
+every write that depended on the broken part would be refused.
 
 Rather than let you discover that at commit time, after you have made your edits and have
 nowhere to put them, `NewStore` refuses such a source up front with `ErrBackendUnsafe`,
-naming the file and the offending construct. Reformat the collection onto one line, or
-move the comments out of it.
+naming the file and the problem. Fix the alias or the duplicate key.
 
 Failing at load is the kinder failure. The alternative is a program that starts fine,
-runs fine, and destroys a file the first time a user changes a setting.
+runs fine, and refuses a file the first time a user changes a setting.
 
 ### Invisible characters are escaped on write
 
 Every character a reader can see survives verbatim — emoji, CJK, accented Latin, Greek,
 Cyrillic. Bidirectional controls and the invisible-space family (zero-width space, word
-joiner, soft hyphen and the rest) are written as escapes instead.
+joiner, soft hyphen and the rest) in a value this module *writes* are escaped instead. A
+value already in the file is the author's and stays as it was; every untouched byte does.
 
 This is a security property rather than a formatting choice. Those characters make a
 document render one way and parse another: text that reads as one thing to the person

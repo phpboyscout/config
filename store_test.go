@@ -135,14 +135,16 @@ func TestStore_ParseFailureIsFatal(t *testing.T) {
 	}
 }
 
-// A document that cannot be round-tripped safely is refused at load, not at
-// write: discovering it at write means the user has already made their edits.
+// A document that parses but does not mean anything under its schema, such as
+// one whose alias has no anchor, cannot be edited safely and is refused at
+// load, not at write: discovering it at write means the user has already made
+// their edits.
 func TestStore_UnsafeDocumentIsRefusedAtLoad(t *testing.T) {
 	t.Parallel()
 
 	_, err := NewStore(context.Background(),
 		WithFiles(memFS(t, map[string]string{
-			"/bad.yaml": "bounds: {\n  min: 1,  # lower\n  max: 10  # upper\n}\n",
+			"/bad.yaml": "prod:\n  settings: *defaults\n",
 		}), "/bad.yaml"))
 
 	if !errors.Is(err, ErrBackendUnsafe) {

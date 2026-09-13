@@ -229,14 +229,13 @@ A reload that hits it is rejected outright and the last known good configuration
 
 `config: source cannot be safely edited`
 
-Returned at load when a source contains a construct that cannot be round-tripped, so editing
-it would risk corrupting it. For YAML the case is a multi-line flow collection with interior
-comments: the closing delimiter is swallowed into the comment, producing YAML no parser will
-accept.
+Returned at load when a source parses as YAML but does not mean anything under its schema,
+so editing it would be refused: an alias that names no anchor, or a mapping with two keys
+that are the same value spelt differently.
 
-`NewStore` refuses such a source up front, naming the file and the offending construct,
-rather than letting you discover it at commit time with nowhere to put your edits. Reformat
-the collection onto one line, or move the comments out of it. See
+`NewStore` refuses such a source up front, naming the file and the problem, rather than
+letting you discover it at commit time with nowhere to put your edits. Fix the alias or
+the duplicate. See
 [What survives a write](../explanation/write-fidelity.md#some-documents-are-refused-at-load).
 
 ### `ErrReadOnlyFS`

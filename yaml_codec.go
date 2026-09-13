@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"strings"
 
 	"gitlab.com/phpboyscout/go/errors"
 	"gitlab.com/phpboyscout/go/yamldoc"
@@ -75,17 +74,20 @@ func (YAMLCodec) Decode(path string, src []byte) ([]map[string]any, error) {
 
 // Check reports whether a source can be edited without risking corruption.
 //
-// The judgement is this module's; the detection is yamldoc's. It reports what
-// it cannot round-trip safely, and refusing is the policy applied to that
-// report.
+// The judgement is this module's; the detection is yamldoc's. Bytes that are
+// not YAML fail to parse. A document that parses but does not mean anything
+// under its schema, such as one with a dangling alias or two keys that are the
+// same value, is reported by validation, and every edit that depended on the
+// broken part would be refused; refusing the whole file up front is the policy
+// applied to that report.
 func (YAMLCodec) Check(path string, src []byte) error {
-	doc, err := yamldoc.Parse(src)
+	file, err := yamldoc.Parse(src, yamldoc.Options{})
 	if err != nil {
 		return fmt.Errorf("%w: %s: %w", ErrBackendParse, path, err)
 	}
 
-	if unsupported := doc.Unsupported(); len(unsupported) > 0 {
-		return fmt.Errorf("%w: %s: %s", ErrBackendUnsafe, path, unsupported[0])
+	if _, err := file.Snapshot().Validate(yamldoc.ValidationOptions{}); err != nil {
+		return fmt.Errorf("%w: %s: %w", ErrBackendUnsafe, path, err)
 	}
 
 	return nil
@@ -101,9 +103,10 @@ func (YAMLCodec) Empty() []byte { return nil }
 // Apply edits the document tree and re-emits it.
 //
 // Editing goes through yamldoc so comments, key order, quoting and block
-// styles survive. Nothing here decodes values from that tree: the
-// documents-versus-values boundary is what keeps the two YAML parsers from
-// disagreeing about types.
+// styles survive, and every byte outside the edits comes back exactly. The
+// batch is one transaction: a failure anywhere in it leaves nothing applied.
+// Nothing here decodes values from that tree: the documents-versus-values
+// boundary is what keeps the two YAML parsers from disagreeing about types.
 func (YAMLCodec) Apply(path string, src []byte, edits []Edit) ([]byte, error) {
 	source := src
 
@@ -115,12 +118,6 @@ func (YAMLCodec) Apply(path string, src []byte, edits []Edit) ([]byte, error) {
 		//
 		// Whatever is already there is kept and the first key is rendered
 		// beneath it, so a commented-out header survives being written to.
-		//
-		// Seeding with an empty flow mapping instead looks tidier and is not:
-		// yamldoc re-emits in the style it found, so every subsequent key is
-		// written in flow style too, and anything nested comes back as YAML
-		// that does not parse. A created file should look like one a person
-		// would have written.
 		seeded, remaining, err := seedDocument(path, source, edits)
 		if err != nil {
 			return nil, err
@@ -129,24 +126,29 @@ func (YAMLCodec) Apply(path string, src []byte, edits []Edit) ([]byte, error) {
 		source, edits = seeded, remaining
 	}
 
-	doc, err := yamldoc.Parse(source)
+	file, err := yamldoc.Parse(source, yamldoc.Options{})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %w", ErrBackendParse, path, err)
 	}
 
-	if unsupported := doc.Unsupported(); len(unsupported) > 0 {
-		return nil, fmt.Errorf("%w: %s: %s", ErrBackendUnsafe, path, unsupported[0])
+	if _, err := file.Snapshot().Validate(yamldoc.ValidationOptions{}); err != nil {
+		return nil, fmt.Errorf("%w: %s: %w", ErrBackendUnsafe, path, err)
 	}
 
-	docs := doc.Documents()
-
-	for _, edit := range edits {
-		if err := applyOne(path, docs, edit); err != nil {
-			return nil, err
+	err = file.Edit(func(tx *yamldoc.Transaction) error {
+		for _, edit := range edits {
+			if err := applyOne(tx, path, edit); err != nil {
+				return err
+			}
 		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	out, err := doc.Bytes()
+	out, err := file.Snapshot().Bytes()
 	if err != nil {
 		return nil, fmt.Errorf("config: rendering %s: %w", path, err)
 	}
@@ -155,34 +157,116 @@ func (YAMLCodec) Apply(path string, src []byte, edits []Edit) ([]byte, error) {
 }
 
 // applyOne applies a single edit to the document it addresses.
-func applyOne(path string, docs []*yamldoc.Document, edit Edit) error {
+//
+// Every command produces a new working revision, so the document is selected
+// afresh from the transaction's snapshot for each edit.
+func applyOne(tx *yamldoc.Transaction, path string, edit Edit) error {
+	snapshot, err := tx.Snapshot()
+	if err != nil {
+		return err
+	}
+
+	docs, err := snapshot.Documents()
+	if err != nil {
+		return err
+	}
+
 	if edit.Document >= len(docs) {
 		return fmt.Errorf("%w: %s has %d document(s), edit addressed document %d",
 			ErrInternal, path, len(docs), edit.Document)
 	}
 
-	target := docs[edit.Document]
-	addressed := documentPath(target, edit.Path)
+	root, err := docs[edit.Document].Root()
+	if err != nil {
+		return err
+	}
 
 	if !edit.Remove {
-		if err := target.Set(addressed, edit.Value); err != nil {
+		if err := setPath(tx, root, edit.Path, edit.Value); err != nil {
 			return fmt.Errorf("config: setting %s in %s: %w", edit.Path, path, err)
 		}
 
 		return nil
 	}
 
-	if err := target.Remove(addressed); err != nil {
-		// Removing something already absent reaches the desired end state, so
-		// it is not worth failing a batch over.
-		if errors.Is(err, yamldoc.ErrNotFound) {
-			return nil
-		}
-
+	if err := removePath(tx, root, edit.Path); err != nil {
 		return fmt.Errorf("config: removing %s from %s: %w", edit.Path, path, err)
 	}
 
 	return nil
+}
+
+// setPath writes value at a dotted path under root, creating missing mapping
+// ancestors, each addressed in the spelling the document already uses.
+func setPath(tx *yamldoc.Transaction, root yamldoc.Node, path string, value any) error {
+	segs := splitPath(path)
+	if segs == nil {
+		return fmt.Errorf("%w: %q", ErrInvalidTarget, path)
+	}
+
+	container := root
+
+	for i, seg := range segs[:len(segs)-1] {
+		child, err := container.Get(documentStep(container, seg))
+		if errors.Is(err, yamldoc.ErrNotFound) {
+			nested, err := nestedMapping(segs[i+1:], value)
+			if err != nil {
+				return err
+			}
+
+			return tx.Set(container, documentStep(container, seg), nested)
+		}
+
+		if err != nil {
+			return err
+		}
+
+		container = child
+	}
+
+	return tx.Set(container, documentStep(container, segs[len(segs)-1]), value)
+}
+
+// removePath removes the entry at a dotted path under root. Removing something
+// already absent reaches the desired end state, so it is not worth failing a
+// batch over.
+func removePath(tx *yamldoc.Transaction, root yamldoc.Node, path string) error {
+	segs := splitPath(path)
+	if segs == nil {
+		return fmt.Errorf("%w: %q", ErrInvalidTarget, path)
+	}
+
+	container := root
+
+	for _, seg := range segs[:len(segs)-1] {
+		child, err := container.Get(documentStep(container, seg))
+		if errors.Is(err, yamldoc.ErrNotFound) {
+			return nil
+		}
+
+		if err != nil {
+			return err
+		}
+
+		container = child
+	}
+
+	return tx.RemoveIfPresent(container, documentStep(container, segs[len(segs)-1]))
+}
+
+// nestedMapping wraps value in one mapping per remaining segment so a single
+// Set creates the whole missing branch, keys in the module's normalised form.
+func nestedMapping(segs []string, value any) (any, error) {
+	for i := len(segs) - 1; i >= 0; i-- {
+		key, err := yamldoc.StringKey(segs[i])
+		if err != nil {
+			return nil, err
+		}
+
+		value = yamldoc.MappingInput{{Key: key, Value: value}}
+	}
+
+	return value, nil
 }
 
 // seedDocument renders the first assignment as a block-style document and
@@ -241,21 +325,26 @@ func needsSeed(source []byte) bool {
 		return true
 	}
 
-	doc, err := yamldoc.Parse(source)
+	file, err := yamldoc.Parse(source, yamldoc.Options{})
 	if err != nil {
 		// Leave a genuinely malformed file to the parse error below, which
 		// names the problem properly.
 		return false
 	}
 
-	docs := doc.Documents()
-	if len(docs) == 0 {
+	docs, err := file.Snapshot().Documents()
+	if err != nil || len(docs) == 0 {
 		return true
 	}
 
-	_, ok := docs[0].Keys("")
+	root, err := docs[0].Root()
+	if err != nil {
+		return true
+	}
 
-	return !ok
+	info, err := root.Syntax()
+
+	return err != nil || info.Kind != yamldoc.KindMapping
 }
 
 // preamble returns the source with a trailing newline guaranteed, so rendered
@@ -275,46 +364,31 @@ func preamble(original []byte) []byte {
 	return out
 }
 
-// documentPath renders a config path in the spelling the document already uses.
+// documentStep addresses one segment of a config path in the spelling the
+// document already uses.
 //
 // Keys are matched case-insensitively everywhere else in the module, so a
 // caller may address server.port as Server.Port and routing will resolve it to
 // the layer that defines it. The document layer has no such rule: it matches
-// literally, so handing it the caller's spelling wrote a second, differently
-// cased block beside the real one — leaving the file holding both and the
-// original value untouched.
+// literally, so handing it the caller's spelling would write a second,
+// differently cased block beside the real one and leave the original value
+// untouched.
 //
-// Each segment is therefore resolved against the keys actually present. A
+// The segment is therefore resolved against the keys actually present. A
 // segment that matches nothing is a key being created, and takes the module's
 // normalised form.
-func documentPath(doc *yamldoc.Document, path string) string {
-	segs := splitPath(path)
-	if segs == nil {
-		return path
+func documentStep(container yamldoc.Node, seg string) yamldoc.Step {
+	entries, err := container.Entries()
+	if err != nil {
+		return yamldoc.StringStep(seg)
 	}
 
-	resolved := make([]string, 0, len(segs))
-
-	for _, seg := range segs {
-		resolved = append(resolved, documentKey(doc, strings.Join(resolved, "."), seg))
-	}
-
-	return strings.Join(resolved, ".")
-}
-
-// documentKey returns the document's own spelling of a key, or the normalised
-// form when the document does not have it.
-func documentKey(doc *yamldoc.Document, parent, seg string) string {
-	keys, ok := doc.Keys(parent)
-	if !ok {
-		return seg
-	}
-
-	for _, k := range keys {
-		if normaliseKey(k) == seg {
-			return k
+	for _, entry := range entries {
+		key, err := entry.Key.String()
+		if err == nil && normaliseKey(key) == seg {
+			return yamldoc.StringStep(key)
 		}
 	}
 
-	return seg
+	return yamldoc.StringStep(seg)
 }
