@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strings"
 
 	"gitlab.com/phpboyscout/go/errors"
 	"gitlab.com/phpboyscout/go/yamldoc"
@@ -86,11 +87,27 @@ func (YAMLCodec) Check(path string, src []byte) error {
 		return fmt.Errorf("%w: %s: %w", ErrBackendParse, path, err)
 	}
 
-	if _, err := file.Snapshot().Validate(yamldoc.ValidationOptions{}); err != nil {
-		return fmt.Errorf("%w: %s: %w", ErrBackendUnsafe, path, err)
+	if report, err := file.Snapshot().Validate(yamldoc.ValidationOptions{}); err != nil {
+		return unsafeDocument(path, report, err)
 	}
 
 	return nil
+}
+
+// unsafeDocument names what is wrong and where, one diagnostic per problem
+// with its line and column, so a user can go to the alias or the duplicate
+// rather than to a sentinel.
+func unsafeDocument(path string, report yamldoc.ValidationReport, cause error) error {
+	where := make([]string, 0, len(report.Diagnostics))
+	for _, d := range report.Diagnostics {
+		where = append(where, fmt.Sprintf("%d:%d %s", d.Location.Start.Line, d.Location.Start.Column, d.Message))
+	}
+
+	if len(where) == 0 {
+		return fmt.Errorf("%w: %s: %w", ErrBackendUnsafe, path, cause)
+	}
+
+	return fmt.Errorf("%w: %s: %s: %w", ErrBackendUnsafe, path, strings.Join(where, "; "), cause)
 }
 
 // Empty returns the content of a new, empty YAML document.
@@ -131,8 +148,8 @@ func (YAMLCodec) Apply(path string, src []byte, edits []Edit) ([]byte, error) {
 		return nil, fmt.Errorf("%w: %s: %w", ErrBackendParse, path, err)
 	}
 
-	if _, err := file.Snapshot().Validate(yamldoc.ValidationOptions{}); err != nil {
-		return nil, fmt.Errorf("%w: %s: %w", ErrBackendUnsafe, path, err)
+	if report, err := file.Snapshot().Validate(yamldoc.ValidationOptions{}); err != nil {
+		return nil, unsafeDocument(path, report, err)
 	}
 
 	err = file.Edit(func(tx *yamldoc.Transaction) error {

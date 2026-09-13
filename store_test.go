@@ -154,6 +154,10 @@ func TestStore_UnsafeDocumentIsRefusedAtLoad(t *testing.T) {
 	if !strings.Contains(err.Error(), "/bad.yaml") {
 		t.Errorf("error does not name the file: %v", err)
 	}
+
+	if !strings.Contains(err.Error(), "2:13 alias has no prior anchor") {
+		t.Errorf("error does not name the problem and where it is: %v", err)
+	}
 }
 
 // A document is a layer, so a multi-document file contributes several — and

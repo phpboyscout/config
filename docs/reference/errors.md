@@ -227,13 +227,14 @@ A reload that hits it is rejected outright and the last known good configuration
 
 ### `ErrBackendUnsafe`
 
-`config: source cannot be safely edited`
+`config: source cannot be safely edited: bad.yaml: 2:13 alias has no prior anchor in this document`
 
 Returned at load when a source parses as YAML but does not mean anything under its schema,
 so editing it would be refused: an alias that names no anchor, or a mapping with two keys
-that are the same value spelt differently.
+that are the same value spelt differently. Every problem is listed with its line and
+column, separated by `;` when there are several.
 
-`NewStore` refuses such a source up front, naming the file and the problem, rather than
+`NewStore` refuses such a source up front, naming the file and each problem, rather than
 letting you discover it at commit time with nowhere to put your edits. Fix the alias or
 the duplicate. See
 [What survives a write](../explanation/write-fidelity.md#some-documents-are-refused-at-load).

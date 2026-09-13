@@ -310,7 +310,7 @@ go run .
 Now break the file deliberately — set the port to `[oops` and save:
 
 ```
-# rejected reload: config: source could not be parsed: config.yaml: yamldoc: parse: ...
+# rejected reload: config: source could not be parsed: config.yaml: invalid YAML syntax at bytes [83,83), line 6, column 1
 ```
 
 Put the port back to a number when you are done — the file is left deliberately broken
