@@ -1,5 +1,35 @@
 # Changelog
 
+## [v0.18.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.18.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.17.3...v0.18.0)
+
+### Notes
+
+- `ErrBackendUnsafe` now names each problem with its line and column, for example `config: source cannot be safely edited: bad.yaml: 2:13 alias has no prior anchor in this document`, instead of a summary sentinel alone.
+
+- YAML writes now preserve every byte outside the edit, including comment
+  alignment and blank lines, and a pretty-printed JSON file keeps its layout
+  on a core write. `ErrBackendUnsafe` now means a document that parses but
+  does not validate (a dangling alias, a duplicated key); a multi-line flow
+  collection with comments is edited like any other. Invisible and bidi
+  characters are escaped in values this module writes; values already in
+  the file are left exactly as they were.
+
+### Features
+
+- name each problem and its position in an unsafe-document error ([ca3a81a](https://gitlab.com/phpboyscout/go/config/-/commit/ca3a81a621404dfdeb30c37d917f81be4c99d6ce))
+- edit YAML through yamldoc's owned engine ([ff9a08a](https://gitlab.com/phpboyscout/go/config/-/commit/ff9a08a8fbd4e6da69f00734db6f02a1a49346cb))
+
+### Bug Fixes
+
+- **ci**: point the release-branch rules at colophon's branch ([c19b20d](https://gitlab.com/phpboyscout/go/config/-/commit/c19b20d6cdd710c9197e8a9cb8a661b21728a9a6))
+- **deps**: require yamldoc v0.6.0, the owned engine ([d89782c](https://gitlab.com/phpboyscout/go/config/-/commit/d89782c9ca33e5397def6b4cc171e477ac610f55))
+- **deps**: update module gitlab.com/phpboyscout/go/yamldoc to v0.5.1 ([2eef380](https://gitlab.com/phpboyscout/go/config/-/commit/2eef38041749f9ebe9c2ec681d268ec00a316d50))
+- **deps**: update module gitlab.com/phpboyscout/go/yamldoc to v0.4.0 ([ed4033c](https://gitlab.com/phpboyscout/go/config/-/commit/ed4033c35808c7db6df5eab930ee56fea1e95074))
+- **deps**: update module gitlab.com/phpboyscout/go/yamldoc to v0.3.0 ([9f07ef0](https://gitlab.com/phpboyscout/go/config/-/commit/9f07ef01b6a6a984847c0dce608ec99c6b5796b2))
+- **deps**: update module gitlab.com/phpboyscout/go/yamldoc to v0.2.2 ([8a5e945](https://gitlab.com/phpboyscout/go/config/-/commit/8a5e945d712e04808384749a3d5456babee2e0e0))
+
 ## [v0.17.3](https://gitlab.com/phpboyscout/go/config/-/releases/v0.17.3)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.17.2...v0.17.3)
