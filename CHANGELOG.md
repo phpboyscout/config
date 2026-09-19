@@ -1,5 +1,17 @@
 # Changelog
 
+## [v0.18.1](https://gitlab.com/phpboyscout/go/config/-/releases/v0.18.1)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.18.0...v0.18.1)
+
+### Notes
+
+- Releases are announced to the estate's release feed.
+
+### Bug Fixes
+
+- **deps**: update module gitlab.com/phpboyscout/go/yamldoc to v0.6.1 ([54d1b4c](https://gitlab.com/phpboyscout/go/config/-/commit/54d1b4c2e43562d07333da62c91e738d9ef9be55))
+
 ## [v0.18.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.18.0)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.17.3...v0.18.0)
