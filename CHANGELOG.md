@@ -1,5 +1,21 @@
 # Changelog
 
+## [v0.20.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.20.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.19.0...v0.20.0)
+
+### Notes
+
+- `DefinedIn(path)` replaces `Shadowed(path)` on `Snapshot`, `View` and `Reader`:
+  the same list (every layer defining the path, winner last) under a name that
+  says so. `Shadowed` still works and is deprecated until 1.0. A type of your own
+  implementing `config.Reader` needs a `DefinedIn` method; the generated mocks
+  already have one.
+
+### Features
+
+- name the whole provenance chain DefinedIn ([22ef135](https://gitlab.com/phpboyscout/go/config/-/commit/22ef13587982e7adb1b5c6dcd1b56c559a61de3d))
+
 ## [v0.19.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.19.0)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.18.0...v0.19.0)
