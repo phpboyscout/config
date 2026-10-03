@@ -93,7 +93,9 @@ b, err := configgcpparameter.FromOptionsPrefix(ctx, "my-project", "global", "app
 
 // Application Default Credentials.
 b, err := configgcpparameter.Default(ctx, "my-project", "global", "app-config")
-defer b.Close()
+
+store, err := config.NewStore(ctx, config.WithBackend(b), config.WithCloser(b))
+defer store.Close()
 ```
 
 To detect Application Default Credentials **once** and feed several GCP adapters
@@ -103,8 +105,8 @@ options it yields to `FromOptions`. It hands out client options rather than a
 client precisely because the three GCP adapters need three different client
 types.
 
-**All four return `*OwnedBackend`, which you should `Close`** — see
-[gcp-secret](gcp-secret.md) for why.
+**All four return `*OwnedBackend`, which must be closed.** Hand it to the store
+with `WithCloser`, as above; [gcp-secret](gcp-secret.md) says why.
 
 **Two things are still required.** Like Secret Manager these rungs need the
 **project**, because credentials name a principal rather than a project. Unlike

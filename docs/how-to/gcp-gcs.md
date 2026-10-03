@@ -82,7 +82,9 @@ fsys, err := configgcpgcs.FromOptions(ctx, "my-bucket", opts)
 
 // Application Default Credentials.
 fsys, err := configgcpgcs.Default(ctx, "my-bucket")
-defer fsys.Close()
+
+store, err := config.NewStore(ctx, config.WithFiles(fsys, "config.yaml"), config.WithCloser(fsys))
+defer store.Close()
 ```
 
 To detect Application Default Credentials **once** and feed several GCP adapters
@@ -92,10 +94,11 @@ options it yields to `FromOptions`. It hands out client options rather than a
 client precisely because the three GCP adapters need three different client
 types.
 
-**Both return `*OwnedFS`, which you can `Close`.** The obligation is real but
+**Both return `*OwnedFS`, which you can close.** The obligation is real but
 weaker than its Secret Manager sibling's: `storage.Client` is HTTP-backed and its
 documentation says `Close` "need not be called at program exit", where
-`secretmanager.Client` says it "must be Closed".
+`secretmanager.Client` says it "must be Closed". `WithCloser` hands a filesystem
+to the store exactly as it does a backend.
 
 This is the **simplest zero-conf rung in the family**: a bucket name is globally
 unique, so unlike Secret Manager and Parameter Manager there is no project or

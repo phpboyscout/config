@@ -185,7 +185,9 @@ b, err := configgcpsecret.FromOptions(ctx, "my-project", "", opts)
 
 // Application Default Credentials.
 b, err := configgcpsecret.Default(ctx, "my-project", "")
-defer b.Close()
+
+store, err := config.NewStore(ctx, config.WithBackend(b), config.WithCloser(b))
+defer store.Close()
 ```
 
 To detect Application Default Credentials **once** and feed several GCP adapters
@@ -195,11 +197,13 @@ options it yields to `FromOptions`. It hands out client options rather than a
 client precisely because the three GCP adapters need three different client
 types.
 
-**Both return `*OwnedBackend`, which you should `Close`.**
+**Both return `*OwnedBackend`, which must be closed.**
 `secretmanager.NewClient` opens a gRPC connection its own documentation says must
-be closed, and `config.Backend` has no `Close` — so a client the adapter built for
-itself would otherwise live for the whole process. Nothing for a one-shot CLI; a
-leak for a long-lived service.
+be closed, and `config.Backend` has no `Close`. Hand the backend to the store with
+`WithCloser` and closing the store releases it; otherwise a client the adapter
+built for itself lives for the whole process. Nothing for a one-shot CLI; a leak
+for a long-lived service. See
+[Some rungs hand you something to close](../explanation/connection-ownership.md#some-rungs-hand-you-something-to-close).
 
 **The project is still required.** Application Default Credentials authenticate a
 *principal* — they do not name the project whose secrets to read, and guessing

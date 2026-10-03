@@ -135,6 +135,13 @@ func (n *nested) Capabilities() Capabilities {
 // watch — and reloading it from here would notify its observers on the outer
 // store's schedule and could fail outright when called from inside one.
 func (n *nested) Load(_ context.Context, _ []Layer) ([]Layer, error) {
+	// Serving the inner's last snapshot forever would freeze this source
+	// without a word. Failing the load keeps the outer's last good
+	// configuration and reports why. Spec 0013 D12.
+	if n.inner.isClosed() {
+		return nil, fmt.Errorf("%w: nested store %q", ErrStoreClosed, n.id)
+	}
+
 	snap := n.inner.Snapshot()
 	if snap == nil {
 		return nil, nil
@@ -199,11 +206,25 @@ func (n *nested) Watch(ctx context.Context, interval time.Duration, onChange fun
 	go func() {
 		defer ticker.Stop()
 
+		reportedClosed := false
+
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				// Once, so the outer reloads and reports the closed inner
+				// rather than waiting for someone to call Reload.
+				if n.inner.isClosed() {
+					if !reportedClosed {
+						reportedClosed = true
+
+						onChange()
+					}
+
+					continue
+				}
+
 				snap := n.inner.Snapshot()
 				if snap == nil {
 					continue
@@ -301,6 +322,11 @@ type nestedWritable struct{ *nested }
 // backend produced which layer, and a second routing pass here could disagree
 // with the first.
 func (n *nestedWritable) Prepare(ctx context.Context, edits []Edit) (Pending, error) {
+	// The inner's backends may hold clients it has already closed.
+	if n.inner.isClosed() {
+		return nil, fmt.Errorf("%w: nested store %q", ErrStoreClosed, n.id)
+	}
+
 	n.inner.mu.Lock()
 	owners := n.inner.backendBySource()
 	n.inner.mu.Unlock()

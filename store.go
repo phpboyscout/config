@@ -69,6 +69,8 @@ type Store struct {
 	// validators are the contributions registered with WithSchemaAt, in
 	// registration order. Fixed at construction — see WithSchemaAt.
 	validators []mounted
+
+	life lifecycle
 }
 
 // backendLayers pairs a backend with what it contributed.
@@ -192,7 +194,7 @@ func NewStore(ctx context.Context, opts ...StoreOption) (*Store, error) {
 	}
 
 	if len(s.backends) == 0 {
-		return nil, ErrNoSources
+		return nil, s.abandon(ErrNoSources)
 	}
 
 	// Two backends answering to the same ID is a routing hazard, not a
@@ -201,12 +203,12 @@ func NewStore(ctx context.Context, opts ...StoreOption) (*Store, error) {
 	// too, or the same collision that is refused on AddLayer is accepted when
 	// the sources are declared up front.
 	if err := ensureUniqueIDs(s.backends); err != nil {
-		return nil, err
+		return nil, s.abandon(err)
 	}
 
 	// Composition is a tree, so a store cannot appear in the graph twice.
 	if err := ensureTree(s, s.backends); err != nil {
-		return nil, err
+		return nil, s.abandon(err)
 	}
 
 	if err := s.Reload(ctx); err != nil {
@@ -214,7 +216,7 @@ func NewStore(ctx context.Context, opts ...StoreOption) (*Store, error) {
 			return s, err
 		}
 
-		return nil, err
+		return nil, s.abandon(err)
 	}
 
 	return s, nil
@@ -340,7 +342,9 @@ func (s *Store) Reload(ctx context.Context) error {
 
 	next, changed, err := s.reload(ctx)
 	if err != nil {
-		s.notifier.notifyError(err)
+		if !s.refusedAsClosed(err) {
+			s.notifier.notifyError(err)
+		}
 
 		return err
 	}
@@ -362,6 +366,12 @@ func (s *Store) Reload(ctx context.Context) error {
 func (s *Store) reload(ctx context.Context) (next *Snapshot, changed bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Re-checked under the lock: a reload queued behind Close's barrier must
+	// not touch a backend whose client is about to close.
+	if s.isClosed() {
+		return nil, false, ErrStoreClosed
+	}
 
 	loaded, err := s.loadAll(ctx)
 	if err != nil {
@@ -760,6 +770,10 @@ func (s *Store) Apply(ctx context.Context, changes ...Change) (*Snapshot, error)
 		return nil, ErrWriteFromObserver
 	}
 
+	if s.isClosed() {
+		return nil, ErrStoreClosed
+	}
+
 	next, changed, err := s.apply(ctx, changes)
 	if err != nil {
 		return nil, err
@@ -790,6 +804,10 @@ func (s *Store) Apply(ctx context.Context, changes ...Change) (*Snapshot, error)
 func (s *Store) apply(ctx context.Context, changes []Change) (*Snapshot, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.isClosed() {
+		return nil, false, ErrStoreClosed
+	}
 
 	current := s.current.Load()
 
@@ -1288,6 +1306,10 @@ func (s *Store) backendBySource() map[Source]Backend {
 // still overrides it. A [WatchableBackend] may implement [PollIntervalHinter]
 // directly, just as a filesystem may.
 func (s *Store) Watch(ctx context.Context, opts ...WatchOption) (stop func(), err error) {
+	if s.isClosed() {
+		return nil, ErrStoreClosed
+	}
+
 	cfg := watchConfig{interval: DefaultPollInterval, settle: DefaultSettleInterval}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -1319,19 +1341,43 @@ func (s *Store) Watch(ctx context.Context, opts ...WatchOption) (stop func(), er
 
 	onChange := settle.trigger
 
+	// Backends watch under a context this watch's stop cancels, so a backend
+	// stop that misses something cannot outlive it, nor the Store, whose Close
+	// calls every stop. The reload above keeps the caller's ctx: cancelling one
+	// already in flight would publish exactly the errors Close waits to avoid.
+	// Spec 0013 D14 and R1.
+	watchCtx, release := context.WithCancel(ctx)
+
 	// An injected watcher stands in for the whole set, which is how a test
 	// drives change detection without a real filesystem.
 	if cfg.watcher != nil {
-		stop, err := cfg.watcher.Watch(ctx, s.watchedPaths(), onChange)
+		stop, err := cfg.watcher.Watch(watchCtx, s.watchedPaths(), onChange)
 		if err != nil {
 			settle.stop()
+			release()
 
 			return nil, err
 		}
 
-		return func() { settle.stop(); stop() }, nil
+		return s.trackWatch(func() { settle.stop(); stop(); release() })
 	}
 
+	stops, err := s.watchEach(watchCtx, cfg, watchable, onChange)
+	if err != nil {
+		settle.stop()
+		release()
+
+		return nil, err
+	}
+
+	return s.trackWatch(func() { settle.stop(); stopAll(stops); release() })
+}
+
+// watchEach starts every backend's watch, stopping those already started if
+// one fails.
+func (s *Store) watchEach(
+	ctx context.Context, cfg watchConfig, watchable []WatchableBackend, onChange func(),
+) ([]func(), error) {
 	var stops []func()
 
 	for _, b := range watchable {
@@ -1349,7 +1395,6 @@ func (s *Store) Watch(ctx context.Context, opts ...WatchOption) (stop func(), er
 			// reporting success would leave the caller believing it will hear
 			// about sources it never will.
 			stopAll(stops)
-			settle.stop()
 
 			return nil, err
 		}
@@ -1357,7 +1402,34 @@ func (s *Store) Watch(ctx context.Context, opts ...WatchOption) (stop func(), er
 		stops = append(stops, stop)
 	}
 
-	return func() { settle.stop(); stopAll(stops) }, nil
+	return stops, nil
+}
+
+// trackWatch hands Close a watch's stop, refusing the watch if the Store
+// closed while it was being set up.
+func (s *Store) trackWatch(stop func()) (func(), error) {
+	var once sync.Once
+
+	var untrack func()
+
+	stopOnce := func() {
+		once.Do(func() {
+			if untrack != nil {
+				untrack()
+			}
+
+			stop()
+		})
+	}
+
+	untrack, ok := s.life.track(stopOnce)
+	if !ok {
+		stop()
+
+		return nil, ErrStoreClosed
+	}
+
+	return stopOnce, nil
 }
 
 // watchInterval decides the poll cadence a backend is watched at.

@@ -260,6 +260,20 @@ backend, or a polling watcher handed nothing to watch.
 It is deliberately loud. A watcher that silently does nothing is worse than none: the
 application believes it will hear about changes and never will.
 
+### `ErrStoreClosed`
+
+`config: store is closed`
+
+Returned by `Store.Reload`, `Store.Apply`, `Store.AddLayer` and `Store.Watch` after
+`Store.Close`. A closed store still answers reads from the configuration it last held; it
+refuses anything that would load, write or watch, because what it reads through may already
+have been released. The refusal is never published to `OnReloadError`, since it is your own
+request being declined rather than a source failing.
+
+An outer store whose [nested](../how-to/compose-stores.md) inner store has been closed
+reports it too, through a failed reload and `OnReloadError`, and keeps its last good
+configuration. Rebuild the outer store without the closed one.
+
 ### `ErrCyclicStore`
 
 `config: store is already present in this graph`

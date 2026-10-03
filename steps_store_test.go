@@ -52,6 +52,8 @@ type world struct {
 	section *ObservedSection[serverSection]
 	// applyErrs collects the outcome of concurrent writes.
 	applyErrs []error
+	// connection is what a closing scenario handed its store to release.
+	connection *heldConnection
 }
 
 // serverSection is the typed shape the typed-section scenarios bind to. It is
@@ -111,6 +113,7 @@ func (w *world) reset() {
 	w.stopWatching = nil
 	w.section = nil
 	w.applyErrs = nil
+	w.connection = nil
 	w.backend = nil
 }
 
@@ -181,6 +184,7 @@ func initStoreSteps(ctx *godog.ScenarioContext) {
 
 	initLifecycleSteps(ctx, w)
 	initSensitiveSteps(ctx, w)
+	initClosingSteps(ctx, w)
 }
 
 // --- Given implementations -------------------------------------------------

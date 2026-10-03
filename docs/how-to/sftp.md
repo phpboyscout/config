@@ -81,7 +81,11 @@ conn, err := ssh.Dial("tcp", host, sshCfg)   // yours; you close it
 defer conn.Close()
 
 fsys, err := configsftp.FromSSH(conn)
-defer fsys.Close()                            // closes the SFTP subsystem only
+
+store, err := config.NewStore(ctx,
+	config.WithFiles(fsys, "config.yaml"),
+	config.WithCloser(fsys))                  // closing the store closes the SFTP subsystem only
+defer store.Close()
 ```
 
 `FromSSH` **does I/O**, unlike every other rung of its kind here: an SFTP client
@@ -89,8 +93,9 @@ defer fsys.Close()                            // closes the SFTP subsystem only
 trip by definition. The connection is already established, so it is one exchange
 rather than a dial.
 
-`Close` releases the subsystem and **never your SSH connection** — that transport
-is yours and may carry other things.
+Closing it releases the subsystem and **never your SSH connection** — that
+transport is yours and may carry other things. Close the store before the
+connection, as the `defer` order above does.
 
 ### There is deliberately no zero-conf rung
 

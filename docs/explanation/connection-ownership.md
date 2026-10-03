@@ -155,15 +155,28 @@ documents no default region, so `config-aws-ssm` refuses instead.
 
 Where a rung **builds** the client, it owns it — and if that client holds a
 connection, the rung returns a concrete type carrying `Close` rather than the
-bare interface:
+bare interface. Hand it to the store, and closing the store releases it:
 
 ```go
 b, err := configgcpsecret.Default(ctx, "my-project", "")
 if err != nil { return err }
-defer b.Close()          // a service closes it; a CLI simply does not
 
-store, err := config.NewStore(ctx, config.WithBackend(b))
+store, err := config.NewStore(ctx, config.WithBackend(b), config.WithCloser(b))
+if err != nil { return err }   // a store that was never built has already closed b
+defer store.Close()            // a service closes it; a CLI simply does not
 ```
+
+The backend is named twice on purpose. `WithBackend` makes it a source and
+`WithCloser` makes it the store's to release, and only the second transfers
+ownership: the store never closes anything because it happens to have a `Close`
+method. That matters when one backend sits under two stores, because closing
+either would otherwise cut the other off mid-watch.
+
+`Store.Close` stops the store's watches first, waits for a reload or write
+already running, and only then closes what it was handed. A client closed under
+a live watch leaves the watch retrying silently forever, so the order is the
+point. A closed store still answers reads from the configuration it last held,
+and refuses to reload, write or watch with `ErrStoreClosed`.
 
 The obligation follows **who built the client** *and* **whether the SDK gives you
 anything to release**:
@@ -177,7 +190,8 @@ anything to release**:
 | everything else | nothing to release | plain `config.Backend` |
 
 Rungs 1 and 2 never return an owned type: there, you built the client and still
-own it.
+own it. `WithCloser` takes any `io.Closer`, so you can hand that client to the
+store too, if the store's lifetime is the one you want for it.
 
 ## What a self-connecting backend guarantees
 

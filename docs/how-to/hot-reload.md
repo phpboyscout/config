@@ -69,6 +69,10 @@ you want:
 stop, err := store.Watch(ctx, config.WithPollInterval(500*time.Millisecond))
 ```
 
+Cancelling `ctx` also ends the watch. `Store.Close` stops every watch the store started,
+so a store you close needs no separate `stop`, and a closed store refuses a new `Watch`
+with `ErrStoreClosed`.
+
 ## Reload on demand
 
 You do not need a watcher to reload. `Reload` re-reads every backend and, on success,
