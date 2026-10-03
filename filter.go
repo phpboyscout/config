@@ -195,23 +195,29 @@ func (f *filtered) Capabilities() Capabilities { return f.inner.Capabilities() }
 
 // SourceKind delegates when the inner backend declares one, and otherwise
 // reports the same default the Store would have applied itself.
-func (f *filtered) SourceKind() SourceKind {
-	if d, ok := f.inner.(SourceKindDeclarer); ok {
-		return d.SourceKind()
-	}
-
-	return SourceFile
-}
+func (f *filtered) SourceKind() SourceKind { return innerSourceKind(f.inner) }
 
 // PollInterval delegates when the inner backend hints, and otherwise returns
 // zero, which the Store reads as "no hint".
-func (f *filtered) PollInterval() time.Duration {
-	if h, ok := f.inner.(PollIntervalHinter); ok {
-		return h.PollInterval()
-	}
+func (f *filtered) PollInterval() time.Duration { return innerPollInterval(f.inner) }
 
-	return 0
-}
+// SetWatchErrorHandler forwards, so a filtered file backend's degraded watch is
+// still reported.
+func (f *filtered) SetWatchErrorHandler(fn func(error)) { forwardWatchErrorHandler(f.inner, fn) }
+
+// WatchPath forwards, so an injected watcher still watches a filtered file.
+func (f *filtered) WatchPath() (string, bool) { return innerWatchPath(f.inner) }
+
+// pinOnlyLayers forwards, or a filter would make a promotable nested store
+// routable and let an ordinary write rewrite the shared configuration.
+func (f *filtered) pinOnlyLayers() bool { return innerPinOnly(f.inner) }
+
+func (f *filtered) hasConstraint() bool { return innerHasConstraint(f.inner) }
+
+// constrain forwards, so a constraint the filter wraps still judges what its
+// source supplied. It sees the filtered layers: a key the filter hid was never
+// supplied.
+func (f *filtered) constrain(layers []Layer, r *ValidationResult) { innerConstrain(f.inner, layers, r) }
 
 func (f *filtered) Load(ctx context.Context, below []Layer) ([]Layer, error) {
 	layers, err := f.inner.Load(ctx, below)
@@ -251,12 +257,15 @@ func (f *filtered) Load(ctx context.Context, below []Layer) ([]Layer, error) {
 	return out, nil
 }
 
-// withheldSensitive reports the sensitive paths this filter is hiding.
+// withheldSensitive reports the sensitive paths this filter is hiding,
+// together with any a filter beneath it hid. Only this filter's own would
+// leave a secret hidden lower down writable into a plain layer.
 func (f *filtered) withheldSensitive() []string {
 	f.mu.RLock()
-	defer f.mu.RUnlock()
+	own := f.withheld
+	f.mu.RUnlock()
 
-	return f.withheld
+	return append(innerWithheldSensitive(f.inner), own...)
 }
 
 // filterValues walks a value tree, keeping permitted leaves and reporting the

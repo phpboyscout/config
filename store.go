@@ -1559,7 +1559,7 @@ func flatten(loaded []backendLayers) []Layer {
 // anyConstrained reports whether any loaded backend carries a source constraint.
 func anyConstrained(loaded []backendLayers) bool {
 	for _, bl := range loaded {
-		if _, ok := bl.backend.(sourceConstraint); ok {
+		if innerHasConstraint(bl.backend) {
 			return true
 		}
 	}
