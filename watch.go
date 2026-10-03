@@ -258,6 +258,10 @@ type coverage struct {
 	mu     sync.Mutex
 	polled map[string]bool
 	stops  []func()
+	// stopped refuses new polling once stop has drained stops. The native
+	// watcher's event loop can degrade at the moment its stop runs, and a poll
+	// started then would be stopped by nobody. go/config#13.
+	stopped bool
 }
 
 // ensurePolled starts polling any of the given paths not already covered.
@@ -267,6 +271,12 @@ type coverage struct {
 // set degrades, or every change to it would be reported twice.
 func (c *coverage) ensurePolled(paths []string) error {
 	c.mu.Lock()
+
+	if c.stopped {
+		c.mu.Unlock()
+
+		return nil
+	}
 
 	if c.polled == nil {
 		c.polled = map[string]bool{}
@@ -302,6 +312,15 @@ func (c *coverage) ensurePolled(paths []string) error {
 	}
 
 	c.mu.Lock()
+
+	// Started outside the lock, so stop may have drained in the meantime.
+	if c.stopped {
+		c.mu.Unlock()
+		stop()
+
+		return nil
+	}
+
 	c.stops = append(c.stops, stop)
 	c.mu.Unlock()
 
@@ -310,6 +329,7 @@ func (c *coverage) ensurePolled(paths []string) error {
 
 func (c *coverage) stop() {
 	c.mu.Lock()
+	c.stopped = true
 	stops := c.stops
 	c.stops = nil
 	c.mu.Unlock()
