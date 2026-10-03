@@ -51,9 +51,9 @@ variables:
 # ----------------------------------------------------------------------
 # Cross-repo adapter canary
 #
-# WHY. config is consumed by 19 independent single-purpose adapter repos
+# WHY. config is consumed by independent single-purpose sibling repos
 # (each isolates one cloud SDK / backend / codec dependency tree, so the
-# 19-repo split is permanent and intentional — NOT a staging area for
+# split is permanent and intentional — NOT a staging area for
 # consolidation). Each adapter pins a *released* config tag, so a breaking
 # change to config core is invisible in config's own pipeline: it only
 # surfaces later, in an adapter's or a downstream consumer's build, after
@@ -76,10 +76,11 @@ variables:
 #   * canary-subset — a fast representative slice (one filesystem adapter,
 #     one KV backend, one format codec) runs on EVERY config MR, so the
 #     common breakages are caught on the feature branch.
-#   * canary-full — all 19 adapters run on the pre-release surfaces:
+#   * canary-full — every module that requires the core runs on the
+#     pre-release surfaces:
 #     the colophon Release MR, default-branch pipelines, and the
 #     nightly schedule. This is where a break is caught before a release
-#     is cut, without paying 19 checkouts on every routine MR.
+#     is cut, without paying a checkout per sibling on every routine MR.
 #
 # GATING. Both jobs are gating (allow_failure omitted → false): a red
 # canary blocks the merge / release, which is the whole point of catching
@@ -173,8 +174,9 @@ canary-subset:
         - "go.sum"
         - ".gitlab-ci.yml"
 
-# Full matrix — all 19 adapters. Runs on the pre-release surfaces only:
-# the Release MR, default-branch pipelines, and the nightly schedule.
+# Full matrix — every module that requires the core; canary-coverage fails
+# when one is missing. Runs on the pre-release surfaces only: the Release MR,
+# default-branch pipelines, and the nightly schedule.
 canary-full:
   extends: .canary
   parallel:
@@ -199,7 +201,32 @@ canary-full:
           - config-azure-blob
           - config-azure-appconfig
           - config-sftp
+          - config-aws-secrets
+          - config-azure-keyvault
+          - config-gcp-secret
+          - config-etcd
+          - config-filekv
+          - config-keychain
+          - config-schema
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "colophon/release/main"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# The matrix above is hand-written, and a new sibling does not add itself to
+# it (go/config#9). This fails when the group holds a module requiring the core
+# that canary-full does not build, or names one that no longer requires it.
+canary-coverage:
+  stage: canary
+  image: "registry.gitlab.com/phpboyscout/images/dev-tools:v0.3.4"
+  interruptible: true
+  script:
+    - python3 .gitlab/scripts/canary-coverage.py
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "colophon/release/main"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - ".gitlab-ci.yml"
+        - ".gitlab/scripts/canary-coverage.py"
