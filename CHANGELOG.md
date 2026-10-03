@@ -1,5 +1,39 @@
 # Changelog
 
+## [v0.19.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.19.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.18.0...v0.19.0)
+
+### Notes
+
+- A file watch stopped at the moment it fell back from native notification to
+  polling could leave a poller running for the life of the caller's context.
+  It no longer starts one.
+
+- `Filtered` and `Constrained` now forward everything the store asks a backend
+  about. Composing them could previously lose the sensitive-key guard (a secret
+  a filter hid became writable into a plain file), make a promotable nested
+  store routable, skip a constraint, or drop watch-error reporting.
+
+- `Store.Close` and `WithCloser` let a store release what it was handed: pass an
+  owned backend or filesystem (the GCP adapters' `Default` and `FromOptions`,
+  `config-sftp`'s `FromSSH`) to `WithCloser`, and closing the store closes it.
+  Close stops the store's watches, waits for a reload or write in progress, and
+  only then closes. A closed store keeps answering reads; reloading, writing and
+  watching return the new `ErrStoreClosed`.
+
+- Releases are announced to the estate's release feed.
+
+### Features
+
+- let a Store close what it was handed ([2fab1ae](https://gitlab.com/phpboyscout/go/config/-/commit/2fab1ae23ae93736af90b685b2cb1d12af96e4cd))
+
+### Bug Fixes
+
+- start no poll watch once a file watch has stopped ([21f6590](https://gitlab.com/phpboyscout/go/config/-/commit/21f65901433c25dfaaacee798f9be70a203972e5))
+- forward what the Store asks about through Filtered and Constrained ([bf6a596](https://gitlab.com/phpboyscout/go/config/-/commit/bf6a596f878a24ac5212be00dbbf3dfaec7ad51f))
+- **deps**: update module gitlab.com/phpboyscout/go/yamldoc to v0.6.1 ([54d1b4c](https://gitlab.com/phpboyscout/go/config/-/commit/54d1b4c2e43562d07333da62c91e738d9ef9be55))
+
 ## [v0.18.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.18.0)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.17.3...v0.18.0)
