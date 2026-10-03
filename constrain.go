@@ -122,6 +122,17 @@ type constrained struct {
 func (c *constrained) ID() string                 { return c.inner.ID() }
 func (c *constrained) Capabilities() Capabilities { return c.inner.Capabilities() }
 
+// Forwarded so constraining a source changes nothing else about how the Store
+// treats it. Losing withheldSensitive in particular would let a secret a
+// filter beneath hid be written into a plain layer.
+func (c *constrained) SourceKind() SourceKind              { return innerSourceKind(c.inner) }
+func (c *constrained) PollInterval() time.Duration         { return innerPollInterval(c.inner) }
+func (c *constrained) SetWatchErrorHandler(fn func(error)) { forwardWatchErrorHandler(c.inner, fn) }
+func (c *constrained) WatchPath() (string, bool)           { return innerWatchPath(c.inner) }
+func (c *constrained) pinOnlyLayers() bool                 { return innerPinOnly(c.inner) }
+func (c *constrained) withheldSensitive() []string         { return innerWithheldSensitive(c.inner) }
+func (c *constrained) hasConstraint() bool                 { return true }
+
 func (c *constrained) Load(ctx context.Context, prev []Layer) ([]Layer, error) {
 	return c.inner.Load(ctx, prev)
 }
@@ -132,6 +143,8 @@ func (c *constrained) Load(ctx context.Context, prev []Layer) ([]Layer, error) {
 // the check per-source: the same key from a different layer is a different
 // question, and one this constraint has no opinion about.
 func (c *constrained) constrain(layers []Layer, r *ValidationResult) {
+	innerConstrain(c.inner, layers, r)
+
 	name := c.rules.name
 	if name == "" {
 		name = c.inner.ID()
@@ -235,8 +248,10 @@ func (c *constrainedWritableWatchable) Watch(ctx context.Context, interval time.
 }
 
 // sourceConstraint is what the Store asks a backend about during validation.
-// Implemented only by Constrained, so an ordinary backend costs nothing.
+// hasConstraint lets a decorator that merely forwards say whether anything
+// beneath it constrains, so an unconstrained store skips validation entirely.
 type sourceConstraint interface {
+	hasConstraint() bool
 	constrain(layers []Layer, r *ValidationResult)
 }
 
