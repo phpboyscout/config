@@ -234,13 +234,20 @@ same facts as data:
 	if src, ok := store.View().Origin("server.port"); ok {
 		fmt.Printf("winner: %s (writable: %v)\n", src, src.Writable)
 	}
-	for _, s := range store.View().Shadowed("server.port") {
-		fmt.Printf("shadowed: %s\n", s)
+	defined := store.View().Shadowed("server.port")
+	if n := len(defined); n > 1 {
+		for _, s := range defined[:n-1] {
+			fmt.Printf("lost: %s\n", s)
+		}
 	}
 ```
 
-`Origin` names the layer whose value you actually get; `Shadowed` lists the ones that
-defined the key and lost. `Writable` on a `Source` is the field the next step turns on.
+`Origin` names the layer whose value you actually get. `Shadowed` lists **every** layer
+that defines the key, lowest precedence first, so its last entry is that same winner and
+everything before it lost. Slicing off the last entry is how you get the losers, and it is
+exactly how `Explain` builds its "also defined in" list. A key defined in one place returns
+a one-entry list, which is why the loop checks for more than one. `Writable` on a `Source`
+is the field the next step turns on.
 
 ## 7. Write a value back, and watch routing skip what it cannot write
 
