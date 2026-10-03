@@ -276,7 +276,7 @@ then look up, then understand.
 - :material-lightbulb-on: **[The Store](explanation/the-store.md)** — why one component
   owns config I/O, and what follows from that rule.
 - :material-map-marker-path: **[Provenance](explanation/provenance.md)** — what `Origin`,
-  `Shadowed` and `Explain` can and cannot answer.
+  `DefinedIn` and `Explain` can and cannot answer.
 
 </div>
 

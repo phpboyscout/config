@@ -124,8 +124,14 @@ func (v *View) SectionExists(path string) bool {
 // Origin reports which layer supplied the effective value at a path.
 func (v *View) Origin(path string) (Source, bool) { return v.pinned().Origin(v.qualify(path)) }
 
-// Shadowed lists every layer defining a path, lowest precedence first.
-func (v *View) Shadowed(path string) []Source { return v.pinned().Shadowed(v.qualify(path)) }
+// DefinedIn lists every layer defining a path, lowest precedence first.
+func (v *View) DefinedIn(path string) []Source { return v.pinned().DefinedIn(v.qualify(path)) }
+
+// Shadowed returns what [View.DefinedIn] returns.
+//
+// Deprecated: use DefinedIn. The list includes the winning layer, which the name
+// did not say (spec 0014).
+func (v *View) Shadowed(path string) []Source { return v.DefinedIn(path) }
 
 // Explain describes where a value came from and what else defines it.
 //
@@ -142,12 +148,12 @@ func (v *View) Explain(path string) string {
 	src, hasOrigin := v.pinned().Origin(full)
 	if !hasOrigin {
 		return fmt.Sprintf("%s is a subtree assembled from %s",
-			full, joinSources(v.pinned().Shadowed(full)))
+			full, joinSources(v.pinned().DefinedIn(full)))
 	}
 
 	out := fmt.Sprintf("%s = %v (from %s)", full, value, src)
 
-	if all := v.pinned().Shadowed(full); len(all) > 1 {
+	if all := v.pinned().DefinedIn(full); len(all) > 1 {
 		out += fmt.Sprintf("; also defined in %s", joinSources(all[:len(all)-1]))
 	}
 

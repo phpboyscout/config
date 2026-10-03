@@ -36,7 +36,7 @@ func TestValidateStruct_AcceptsAMock(t *testing.T) {
 	reader.EXPECT().Get("port").Return(8080).Maybe()
 	reader.EXPECT().Has("port").Return(true).Maybe()
 	reader.EXPECT().Keys().Return([]string{"host", "port"}).Maybe()
-	reader.EXPECT().Shadowed(mock.Anything).Return(nil).Maybe()
+	reader.EXPECT().DefinedIn(mock.Anything).Return(nil).Maybe()
 
 	require.NoError(t, config.ValidateStruct[serverConfig](reader))
 }
@@ -53,7 +53,7 @@ func TestValidateStruct_AMockCanFailValidationToo(t *testing.T) {
 	reader.EXPECT().Get(mock.Anything).Return(nil).Maybe()
 	reader.EXPECT().Has(mock.Anything).Return(false).Maybe()
 	reader.EXPECT().Keys().Return(nil).Maybe()
-	reader.EXPECT().Shadowed(mock.Anything).Return(nil).Maybe()
+	reader.EXPECT().DefinedIn(mock.Anything).Return(nil).Maybe()
 
 	err := config.ValidateStruct[serverConfig](reader)
 

@@ -82,14 +82,14 @@ failure.
 `Origin` answers for a leaf value. A populated mapping is assembled from however many layers
 contributed to it, so naming a single source for it would be dishonest; `Origin` returns
 false and `Explain` says it is "a subtree assembled from" the sources involved. Ask
-`Shadowed` instead. *Deliberate.*
+`DefinedIn` instead. *Deliberate.*
 
 ### `Explain` renders the value
 
 `Explain("db.password")` puts the value in the string it returns. It is a diagnostic, not a
 redacting formatter, and this module does not know which of your keys are secret. Do not log
 `Explain` output for a key a secrets backend supplies. *A known gap;* use `Origin` and
-`Shadowed` when you need provenance without the value.
+`DefinedIn` when you need provenance without the value.
 
 ### A key containing a literal dot cannot be addressed
 

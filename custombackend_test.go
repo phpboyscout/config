@@ -205,7 +205,7 @@ func TestCustomBackend_ParticipatesAsAnOrdinaryLayer(t *testing.T) {
 	}
 
 	// And shadowing reports the full chain.
-	if got := len(view.Shadowed("server.port")); got != 2 {
+	if got := len(view.DefinedIn("server.port")); got != 2 {
 		t.Errorf("shadowed layers = %d, want 2", got)
 	}
 }

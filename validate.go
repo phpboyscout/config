@@ -149,7 +149,7 @@ func (s *StructSchema) Validate(snap *Snapshot, at string, r *ValidationResult) 
 // judge the whole configuration against it instead.
 //
 // It takes [Reader] rather than *View because it only ever calls Get, Has, Keys
-// and Shadowed, all of which Reader has. That is what lets [ValidateStruct]
+// and DefinedIn, all of which Reader has. That is what lets [ValidateStruct]
 // accept a mock — see its doc comment.
 func validateView(view Reader, schema *StructSchema) *ValidationResult {
 	result := &ValidationResult{}
@@ -328,10 +328,10 @@ func configuredKeys(view Reader) []string {
 	out := make([]string, 0, len(all))
 
 	for _, key := range all {
-		// Shadowed, not Origin. Origin names only the layer that won, so a typo
+		// DefinedIn, not Origin. Origin names only the layer that won, so a typo
 		// genuinely written into a config file stopped being reported the moment
 		// anyone exported a variable that happened to override it.
-		if !slices.ContainsFunc(view.Shadowed(key), Source.Authored) {
+		if !slices.ContainsFunc(view.DefinedIn(key), Source.Authored) {
 			continue
 		}
 

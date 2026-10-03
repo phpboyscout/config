@@ -29,7 +29,7 @@ Any library can hand you a value. Three things are harder:
 
 **"Why is this value 9090?"** Provenance is recorded *during* the merge rather than
 reconstructed afterwards, so the question has an answer. `Explain` renders the whole chain,
-`Origin` names the layer that supplied a value, `Shadowed` lists every layer defining it.
+`Origin` names the layer that supplied a value, `DefinedIn` lists every layer defining it.
 
 ```go
 fmt.Println(view.Explain("server.port"))
@@ -332,7 +332,7 @@ func main() {
 - **Reading** — `Reader` / `View` typed accessors, `Sub` for a scoped read, `Unmarshal`.
 - **Writing** — `Set` / `Remove`, `Plan` as a dry run, `Operation.Effective()` and
   `ShadowedBy` for writes a higher layer still overrides.
-- **Provenance** — `Origin`, `Shadowed`, `Explain`.
+- **Provenance** — `Origin`, `DefinedIn`, `Explain`.
 - **Sections** — `Section[T]` and `ObservedSection[T]` for typed, reload-aware subtrees.
 - **Validation** — `Schema` / `FieldSchema` / `ValidateStruct[T]` / `ValidationResult`,
   applied on reload and on write.

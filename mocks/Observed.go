@@ -17,10 +17,19 @@ func NewMockObserved(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockObserved {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockObserved{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -36,6 +45,59 @@ type MockObserved_Expecter struct {
 
 func (_m *MockObserved) EXPECT() *MockObserved_Expecter {
 	return &MockObserved_Expecter{mock: &_m.Mock}
+}
+
+// DefinedIn provides a mock function for the type MockObserved
+func (_mock *MockObserved) DefinedIn(path string) []config.Source {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DefinedIn")
+	}
+
+	var r0 []config.Source
+	if returnFunc, ok := ret.Get(0).(func(string) []config.Source); ok {
+		r0 = returnFunc(path)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]config.Source)
+		}
+	}
+	return r0
+}
+
+// MockObserved_DefinedIn_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DefinedIn'
+type MockObserved_DefinedIn_Call struct {
+	*mock.Call
+}
+
+// DefinedIn is a helper method to define mock.On call
+//   - path string
+func (_e *MockObserved_Expecter) DefinedIn(path any) *MockObserved_DefinedIn_Call {
+	return &MockObserved_DefinedIn_Call{Call: _e.mock.On("DefinedIn", path)}
+}
+
+func (_c *MockObserved_DefinedIn_Call) Run(run func(path string)) *MockObserved_DefinedIn_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockObserved_DefinedIn_Call) Return(sources []config.Source) *MockObserved_DefinedIn_Call {
+	_c.Call.Return(sources)
+	return _c
+}
+
+func (_c *MockObserved_DefinedIn_Call) RunAndReturn(run func(path string) []config.Source) *MockObserved_DefinedIn_Call {
+	_c.Call.Return(run)
+	return _c
 }
 
 // Explain provides a mock function for the type MockObserved
@@ -62,7 +124,7 @@ type MockObserved_Explain_Call struct {
 
 // Explain is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) Explain(path interface{}) *MockObserved_Explain_Call {
+func (_e *MockObserved_Expecter) Explain(path any) *MockObserved_Explain_Call {
 	return &MockObserved_Explain_Call{Call: _e.mock.On("Explain", path)}
 }
 
@@ -115,7 +177,7 @@ type MockObserved_Get_Call struct {
 
 // Get is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) Get(path interface{}) *MockObserved_Get_Call {
+func (_e *MockObserved_Expecter) Get(path any) *MockObserved_Get_Call {
 	return &MockObserved_Get_Call{Call: _e.mock.On("Get", path)}
 }
 
@@ -132,8 +194,8 @@ func (_c *MockObserved_Get_Call) Run(run func(path string)) *MockObserved_Get_Ca
 	return _c
 }
 
-func (_c *MockObserved_Get_Call) Return(v any) *MockObserved_Get_Call {
-	_c.Call.Return(v)
+func (_c *MockObserved_Get_Call) Return(anyMoqParam any) *MockObserved_Get_Call {
+	_c.Call.Return(anyMoqParam)
 	return _c
 }
 
@@ -166,7 +228,7 @@ type MockObserved_GetBool_Call struct {
 
 // GetBool is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetBool(path interface{}) *MockObserved_GetBool_Call {
+func (_e *MockObserved_Expecter) GetBool(path any) *MockObserved_GetBool_Call {
 	return &MockObserved_GetBool_Call{Call: _e.mock.On("GetBool", path)}
 }
 
@@ -217,7 +279,7 @@ type MockObserved_GetDuration_Call struct {
 
 // GetDuration is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetDuration(path interface{}) *MockObserved_GetDuration_Call {
+func (_e *MockObserved_Expecter) GetDuration(path any) *MockObserved_GetDuration_Call {
 	return &MockObserved_GetDuration_Call{Call: _e.mock.On("GetDuration", path)}
 }
 
@@ -268,7 +330,7 @@ type MockObserved_GetFloat_Call struct {
 
 // GetFloat is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetFloat(path interface{}) *MockObserved_GetFloat_Call {
+func (_e *MockObserved_Expecter) GetFloat(path any) *MockObserved_GetFloat_Call {
 	return &MockObserved_GetFloat_Call{Call: _e.mock.On("GetFloat", path)}
 }
 
@@ -319,7 +381,7 @@ type MockObserved_GetFloat64_Call struct {
 
 // GetFloat64 is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetFloat64(path interface{}) *MockObserved_GetFloat64_Call {
+func (_e *MockObserved_Expecter) GetFloat64(path any) *MockObserved_GetFloat64_Call {
 	return &MockObserved_GetFloat64_Call{Call: _e.mock.On("GetFloat64", path)}
 }
 
@@ -370,7 +432,7 @@ type MockObserved_GetInt_Call struct {
 
 // GetInt is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetInt(path interface{}) *MockObserved_GetInt_Call {
+func (_e *MockObserved_Expecter) GetInt(path any) *MockObserved_GetInt_Call {
 	return &MockObserved_GetInt_Call{Call: _e.mock.On("GetInt", path)}
 }
 
@@ -421,7 +483,7 @@ type MockObserved_GetInt32_Call struct {
 
 // GetInt32 is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetInt32(path interface{}) *MockObserved_GetInt32_Call {
+func (_e *MockObserved_Expecter) GetInt32(path any) *MockObserved_GetInt32_Call {
 	return &MockObserved_GetInt32_Call{Call: _e.mock.On("GetInt32", path)}
 }
 
@@ -472,7 +534,7 @@ type MockObserved_GetInt64_Call struct {
 
 // GetInt64 is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetInt64(path interface{}) *MockObserved_GetInt64_Call {
+func (_e *MockObserved_Expecter) GetInt64(path any) *MockObserved_GetInt64_Call {
 	return &MockObserved_GetInt64_Call{Call: _e.mock.On("GetInt64", path)}
 }
 
@@ -525,7 +587,7 @@ type MockObserved_GetIntSlice_Call struct {
 
 // GetIntSlice is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetIntSlice(path interface{}) *MockObserved_GetIntSlice_Call {
+func (_e *MockObserved_Expecter) GetIntSlice(path any) *MockObserved_GetIntSlice_Call {
 	return &MockObserved_GetIntSlice_Call{Call: _e.mock.On("GetIntSlice", path)}
 }
 
@@ -576,7 +638,7 @@ type MockObserved_GetSizeInBytes_Call struct {
 
 // GetSizeInBytes is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetSizeInBytes(path interface{}) *MockObserved_GetSizeInBytes_Call {
+func (_e *MockObserved_Expecter) GetSizeInBytes(path any) *MockObserved_GetSizeInBytes_Call {
 	return &MockObserved_GetSizeInBytes_Call{Call: _e.mock.On("GetSizeInBytes", path)}
 }
 
@@ -627,7 +689,7 @@ type MockObserved_GetString_Call struct {
 
 // GetString is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetString(path interface{}) *MockObserved_GetString_Call {
+func (_e *MockObserved_Expecter) GetString(path any) *MockObserved_GetString_Call {
 	return &MockObserved_GetString_Call{Call: _e.mock.On("GetString", path)}
 }
 
@@ -680,7 +742,7 @@ type MockObserved_GetStringMap_Call struct {
 
 // GetStringMap is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetStringMap(path interface{}) *MockObserved_GetStringMap_Call {
+func (_e *MockObserved_Expecter) GetStringMap(path any) *MockObserved_GetStringMap_Call {
 	return &MockObserved_GetStringMap_Call{Call: _e.mock.On("GetStringMap", path)}
 }
 
@@ -697,8 +759,8 @@ func (_c *MockObserved_GetStringMap_Call) Run(run func(path string)) *MockObserv
 	return _c
 }
 
-func (_c *MockObserved_GetStringMap_Call) Return(stringToV map[string]any) *MockObserved_GetStringMap_Call {
-	_c.Call.Return(stringToV)
+func (_c *MockObserved_GetStringMap_Call) Return(stringToAnyMoqParam map[string]any) *MockObserved_GetStringMap_Call {
+	_c.Call.Return(stringToAnyMoqParam)
 	return _c
 }
 
@@ -733,7 +795,7 @@ type MockObserved_GetStringMapString_Call struct {
 
 // GetStringMapString is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetStringMapString(path interface{}) *MockObserved_GetStringMapString_Call {
+func (_e *MockObserved_Expecter) GetStringMapString(path any) *MockObserved_GetStringMapString_Call {
 	return &MockObserved_GetStringMapString_Call{Call: _e.mock.On("GetStringMapString", path)}
 }
 
@@ -786,7 +848,7 @@ type MockObserved_GetStringMapStringSlice_Call struct {
 
 // GetStringMapStringSlice is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetStringMapStringSlice(path interface{}) *MockObserved_GetStringMapStringSlice_Call {
+func (_e *MockObserved_Expecter) GetStringMapStringSlice(path any) *MockObserved_GetStringMapStringSlice_Call {
 	return &MockObserved_GetStringMapStringSlice_Call{Call: _e.mock.On("GetStringMapStringSlice", path)}
 }
 
@@ -839,7 +901,7 @@ type MockObserved_GetStringSlice_Call struct {
 
 // GetStringSlice is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetStringSlice(path interface{}) *MockObserved_GetStringSlice_Call {
+func (_e *MockObserved_Expecter) GetStringSlice(path any) *MockObserved_GetStringSlice_Call {
 	return &MockObserved_GetStringSlice_Call{Call: _e.mock.On("GetStringSlice", path)}
 }
 
@@ -890,7 +952,7 @@ type MockObserved_GetTime_Call struct {
 
 // GetTime is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetTime(path interface{}) *MockObserved_GetTime_Call {
+func (_e *MockObserved_Expecter) GetTime(path any) *MockObserved_GetTime_Call {
 	return &MockObserved_GetTime_Call{Call: _e.mock.On("GetTime", path)}
 }
 
@@ -941,7 +1003,7 @@ type MockObserved_GetUint_Call struct {
 
 // GetUint is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetUint(path interface{}) *MockObserved_GetUint_Call {
+func (_e *MockObserved_Expecter) GetUint(path any) *MockObserved_GetUint_Call {
 	return &MockObserved_GetUint_Call{Call: _e.mock.On("GetUint", path)}
 }
 
@@ -992,7 +1054,7 @@ type MockObserved_GetUint16_Call struct {
 
 // GetUint16 is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetUint16(path interface{}) *MockObserved_GetUint16_Call {
+func (_e *MockObserved_Expecter) GetUint16(path any) *MockObserved_GetUint16_Call {
 	return &MockObserved_GetUint16_Call{Call: _e.mock.On("GetUint16", path)}
 }
 
@@ -1043,7 +1105,7 @@ type MockObserved_GetUint32_Call struct {
 
 // GetUint32 is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetUint32(path interface{}) *MockObserved_GetUint32_Call {
+func (_e *MockObserved_Expecter) GetUint32(path any) *MockObserved_GetUint32_Call {
 	return &MockObserved_GetUint32_Call{Call: _e.mock.On("GetUint32", path)}
 }
 
@@ -1094,7 +1156,7 @@ type MockObserved_GetUint64_Call struct {
 
 // GetUint64 is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetUint64(path interface{}) *MockObserved_GetUint64_Call {
+func (_e *MockObserved_Expecter) GetUint64(path any) *MockObserved_GetUint64_Call {
 	return &MockObserved_GetUint64_Call{Call: _e.mock.On("GetUint64", path)}
 }
 
@@ -1145,7 +1207,7 @@ type MockObserved_GetUint8_Call struct {
 
 // GetUint8 is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) GetUint8(path interface{}) *MockObserved_GetUint8_Call {
+func (_e *MockObserved_Expecter) GetUint8(path any) *MockObserved_GetUint8_Call {
 	return &MockObserved_GetUint8_Call{Call: _e.mock.On("GetUint8", path)}
 }
 
@@ -1196,7 +1258,7 @@ type MockObserved_Has_Call struct {
 
 // Has is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) Has(path interface{}) *MockObserved_Has_Call {
+func (_e *MockObserved_Expecter) Has(path any) *MockObserved_Has_Call {
 	return &MockObserved_Has_Call{Call: _e.mock.On("Has", path)}
 }
 
@@ -1247,7 +1309,7 @@ type MockObserved_IsSet_Call struct {
 
 // IsSet is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) IsSet(path interface{}) *MockObserved_IsSet_Call {
+func (_e *MockObserved_Expecter) IsSet(path any) *MockObserved_IsSet_Call {
 	return &MockObserved_IsSet_Call{Call: _e.mock.On("IsSet", path)}
 }
 
@@ -1353,7 +1415,7 @@ type MockObserved_Origin_Call struct {
 
 // Origin is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) Origin(path interface{}) *MockObserved_Origin_Call {
+func (_e *MockObserved_Expecter) Origin(path any) *MockObserved_Origin_Call {
 	return &MockObserved_Origin_Call{Call: _e.mock.On("Origin", path)}
 }
 
@@ -1404,7 +1466,7 @@ type MockObserved_SectionExists_Call struct {
 
 // SectionExists is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) SectionExists(path interface{}) *MockObserved_SectionExists_Call {
+func (_e *MockObserved_Expecter) SectionExists(path any) *MockObserved_SectionExists_Call {
 	return &MockObserved_SectionExists_Call{Call: _e.mock.On("SectionExists", path)}
 }
 
@@ -1457,7 +1519,7 @@ type MockObserved_Shadowed_Call struct {
 
 // Shadowed is a helper method to define mock.On call
 //   - path string
-func (_e *MockObserved_Expecter) Shadowed(path interface{}) *MockObserved_Shadowed_Call {
+func (_e *MockObserved_Expecter) Shadowed(path any) *MockObserved_Shadowed_Call {
 	return &MockObserved_Shadowed_Call{Call: _e.mock.On("Shadowed", path)}
 }
 
@@ -1556,7 +1618,7 @@ type MockObserved_Sub_Call struct {
 
 // Sub is a helper method to define mock.On call
 //   - key string
-func (_e *MockObserved_Expecter) Sub(key interface{}) *MockObserved_Sub_Call {
+func (_e *MockObserved_Expecter) Sub(key any) *MockObserved_Sub_Call {
 	return &MockObserved_Sub_Call{Call: _e.mock.On("Sub", key)}
 }
 
@@ -1607,7 +1669,7 @@ type MockObserved_Unmarshal_Call struct {
 
 // Unmarshal is a helper method to define mock.On call
 //   - target any
-func (_e *MockObserved_Expecter) Unmarshal(target interface{}) *MockObserved_Unmarshal_Call {
+func (_e *MockObserved_Expecter) Unmarshal(target any) *MockObserved_Unmarshal_Call {
 	return &MockObserved_Unmarshal_Call{Call: _e.mock.On("Unmarshal", target)}
 }
 
@@ -1659,7 +1721,7 @@ type MockObserved_UnmarshalKey_Call struct {
 // UnmarshalKey is a helper method to define mock.On call
 //   - path string
 //   - target any
-func (_e *MockObserved_Expecter) UnmarshalKey(path interface{}, target interface{}) *MockObserved_UnmarshalKey_Call {
+func (_e *MockObserved_Expecter) UnmarshalKey(path any, target any) *MockObserved_UnmarshalKey_Call {
 	return &MockObserved_UnmarshalKey_Call{Call: _e.mock.On("UnmarshalKey", path, target)}
 }
 

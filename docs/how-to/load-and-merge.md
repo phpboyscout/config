@@ -227,7 +227,7 @@ asked from two directions, and both need the whole chain rather than just the wi
 view := store.View()
 
 src, ok := view.Origin("server.port") // the layer that supplied the effective value
-all := view.Shadowed("server.port")   // every layer defining it, lowest precedence first
+all := view.DefinedIn("server.port")  // every layer defining it, lowest precedence first
 
 fmt.Println(view.Explain("server.port"))
 ```
@@ -241,7 +241,7 @@ slog.Default().Info("config sources", "sources", store.Sources())
 
 Provenance is defined for leaves — scalars, and containers that are empty. A populated
 subtree is assembled from however many layers contributed to it, so naming one source
-for it would be dishonest: `Origin` reports not-found and `Shadowed` answers what you
+for it would be dishonest: `Origin` reports not-found and `DefinedIn` answers what you
 actually wanted to know.
 
 ## Keep a run of related reads coherent

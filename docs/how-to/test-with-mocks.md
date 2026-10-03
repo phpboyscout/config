@@ -244,7 +244,7 @@ Three questions cover nearly every "why is this value what it is?":
 view := store.View()
 
 fmt.Println(view.Explain("server.port"))    // the whole provenance chain
-fmt.Println(view.Shadowed("server.port"))   // every layer defining it, lowest first
+fmt.Println(view.DefinedIn("server.port"))  // every layer defining it, lowest first
 fmt.Println(store.Sources())                // every backend, in precedence order
 ```
 

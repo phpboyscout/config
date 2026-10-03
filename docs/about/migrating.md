@@ -180,7 +180,7 @@ func ServerSettingsFromConfig(cfg config.Reader, prefix string) ServerSettings {
 This covers the large majority of references. `Get`, `GetString`, `GetBool`, `GetInt`,
 `GetFloat`, `GetDuration`, `GetTime`, `Has`, `IsSet`, `SectionExists`, `Unmarshal` and
 `UnmarshalKey` all keep their names and signatures. `GetStringSlice` and `Keys` are new to
-the interface, and `Origin`, `Shadowed` and `Explain` are new provenance methods.
+the interface, and `Origin`, `DefinedIn` and `Explain` are new provenance methods.
 
 One trap worth stating plainly: **`Sub` now returns `*View`, which satisfies `Reader` but
 not `Binder`.** An adapter chain that takes a scoped container and passes it down must be
@@ -519,7 +519,7 @@ The port buys more than parity.
 key, and the file's comments, key order and block style survive it. Repeated writes
 converge rather than drifting.
 
-**Per-key provenance.** `Origin` names the layer that supplied a value, `Shadowed` lists
+**Per-key provenance.** `Origin` names the layer that supplied a value, `DefinedIn` lists
 every layer that defines it, and `Explain` renders the chain. "Which file do I edit?" and
 "why is my edit not taking effect?" are the same question from two directions, and both are
 now answerable.

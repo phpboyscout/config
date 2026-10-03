@@ -1,6 +1,6 @@
 ---
 title: Provenance
-description: What Origin, Shadowed, Explain and Shadows can and cannot tell you about where a value came from.
+description: What Origin, DefinedIn, Explain and Shadows can and cannot tell you about where a value came from.
 tags: [explanation, provenance]
 ---
 
@@ -16,7 +16,7 @@ the information about who contributed what is gone, and no amount of inspection
 afterwards can recover it. You are left with `grep` across your config files and a guess.
 
 This module records provenance **during** the merge, because that is the only moment it
-exists. `Origin`, `Shadowed`, `Explain` and `Shadows` are how you ask for it back.
+exists. `Origin`, `DefinedIn`, `Explain` and `Shadows` are how you ask for it back.
 
 ## Four questions, four methods
 
@@ -43,7 +43,7 @@ combined answer is strictly more information. A caller who genuinely wants file-
 provenance filters on the kind:
 
 ```go
-for _, src := range view.Shadowed("db.host") {
+for _, src := range view.DefinedIn("db.host") {
     if src.Kind == config.SourceFile {
         // the highest-precedence file defining it is the last such entry
     }
@@ -53,7 +53,7 @@ for _, src := range view.Shadowed("db.host") {
 A dedicated `FileOrigin` accessor was rejected precisely because its difference from
 `Origin` is subtle, and subtle differences are how callers pick the wrong one.
 
-**`Shadowed(path) []Source` — who else defines it?**
+**`DefinedIn(path) []Source` — who else defines it?**
 
 Every layer that defines the path, in precedence order, lowest first — so the last entry
 is the one in effect. This is the list, not the winner.
@@ -96,10 +96,10 @@ token: APP_TOKEN wins over 2 other layer(s)
 
 "What in this file is doing nothing?" is the same question as "why is my edit not taking
 effect?", asked without knowing which key to ask about — and not knowing the key is
-usually the situation you are in. Composing `Keys` with `Shadowed` gives the same answer
+usually the situation you are in. Composing `Keys` with `DefinedIn` gives the same answer
 in about a dozen lines; this exists because every consumer was writing those dozen lines.
 
-The rule of thumb: `Origin` when you are going to branch on the answer, `Shadowed` when
+The rule of thumb: `Origin` when you are going to branch on the answer, `DefinedIn` when
 you need the whole picture for one path, `Explain` when a person is going to read it, and
 `Shadows` when you do not yet know which paths are interesting.
 
@@ -114,15 +114,15 @@ no single source for `db`, so naming one would be a lie — and the most likely 
 last layer to touch the subtree, which is the one a user is least likely to want.
 
 Rather than invent an answer, the merge deletes provenance for any path that turns out to
-have entries beneath it, and `Origin` reports not-found. `Shadowed("db")` still works and
+have entries beneath it, and `Origin` reports not-found. `DefinedIn("db")` still works and
 returns every layer contributing to that subtree, which is what the question was actually
 reaching for.
 
-`Shadows()` follows `Origin` rather than `Shadowed` here: a populated subtree never
+`Shadows()` follows `Origin` rather than `DefinedIn` here: a populated subtree never
 appears in the report, because every entry has to name the layer in effect and for `db`
 there isn't one to name honestly. It also omits paths only one layer defines — those are
 not shadowed, and including them would mean filtering the report before you could use it.
-Those are the only two ways it differs from asking `Shadowed` per key. `Explain` follows the same rule and says so out loud:
+Those are the only two ways it differs from asking `DefinedIn` per key. `Explain` follows the same rule and says so out loud:
 
 ```
 db is a subtree assembled from /etc/app/base.yaml, /etc/app/prod.yaml
@@ -199,7 +199,7 @@ Worth stating plainly, so you do not go looking for it:
   sequence of independent documents and says nothing about overlay.
 - **No history.** Provenance describes one snapshot. It does not record what a value used
   to be or which write changed it.
-- **Values are not provenance.** `Shadowed` names the layers that define a path; it does
+- **Values are not provenance.** `DefinedIn` names the layers that define a path; it does
   not tell you what each of them says. If you need the losing values, you have the layer
   identities and can read the files.
 

@@ -50,11 +50,16 @@ type Reader interface {
 	Unmarshal(target any) error
 	UnmarshalKey(path string, target any) error
 
-	// Origin reports which layer supplied a value, and Shadowed lists every
+	// Origin reports which layer supplied a value, and DefinedIn lists every
 	// layer defining it. Both are what a merge-eager library cannot answer.
 	Origin(path string) (Source, bool)
-	Shadowed(path string) []Source
+	DefinedIn(path string) []Source
 	Explain(path string) string
+
+	// Shadowed returns what DefinedIn returns.
+	//
+	// Deprecated: use DefinedIn (spec 0014).
+	Shadowed(path string) []Source
 }
 
 // Observed is what an observer is handed when configuration changes.

@@ -53,7 +53,7 @@
 //
 // # Provenance
 //
-// [View.Origin] reports which source supplied a value, [View.Shadowed] lists
+// [View.Origin] reports which source supplied a value, [View.DefinedIn] lists
 // every layer defining it, and [View.Explain] renders the whole chain for a
 // diagnostic. These answer "why is this value what it is", which a merge-eager
 // library cannot, because merging discards the information before anyone can

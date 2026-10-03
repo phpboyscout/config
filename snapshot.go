@@ -117,7 +117,7 @@ func (s *Snapshot) Has(path string) bool {
 // Provenance is defined for leaves — scalars, and containers that are empty.
 // A populated subtree is assembled from however many layers contributed to it,
 // so naming one source for it would be dishonest; Origin reports not-found and
-// [Snapshot.Shadowed] answers what the caller actually wants to know.
+// [Snapshot.DefinedIn] answers what the caller actually wants to know.
 func (s *Snapshot) Origin(path string) (Source, bool) {
 	if s == nil {
 		return Source{}, false
@@ -128,13 +128,13 @@ func (s *Snapshot) Origin(path string) (Source, bool) {
 	return src, ok
 }
 
-// Shadowed returns every layer that defines a path, in precedence order —
+// DefinedIn returns every layer that defines a path, in precedence order —
 // lowest first, so the last entry is the one in effect.
 //
 // "Which file do I edit?" and "why is my edit not taking effect?" are the same
 // question asked from two directions, and both need the full list rather than
 // just the winner.
-func (s *Snapshot) Shadowed(path string) []Source {
+func (s *Snapshot) DefinedIn(path string) []Source {
 	if s == nil {
 		return nil
 	}
@@ -154,6 +154,12 @@ func (s *Snapshot) Shadowed(path string) []Source {
 
 	return found
 }
+
+// Shadowed returns what [Snapshot.DefinedIn] returns.
+//
+// Deprecated: use DefinedIn. The list includes the winning layer, which the name
+// did not say (spec 0014).
+func (s *Snapshot) Shadowed(path string) []Source { return s.DefinedIn(path) }
 
 // Layers returns the contributing layers in precedence order, lowest first.
 // The slice is a copy; the layers' values are not exposed for mutation.

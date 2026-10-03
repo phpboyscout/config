@@ -17,10 +17,19 @@ func NewMockReader(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockReader {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockReader{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -36,6 +45,59 @@ type MockReader_Expecter struct {
 
 func (_m *MockReader) EXPECT() *MockReader_Expecter {
 	return &MockReader_Expecter{mock: &_m.Mock}
+}
+
+// DefinedIn provides a mock function for the type MockReader
+func (_mock *MockReader) DefinedIn(path string) []config.Source {
+	ret := _mock.Called(path)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DefinedIn")
+	}
+
+	var r0 []config.Source
+	if returnFunc, ok := ret.Get(0).(func(string) []config.Source); ok {
+		r0 = returnFunc(path)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]config.Source)
+		}
+	}
+	return r0
+}
+
+// MockReader_DefinedIn_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DefinedIn'
+type MockReader_DefinedIn_Call struct {
+	*mock.Call
+}
+
+// DefinedIn is a helper method to define mock.On call
+//   - path string
+func (_e *MockReader_Expecter) DefinedIn(path any) *MockReader_DefinedIn_Call {
+	return &MockReader_DefinedIn_Call{Call: _e.mock.On("DefinedIn", path)}
+}
+
+func (_c *MockReader_DefinedIn_Call) Run(run func(path string)) *MockReader_DefinedIn_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockReader_DefinedIn_Call) Return(sources []config.Source) *MockReader_DefinedIn_Call {
+	_c.Call.Return(sources)
+	return _c
+}
+
+func (_c *MockReader_DefinedIn_Call) RunAndReturn(run func(path string) []config.Source) *MockReader_DefinedIn_Call {
+	_c.Call.Return(run)
+	return _c
 }
 
 // Explain provides a mock function for the type MockReader
@@ -62,7 +124,7 @@ type MockReader_Explain_Call struct {
 
 // Explain is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) Explain(path interface{}) *MockReader_Explain_Call {
+func (_e *MockReader_Expecter) Explain(path any) *MockReader_Explain_Call {
 	return &MockReader_Explain_Call{Call: _e.mock.On("Explain", path)}
 }
 
@@ -115,7 +177,7 @@ type MockReader_Get_Call struct {
 
 // Get is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) Get(path interface{}) *MockReader_Get_Call {
+func (_e *MockReader_Expecter) Get(path any) *MockReader_Get_Call {
 	return &MockReader_Get_Call{Call: _e.mock.On("Get", path)}
 }
 
@@ -132,8 +194,8 @@ func (_c *MockReader_Get_Call) Run(run func(path string)) *MockReader_Get_Call {
 	return _c
 }
 
-func (_c *MockReader_Get_Call) Return(v any) *MockReader_Get_Call {
-	_c.Call.Return(v)
+func (_c *MockReader_Get_Call) Return(anyMoqParam any) *MockReader_Get_Call {
+	_c.Call.Return(anyMoqParam)
 	return _c
 }
 
@@ -166,7 +228,7 @@ type MockReader_GetBool_Call struct {
 
 // GetBool is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetBool(path interface{}) *MockReader_GetBool_Call {
+func (_e *MockReader_Expecter) GetBool(path any) *MockReader_GetBool_Call {
 	return &MockReader_GetBool_Call{Call: _e.mock.On("GetBool", path)}
 }
 
@@ -217,7 +279,7 @@ type MockReader_GetDuration_Call struct {
 
 // GetDuration is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetDuration(path interface{}) *MockReader_GetDuration_Call {
+func (_e *MockReader_Expecter) GetDuration(path any) *MockReader_GetDuration_Call {
 	return &MockReader_GetDuration_Call{Call: _e.mock.On("GetDuration", path)}
 }
 
@@ -268,7 +330,7 @@ type MockReader_GetFloat_Call struct {
 
 // GetFloat is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetFloat(path interface{}) *MockReader_GetFloat_Call {
+func (_e *MockReader_Expecter) GetFloat(path any) *MockReader_GetFloat_Call {
 	return &MockReader_GetFloat_Call{Call: _e.mock.On("GetFloat", path)}
 }
 
@@ -319,7 +381,7 @@ type MockReader_GetFloat64_Call struct {
 
 // GetFloat64 is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetFloat64(path interface{}) *MockReader_GetFloat64_Call {
+func (_e *MockReader_Expecter) GetFloat64(path any) *MockReader_GetFloat64_Call {
 	return &MockReader_GetFloat64_Call{Call: _e.mock.On("GetFloat64", path)}
 }
 
@@ -370,7 +432,7 @@ type MockReader_GetInt_Call struct {
 
 // GetInt is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetInt(path interface{}) *MockReader_GetInt_Call {
+func (_e *MockReader_Expecter) GetInt(path any) *MockReader_GetInt_Call {
 	return &MockReader_GetInt_Call{Call: _e.mock.On("GetInt", path)}
 }
 
@@ -421,7 +483,7 @@ type MockReader_GetInt32_Call struct {
 
 // GetInt32 is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetInt32(path interface{}) *MockReader_GetInt32_Call {
+func (_e *MockReader_Expecter) GetInt32(path any) *MockReader_GetInt32_Call {
 	return &MockReader_GetInt32_Call{Call: _e.mock.On("GetInt32", path)}
 }
 
@@ -472,7 +534,7 @@ type MockReader_GetInt64_Call struct {
 
 // GetInt64 is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetInt64(path interface{}) *MockReader_GetInt64_Call {
+func (_e *MockReader_Expecter) GetInt64(path any) *MockReader_GetInt64_Call {
 	return &MockReader_GetInt64_Call{Call: _e.mock.On("GetInt64", path)}
 }
 
@@ -525,7 +587,7 @@ type MockReader_GetIntSlice_Call struct {
 
 // GetIntSlice is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetIntSlice(path interface{}) *MockReader_GetIntSlice_Call {
+func (_e *MockReader_Expecter) GetIntSlice(path any) *MockReader_GetIntSlice_Call {
 	return &MockReader_GetIntSlice_Call{Call: _e.mock.On("GetIntSlice", path)}
 }
 
@@ -576,7 +638,7 @@ type MockReader_GetSizeInBytes_Call struct {
 
 // GetSizeInBytes is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetSizeInBytes(path interface{}) *MockReader_GetSizeInBytes_Call {
+func (_e *MockReader_Expecter) GetSizeInBytes(path any) *MockReader_GetSizeInBytes_Call {
 	return &MockReader_GetSizeInBytes_Call{Call: _e.mock.On("GetSizeInBytes", path)}
 }
 
@@ -627,7 +689,7 @@ type MockReader_GetString_Call struct {
 
 // GetString is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetString(path interface{}) *MockReader_GetString_Call {
+func (_e *MockReader_Expecter) GetString(path any) *MockReader_GetString_Call {
 	return &MockReader_GetString_Call{Call: _e.mock.On("GetString", path)}
 }
 
@@ -680,7 +742,7 @@ type MockReader_GetStringMap_Call struct {
 
 // GetStringMap is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetStringMap(path interface{}) *MockReader_GetStringMap_Call {
+func (_e *MockReader_Expecter) GetStringMap(path any) *MockReader_GetStringMap_Call {
 	return &MockReader_GetStringMap_Call{Call: _e.mock.On("GetStringMap", path)}
 }
 
@@ -697,8 +759,8 @@ func (_c *MockReader_GetStringMap_Call) Run(run func(path string)) *MockReader_G
 	return _c
 }
 
-func (_c *MockReader_GetStringMap_Call) Return(stringToV map[string]any) *MockReader_GetStringMap_Call {
-	_c.Call.Return(stringToV)
+func (_c *MockReader_GetStringMap_Call) Return(stringToAnyMoqParam map[string]any) *MockReader_GetStringMap_Call {
+	_c.Call.Return(stringToAnyMoqParam)
 	return _c
 }
 
@@ -733,7 +795,7 @@ type MockReader_GetStringMapString_Call struct {
 
 // GetStringMapString is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetStringMapString(path interface{}) *MockReader_GetStringMapString_Call {
+func (_e *MockReader_Expecter) GetStringMapString(path any) *MockReader_GetStringMapString_Call {
 	return &MockReader_GetStringMapString_Call{Call: _e.mock.On("GetStringMapString", path)}
 }
 
@@ -786,7 +848,7 @@ type MockReader_GetStringMapStringSlice_Call struct {
 
 // GetStringMapStringSlice is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetStringMapStringSlice(path interface{}) *MockReader_GetStringMapStringSlice_Call {
+func (_e *MockReader_Expecter) GetStringMapStringSlice(path any) *MockReader_GetStringMapStringSlice_Call {
 	return &MockReader_GetStringMapStringSlice_Call{Call: _e.mock.On("GetStringMapStringSlice", path)}
 }
 
@@ -839,7 +901,7 @@ type MockReader_GetStringSlice_Call struct {
 
 // GetStringSlice is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetStringSlice(path interface{}) *MockReader_GetStringSlice_Call {
+func (_e *MockReader_Expecter) GetStringSlice(path any) *MockReader_GetStringSlice_Call {
 	return &MockReader_GetStringSlice_Call{Call: _e.mock.On("GetStringSlice", path)}
 }
 
@@ -890,7 +952,7 @@ type MockReader_GetTime_Call struct {
 
 // GetTime is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetTime(path interface{}) *MockReader_GetTime_Call {
+func (_e *MockReader_Expecter) GetTime(path any) *MockReader_GetTime_Call {
 	return &MockReader_GetTime_Call{Call: _e.mock.On("GetTime", path)}
 }
 
@@ -941,7 +1003,7 @@ type MockReader_GetUint_Call struct {
 
 // GetUint is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetUint(path interface{}) *MockReader_GetUint_Call {
+func (_e *MockReader_Expecter) GetUint(path any) *MockReader_GetUint_Call {
 	return &MockReader_GetUint_Call{Call: _e.mock.On("GetUint", path)}
 }
 
@@ -992,7 +1054,7 @@ type MockReader_GetUint16_Call struct {
 
 // GetUint16 is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetUint16(path interface{}) *MockReader_GetUint16_Call {
+func (_e *MockReader_Expecter) GetUint16(path any) *MockReader_GetUint16_Call {
 	return &MockReader_GetUint16_Call{Call: _e.mock.On("GetUint16", path)}
 }
 
@@ -1043,7 +1105,7 @@ type MockReader_GetUint32_Call struct {
 
 // GetUint32 is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetUint32(path interface{}) *MockReader_GetUint32_Call {
+func (_e *MockReader_Expecter) GetUint32(path any) *MockReader_GetUint32_Call {
 	return &MockReader_GetUint32_Call{Call: _e.mock.On("GetUint32", path)}
 }
 
@@ -1094,7 +1156,7 @@ type MockReader_GetUint64_Call struct {
 
 // GetUint64 is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetUint64(path interface{}) *MockReader_GetUint64_Call {
+func (_e *MockReader_Expecter) GetUint64(path any) *MockReader_GetUint64_Call {
 	return &MockReader_GetUint64_Call{Call: _e.mock.On("GetUint64", path)}
 }
 
@@ -1145,7 +1207,7 @@ type MockReader_GetUint8_Call struct {
 
 // GetUint8 is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) GetUint8(path interface{}) *MockReader_GetUint8_Call {
+func (_e *MockReader_Expecter) GetUint8(path any) *MockReader_GetUint8_Call {
 	return &MockReader_GetUint8_Call{Call: _e.mock.On("GetUint8", path)}
 }
 
@@ -1196,7 +1258,7 @@ type MockReader_Has_Call struct {
 
 // Has is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) Has(path interface{}) *MockReader_Has_Call {
+func (_e *MockReader_Expecter) Has(path any) *MockReader_Has_Call {
 	return &MockReader_Has_Call{Call: _e.mock.On("Has", path)}
 }
 
@@ -1247,7 +1309,7 @@ type MockReader_IsSet_Call struct {
 
 // IsSet is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) IsSet(path interface{}) *MockReader_IsSet_Call {
+func (_e *MockReader_Expecter) IsSet(path any) *MockReader_IsSet_Call {
 	return &MockReader_IsSet_Call{Call: _e.mock.On("IsSet", path)}
 }
 
@@ -1353,7 +1415,7 @@ type MockReader_Origin_Call struct {
 
 // Origin is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) Origin(path interface{}) *MockReader_Origin_Call {
+func (_e *MockReader_Expecter) Origin(path any) *MockReader_Origin_Call {
 	return &MockReader_Origin_Call{Call: _e.mock.On("Origin", path)}
 }
 
@@ -1404,7 +1466,7 @@ type MockReader_SectionExists_Call struct {
 
 // SectionExists is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) SectionExists(path interface{}) *MockReader_SectionExists_Call {
+func (_e *MockReader_Expecter) SectionExists(path any) *MockReader_SectionExists_Call {
 	return &MockReader_SectionExists_Call{Call: _e.mock.On("SectionExists", path)}
 }
 
@@ -1457,7 +1519,7 @@ type MockReader_Shadowed_Call struct {
 
 // Shadowed is a helper method to define mock.On call
 //   - path string
-func (_e *MockReader_Expecter) Shadowed(path interface{}) *MockReader_Shadowed_Call {
+func (_e *MockReader_Expecter) Shadowed(path any) *MockReader_Shadowed_Call {
 	return &MockReader_Shadowed_Call{Call: _e.mock.On("Shadowed", path)}
 }
 
@@ -1508,7 +1570,7 @@ type MockReader_Unmarshal_Call struct {
 
 // Unmarshal is a helper method to define mock.On call
 //   - target any
-func (_e *MockReader_Expecter) Unmarshal(target interface{}) *MockReader_Unmarshal_Call {
+func (_e *MockReader_Expecter) Unmarshal(target any) *MockReader_Unmarshal_Call {
 	return &MockReader_Unmarshal_Call{Call: _e.mock.On("Unmarshal", target)}
 }
 
@@ -1560,7 +1622,7 @@ type MockReader_UnmarshalKey_Call struct {
 // UnmarshalKey is a helper method to define mock.On call
 //   - path string
 //   - target any
-func (_e *MockReader_Expecter) UnmarshalKey(path interface{}, target interface{}) *MockReader_UnmarshalKey_Call {
+func (_e *MockReader_Expecter) UnmarshalKey(path any, target any) *MockReader_UnmarshalKey_Call {
 	return &MockReader_UnmarshalKey_Call{Call: _e.mock.On("UnmarshalKey", path, target)}
 }
 

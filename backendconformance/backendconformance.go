@@ -361,8 +361,8 @@ func (s Suite) participatesAsLayer(t *testing.T) {
 	// The shared key is defined by both layers, so shadowing reports both.
 	const wantShadow = 2 // the base and the backend both define the shared key
 
-	if got := len(view.Shadowed(shared)); got != wantShadow {
-		t.Errorf("Shadowed(%q) = %d layers, want %d (base and backend)", shared, got, wantShadow)
+	if got := len(view.DefinedIn(shared)); got != wantShadow {
+		t.Errorf("DefinedIn(%q) = %d layers, want %d (base and backend)", shared, got, wantShadow)
 	}
 }
 

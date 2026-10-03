@@ -55,7 +55,7 @@ func SchemaOf[T any](opts ...SchemaOption) (*StructSchema, error) {
 //	}
 //
 // The parameter is [Reader] rather than *View so that code under test can pass
-// a mock. Validation only reads — Get, Has, Keys and Shadowed — so requiring
+// a mock. Validation only reads — Get, Has, Keys and DefinedIn — so requiring
 // the concrete type bought nothing and made every caller's own validation
 // untestable without a real Store.
 //

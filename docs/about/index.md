@@ -25,7 +25,7 @@ fmt.Println(view.Explain("server.port"))
 // server.port = 9090 (from /home/me/.mytool/config.yaml); also defined in embedded:defaults.yaml
 ```
 
-`Origin` names the layer that supplied a value, `Shadowed` lists every layer defining it,
+`Origin` names the layer that supplied a value, `DefinedIn` lists every layer defining it,
 and `Keys` enumerates the lot. "Which file do I edit?" and "why is my edit not taking
 effect?" are the same question from two directions, and both are answerable.
 → [Provenance](../explanation/provenance.md)

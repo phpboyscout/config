@@ -141,7 +141,7 @@ And it is now indistinguishable from a built-in layer:
 view.GetInt("server.port")           // 9090, from the remote
 view.GetString("server.host")        // still "localhost" — merging is per-key
 view.Origin("server.port").String()  // "remote:app/"
-view.Shadowed("server.port")         // every layer defining it, lowest first
+view.DefinedIn("server.port")        // every layer defining it, lowest first
 ```
 
 ### Getting `Layer` right

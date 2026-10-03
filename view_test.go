@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -53,6 +54,23 @@ numstr: "9090"
 
 	if got := v.GetStringSlice("list"); len(got) != 2 || got[0] != "a" {
 		t.Errorf("GetStringSlice = %v, want [a b]", got)
+	}
+}
+
+// A scoped view answers DefinedIn for its own subtree, exactly as the root
+// view does for the qualified path.
+func TestView_DefinedInIsScoped(t *testing.T) {
+	t.Parallel()
+
+	v := viewOn(t, "server:\n  host: localhost\n")
+
+	scoped := v.Sub("server").DefinedIn("host")
+	if len(scoped) != 1 {
+		t.Fatalf("scoped DefinedIn(host) = %v, want one layer", scoped)
+	}
+
+	if root := v.DefinedIn("server.host"); !slices.Equal(scoped, root) {
+		t.Errorf("scoped DefinedIn(host) = %v, root DefinedIn(server.host) = %v", scoped, root)
 	}
 }
 

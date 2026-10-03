@@ -70,7 +70,7 @@ func TestShadows_ReportsEveryLayerBeneathTheWinner(t *testing.T) {
 		names = append(names, s.Name)
 	}
 
-	// Lowest precedence first, matching Shadowed's own ordering.
+	// Lowest precedence first, matching DefinedIn's own ordering.
 	if want := "defaults,project"; strings.Join(names, ",") != want {
 		t.Errorf("Shadowed = %v, want %s — all of them, lowest first", names, want)
 	}
@@ -96,14 +96,14 @@ func TestShadows_OmitsPathsOnlyOneLayerDefines(t *testing.T) {
 func TestShadows_IsLeavesOnly(t *testing.T) {
 	t.Parallel()
 
-	// D1, and the disagreement this spec exists to settle: Shadowed("server")
+	// D1, and the disagreement this spec exists to settle: DefinedIn("server")
 	// answers for a populated subtree, but Origin refuses it and Keys omits it.
 	// The report follows Origin and Keys, because those are what a caller
 	// reaches for next.
 	snap := threeLayers(t).View().Snapshot()
 
-	if n := len(snap.Shadowed("server")); n < 2 {
-		t.Fatalf("precondition: Shadowed(server) = %d layers, want the subtree "+
+	if n := len(snap.DefinedIn("server")); n < 2 {
+		t.Fatalf("precondition: DefinedIn(server) = %d layers, want the subtree "+
 			"to be defined by more than one", n)
 	}
 
@@ -181,8 +181,8 @@ func TestShadows_AgreesWithOriginAndShadowed(t *testing.T) {
 			t.Errorf("%s: InEffect = %v, Origin = %v", sh.Path, sh.InEffect, origin)
 		}
 
-		if all := snap.Shadowed(sh.Path); len(all) != len(sh.Shadowed)+1 {
-			t.Errorf("%s: Shadowed(path) has %d layers, report accounts for %d",
+		if all := snap.DefinedIn(sh.Path); len(all) != len(sh.Shadowed)+1 {
+			t.Errorf("%s: DefinedIn(path) has %d layers, report accounts for %d",
 				sh.Path, len(all), len(sh.Shadowed)+1)
 		}
 	}

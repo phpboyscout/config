@@ -28,7 +28,7 @@ publishes. Read this first, because the rest of the section is consequences of i
 | Page | Explains |
 |---|---|
 | [Precedence & merge model](precedence-and-merge.md) | How a value is resolved when several sources define it, why merging is per key rather than per file, and what happens to lists and maps. |
-| [Provenance](provenance.md) | What `Origin`, `Shadowed` and `Explain` can tell you about where a value came from — and, as importantly, what they cannot. |
+| [Provenance](provenance.md) | What `Origin`, `DefinedIn` and `Explain` can tell you about where a value came from — and, as importantly, what they cannot. |
 | [What survives a write](write-fidelity.md) | Why your comments, key order, quoting and anchors are still there afterwards: the file is edited, not regenerated. |
 | [Hot-reload safety](hot-reload-safety.md) | Why reloading under a running process is safe — snapshots, fail-closed parsing, and reads that stay coherent across a change. |
 | [Backends and capabilities](backends.md) | What a backend is, and why being readable does not make a source writable or watchable. |

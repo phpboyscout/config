@@ -234,7 +234,7 @@ same facts as data:
 	if src, ok := store.View().Origin("server.port"); ok {
 		fmt.Printf("winner: %s (writable: %v)\n", src, src.Writable)
 	}
-	defined := store.View().Shadowed("server.port")
+	defined := store.View().DefinedIn("server.port")
 	if n := len(defined); n > 1 {
 		for _, s := range defined[:n-1] {
 			fmt.Printf("lost: %s\n", s)
@@ -242,7 +242,7 @@ same facts as data:
 	}
 ```
 
-`Origin` names the layer whose value you actually get. `Shadowed` lists **every** layer
+`Origin` names the layer whose value you actually get. `DefinedIn` lists **every** layer
 that defines the key, lowest precedence first, so its last entry is that same winner and
 everything before it lost. Slicing off the last entry is how you get the losers, and it is
 exactly how `Explain` builds its "also defined in" list. A key defined in one place returns

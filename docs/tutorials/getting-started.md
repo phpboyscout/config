@@ -145,7 +145,7 @@ CFGDEMO_SERVER_PORT=3000 go run .
 ```
 
 `Explain` renders the whole chain. For programmatic use, `view.Origin(path)` returns the
-single layer that supplied the effective value, and `view.Shadowed(path)` returns every
+single layer that supplied the effective value, and `view.DefinedIn(path)` returns every
 layer that defines it, lowest precedence first. "Which file do I edit?" and "why is my
 edit not taking effect?" are the same question asked from two directions, and both need
 the full list rather than just the winner.

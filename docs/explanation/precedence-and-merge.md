@@ -226,7 +226,7 @@ level.
   to another, and no computed values. Every leaf comes verbatim from exactly one layer,
   which is what makes `Origin` able to answer honestly.
 - **It does not give a populated subtree a single origin.** A subtree is assembled from
-  however many layers contributed to it; `Origin` reports not-found and `Shadowed` gives
+  however many layers contributed to it; `Origin` reports not-found and `DefinedIn` gives
   the full list. See [Provenance](provenance.md).
 
 ## Related

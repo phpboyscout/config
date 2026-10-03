@@ -1,6 +1,7 @@
 package config
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -129,14 +130,14 @@ func TestSnapshot_Origin(t *testing.T) {
 
 // "Which file do I edit?" and "why is my edit not taking effect?" are the same
 // question from two directions, and both need the full list.
-func TestSnapshot_Shadowed(t *testing.T) {
+func TestSnapshot_DefinedIn(t *testing.T) {
 	t.Parallel()
 
 	s := testSnapshot()
 
-	got := s.Shadowed("server.host")
+	got := s.DefinedIn("server.host")
 	if len(got) != 2 {
-		t.Fatalf("Shadowed(server.host) = %v, want 2 layers", got)
+		t.Fatalf("DefinedIn(server.host) = %v, want 2 layers", got)
 	}
 
 	if got[0].String() != "base.yaml" {
@@ -147,12 +148,27 @@ func TestSnapshot_Shadowed(t *testing.T) {
 		t.Errorf("winning layer = %q, want env:APP_SERVER_HOST", got[len(got)-1])
 	}
 
-	if single := s.Shadowed("log.level"); len(single) != 1 {
-		t.Errorf("Shadowed(log.level) = %v, want exactly one layer", single)
+	if single := s.DefinedIn("log.level"); len(single) != 1 {
+		t.Errorf("DefinedIn(log.level) = %v, want exactly one layer", single)
 	}
 
-	if none := s.Shadowed("missing"); len(none) != 0 {
-		t.Errorf("Shadowed(missing) = %v, want none", none)
+	if none := s.DefinedIn("missing"); len(none) != 0 {
+		t.Errorf("DefinedIn(missing) = %v, want none", none)
+	}
+}
+
+// Shadowed is the deprecated name for DefinedIn until 1.0 (spec 0014 D2), so it
+// must keep answering identically or callers that have not moved yet change
+// behaviour under them.
+func TestSnapshot_ShadowedIsDefinedIn(t *testing.T) {
+	t.Parallel()
+
+	s := testSnapshot()
+
+	for _, path := range []string{"server.host", "server", "log.level", "missing"} {
+		if got, want := s.Shadowed(path), s.DefinedIn(path); !slices.Equal(got, want) {
+			t.Errorf("Shadowed(%q) = %v, DefinedIn = %v", path, got, want)
+		}
 	}
 }
 
@@ -228,7 +244,7 @@ func TestSnapshot_VersionAndNilSafety(t *testing.T) {
 		t.Error("nil snapshot Origin() should report not found")
 	}
 
-	if len(nilSnap.Shadowed("a")) != 0 || len(nilSnap.Layers()) != 0 || len(nilSnap.Keys()) != 0 {
+	if len(nilSnap.DefinedIn("a")) != 0 || len(nilSnap.Layers()) != 0 || len(nilSnap.Keys()) != 0 {
 		t.Error("nil snapshot accessors should return empty results")
 	}
 
@@ -268,9 +284,9 @@ func TestSnapshot_OriginIsLeafOnly(t *testing.T) {
 		t.Errorf("Origin(server) = %q, want not-found for a composite subtree", src)
 	}
 
-	// Shadowed is the honest answer for a composite.
-	if got := s.Shadowed("server"); len(got) != 3 {
-		t.Errorf("Shadowed(server) = %v, want all three contributing layers", got)
+	// DefinedIn is the honest answer for a composite.
+	if got := s.DefinedIn("server"); len(got) != 3 {
+		t.Errorf("DefinedIn(server) = %v, want all three contributing layers", got)
 	}
 
 	// An empty container is a leaf: it holds a value, just not entries.

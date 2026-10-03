@@ -38,19 +38,19 @@ type Shadow struct {
 // without the caller first knowing which keys to ask about — which is the point,
 // because not knowing the keys is usually the situation. "Why is my edit not
 // taking effect" and "what in this file is doing nothing" are the same question,
-// and [Snapshot.Shadowed] already frames it that way; this simply stops asking
+// and [Snapshot.DefinedIn] already frames it that way; this simply stops asking
 // one path at a time.
 //
-// # Two deliberate differences from Shadowed
+// # Two deliberate differences from DefinedIn
 //
-// The generalisation is not total, and a reader who knows [Snapshot.Shadowed]
+// The generalisation is not total, and a reader who knows [Snapshot.DefinedIn]
 // will reasonably expect it to be:
 //
-//   - **Leaves only.** Shadowed answers for a populated subtree; this does not
+//   - **Leaves only.** DefinedIn answers for a populated subtree; this does not
 //     report one. Naming the layer in effect for a tree assembled from several
 //     would be dishonest, which is exactly why [Snapshot.Origin] refuses it.
 //     The report covers what [Snapshot.Keys] returns.
-//   - **Only what is actually shadowed.** Shadowed returns a single entry for a
+//   - **Only what is actually shadowed.** DefinedIn returns a single entry for a
 //     path one layer defines; this omits it. Reporting every path with a
 //     one-element list would make the common case — a large configuration with
 //     a handful of duplicates — need filtering before it could be used.
@@ -73,12 +73,12 @@ func (s *Snapshot) Shadows() []Shadow {
 	// Keys is sorted and leaves-only, so it supplies both D1 and D5 directly
 	// rather than either being re-derived here.
 	for _, path := range s.Keys() {
-		layers := s.Shadowed(path)
+		layers := s.DefinedIn(path)
 		if len(layers) < shadowedNeeds {
 			continue
 		}
 
-		// The last entry is the one in effect, which is Shadowed's documented
+		// The last entry is the one in effect, which is DefinedIn's documented
 		// ordering. Copying rather than reslicing keeps a caller from reaching
 		// the winner through the shadowed list by extending it.
 		shadowed := make([]Source, len(layers)-1)

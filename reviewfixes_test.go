@@ -280,9 +280,9 @@ func TestApply_RoutesAMixedCaseKeyToTheFileThatOwnsIt(t *testing.T) {
 		t.Errorf("the key was duplicated into another file:\n%s", got)
 	}
 
-	// And the layer still reports as defining it, which is what Shadowed needs.
-	if defs := s.View().Shadowed("logLevel"); len(defs) != 1 {
-		t.Errorf("Shadowed = %v, want the one file defining it", defs)
+	// And the layer still reports as defining it, which is what DefinedIn needs.
+	if defs := s.View().DefinedIn("logLevel"); len(defs) != 1 {
+		t.Errorf("DefinedIn = %v, want the one file defining it", defs)
 	}
 }
 
@@ -741,7 +741,7 @@ func TestAddLayer_AFailingLayerWithdrawsOnlyItself(t *testing.T) {
 
 	// And the failed layer must not be left behind, whatever the interleaving:
 	// a backend that cannot load would break every later reload.
-	if got := s.View().Shadowed("a"); len(got) != 1 {
+	if got := s.View().DefinedIn("a"); len(got) != 1 {
 		t.Errorf("layers defining a = %v, want only the file — the bad layer was not withdrawn", got)
 	}
 }
