@@ -10,7 +10,7 @@ hide:
   <div class="cfg-hero__body">
     <p class="cfg-hero__eyebrow">phpboyscout · go toolkit</p>
     <h1 class="cfg-hero__title">Configuration that <span class="amber">shows its work</span></h1>
-    <p class="cfg-hero__lede">Assemble settings from defaults, files, the environment, flags and remote systems like Consul — with a precedence you read off the call site, every value able to say where it came from, and writes that never wreck the file.</p>
+    <p class="cfg-hero__lede">Assemble settings from defaults, files, the environment, flags and remote systems like Consul, with a precedence you read off the call site, every value able to say where it came from, and writes that never wreck the file.</p>
     <div class="cfg-hero__cta">
       <a class="cfg-btn cfg-btn--primary" href="tutorials/getting-started/">Get started</a>
       <a class="cfg-btn cfg-btn--ghost" href="explanation/adapters/">Explore the ecosystem</a>
@@ -18,7 +18,7 @@ hide:
     <code class="cfg-hero__install">go get gitlab.com/phpboyscout/go/config</code>
   </div>
   <div class="cfg-hero__art">
-    <div class="cfg-hero__tile"><img src="images/branding/logo_transparent.svg" alt="config — layered plates resolving into one container"></div>
+    <div class="cfg-hero__tile"><img src="images/branding/logo_transparent.svg" alt="config: layered plates resolving into one container"></div>
   </div>
 </div>
 
@@ -90,12 +90,12 @@ A user changes one setting. Here is what that does to their file:
       beta_ui: false
     ```
 
-Comments gone, order alphabetised, a default pinned into the file — and a production
+Comments gone, order alphabetised, a default pinned into the file, and a production
 password that arrived from an environment variable, now committed to git.
 
 That is not a bug in anything. It is what "serialise the merged view" means, and it
 follows from merging eagerly: fold every source into one map and a writer holding that map
-has nothing to write *but* the whole of it. **This module never folds its layers away** —
+has nothing to write *but* the whole of it. **This module never folds its layers away**,
 so it changes the key you asked for, and nothing else.
 
 ## What you get
@@ -106,11 +106,11 @@ so it changes the key you asked for, and nothing else.
 | **Coherent reads** | A `View` is pinned to one snapshot, so two related values can never straddle a reload. Measured: **0** mismatched pairs in 11.6M reads, against 1,759 for a library reading live state. |
 | **Writes that preserve authorship** | Comments, key order, quoting and anchors survive. The change lands in the layer that *owns* the key, and a write that cannot take effect says so. |
 | **Notifications you can trust** | Exactly once per logical change, never for a rejected one, never out of order, pinned to one snapshot for the whole callback. |
-| **Fail-closed reload** | A file that will not parse, or fails your schema, is rejected — last-known-good stays live. Never half of one config and half of another. |
+| **Fail-closed reload** | A file that will not parse, or fails your schema, is rejected and last-known-good stays live. Never half of one config and half of another. |
 | **Any source as a layer** | `WithBackend` takes any three-method `Backend`, so Consul, a secrets manager or an HTTP endpoint gets full precedence, provenance and shadowing. |
 | **Typed sections** | `ObserveSection[T]` keeps your struct current across reloads, and the package consuming it never imports this one. |
-| **Read any type** | `Value[T]` reads whatever `T` is — durations, IP addresses, URLs, and your own `encoding.TextUnmarshaler` types. |
-| **No filesystem imposed** | You name the filesystem — `config.OS()` for the real disk (the default choice), `config.Dir(path)` for a directory nothing can escape, or [an adapter](explanation/filesystem-adapters.md) for elsewhere. `config.FS` is six methods, so your own works too. |
+| **Read any type** | `Value[T]` reads whatever `T` is: durations, IP addresses, URLs, and your own `encoding.TextUnmarshaler` types. |
+| **No filesystem imposed** | You name the filesystem: `config.OS()` for the real disk (the default choice), `config.Dir(path)` for a directory nothing can escape, or [an adapter](explanation/filesystem-adapters.md) for elsewhere. `config.FS` is six methods, so your own works too. |
 
 **[→ The full case, with the reasoning and the measurements](about/index.md)**
 
@@ -141,81 +141,81 @@ if _, err := store.Apply(ctx, config.Set("server.port", 9090)); err != nil {
 }
 ```
 
-## Any format, any system — the same layered store
+## Any format, any system: the same layered store
 
 YAML is the default, not the ceiling. A file in another format, or configuration that lives in
 a remote system rather than a file at all, joins the store as an **ordinary layer**: same
 precedence, the same per-key provenance, the same coherent snapshots and fail-closed reload.
 This is where the model pulls decisively ahead of a library that bolts remote sources on as a
-special case — here there is no special case, and `Explain` will name Consul or a parameter
+special case. Here there is no special case, and `Explain` will name Consul or a parameter
 store as the source exactly as it names a file.
 
 Every adapter is its own sibling module, so your dependency graph carries only what you use: a
 consumer reading TOML never compiles the XML parser, and a consumer configuring from Consul
 never pulls a cloud SDK it does not touch.
 
-### File & format adapters — available now
+### File & format adapters, available now
 
 <div class="grid cards" markdown>
 
-- :material-code-json: **[JSON](how-to/json.md)** — JSON and JSON Lines, read and write, structure-preserving.
-- :material-file-document: **[TOML](how-to/toml.md)** — read and write TOML, structure-preserving.
-- :material-hexagon-outline: **[HCL](how-to/hcl.md)** — HCL as a config format, read and write.
-- :material-xml: **[XML](how-to/xml.md)** — read XML.
-- :material-dots-horizontal: **[dotenv](how-to/dotenv.md)** — read `.env`, no added dependency.
-- :material-cog: **[INI](how-to/ini.md)** — read INI, no added dependency.
-- :material-language-java: **[Java properties](how-to/properties.md)** — read `.properties`.
+- :material-code-json: **[JSON](how-to/json.md)**: JSON and JSON Lines, read and write, structure-preserving.
+- :material-file-document: **[TOML](how-to/toml.md)**: read and write TOML, structure-preserving.
+- :material-hexagon-outline: **[HCL](how-to/hcl.md)**: HCL as a config format, read and write.
+- :material-xml: **[XML](how-to/xml.md)**: read XML.
+- :material-dots-horizontal: **[dotenv](how-to/dotenv.md)**: read `.env`, no added dependency.
+- :material-cog: **[INI](how-to/ini.md)**: read INI, no added dependency.
+- :material-language-java: **[Java properties](how-to/properties.md)**: read `.properties`.
 
 </div>
 
-### Filesystem adapters — where the file lives
+### Filesystem adapters: where the file lives
 
 A format adapter parses the file; a filesystem adapter decides *where* it lives, over the six-method
-`config.FS`. The core covers local disk (`config.OS()`, `config.Dir`) — reach for one of these when
+`config.FS`. The core covers local disk (`config.OS()`, `config.Dir`), so reach for one of these when
 the file lives somewhere else. They compose with any format adapter.
 
 <div class="grid cards" markdown>
 
-- :material-folder-cog: **[afero](how-to/afero.md)** — bridge an existing afero filesystem.
-- :material-package-variant-closed: **[io/fs](how-to/iofs.md)** — an `embed.FS`, zip or tar, read-only.
-- :material-source-branch: **[go-billy](how-to/billy.md)** — a go-git / go-billy filesystem, read and write.
-- :material-server-network: **[SFTP](how-to/sftp.md)** — a config file on a remote host over SSH.
-- :material-cloud-outline: **cloud object stores** — [S3](how-to/aws-s3.md), [GCS](how-to/gcp-gcs.md) &amp; [Azure Blob](how-to/azure-blob.md), read and write.
+- :material-folder-cog: **[afero](how-to/afero.md)**: bridge an existing afero filesystem.
+- :material-package-variant-closed: **[io/fs](how-to/iofs.md)**: an `embed.FS`, zip or tar, read-only.
+- :material-source-branch: **[go-billy](how-to/billy.md)**: a go-git / go-billy filesystem, read and write.
+- :material-server-network: **[SFTP](how-to/sftp.md)**: a config file on a remote host over SSH.
+- :material-cloud-outline: **cloud object stores**: [S3](how-to/aws-s3.md), [GCS](how-to/gcp-gcs.md) &amp; [Azure Blob](how-to/azure-blob.md), read and write.
 
 </div>
 
-### Dynamic backends — remote systems as layers
+### Dynamic backends: remote systems as layers
 
 Fetch configuration at runtime from a remote system and give it full precedence, provenance and
-hot-reload, exactly as a file gets. The reference — [**config-consul**](how-to/consul.md) — and the
+hot-reload, exactly as a file gets. The reference adapter, [**config-consul**](how-to/consul.md), and the
 cloud **parameter stores** are released:
 
-- **Parameter stores** — [AWS SSM](how-to/aws-ssm.md), [Azure App Configuration](how-to/azure-appconfig.md)
+- **Parameter stores**: [AWS SSM](how-to/aws-ssm.md), [Azure App Configuration](how-to/azure-appconfig.md)
   and [GCP Parameter Manager](how-to/gcp-parameter.md), Consul's siblings.
-- **Secrets managers** — [Vault](how-to/vault.md), [AWS Secrets
+- **Secrets managers**: [Vault](how-to/vault.md), [AWS Secrets
   Manager](how-to/aws-secrets.md), [Azure Key Vault](how-to/azure-keyvault.md) and [GCP Secret
   Manager](how-to/gcp-secret.md), all released and read-only; a value any of them provides can
   never be written into a plainer layer beneath, because the core refuses that. The last two are
-  released but **not yet exercised against the real service** — neither has an emulator, so their
+  released but **not yet exercised against the real service**. Neither has an emulator, so their
   client wiring is the one part a fake cannot prove.
-- **The OS keychain** — [config-keychain](how-to/keychain.md) makes macOS Keychain, Windows
+- **The OS keychain**: [config-keychain](how-to/keychain.md) makes macOS Keychain, Windows
   Credential Manager or Secret Service a layer, and is the one secrets backend that *writes*: a
   token this application just obtained belongs there rather than in the config file.
-- **A directory of single-value files** — [config-filekv](how-to/filekv.md) reads a mounted
+- **A directory of single-value files**: [config-filekv](how-to/filekv.md) reads a mounted
   Kubernetes ConfigMap, Docker secrets or systemd credentials, where each filename is a key. It
   adds no dependency at all.
-- **Cloud-native key–value** — [config-etcd](how-to/etcd.md) makes an etcd v3 prefix a layer, and
+- **Cloud-native key–value**: [config-etcd](how-to/etcd.md) makes an etcd v3 prefix a layer, and
   is the strongest write path in the family: a real compare-and-swap on the revision each key held
   at load, batches that commit atomically across keys, and a native change feed that replays from
   the load revision so nothing is missed while the watch attaches. Kubernetes ConfigMaps are
   deliberately **not** on this list: one already reaches a pod as a file or an environment
   variable, so `config-filekv` above covers the gap without a 38-module API client.
 
-### Not an adapter — JSON Schema validation
+### Not an adapter: JSON Schema validation
 
 <div class="grid cards" markdown>
 
-- :material-check-decagram: **[config-schema](how-to/compose-schemas.md)** — validate against a JSON Schema **document**, composed from several components and mounted where each one lives. The tag-derived schema stays in the core; reach for this when the schema is a document you publish, share or generate.
+- :material-check-decagram: **[config-schema](how-to/compose-schemas.md)**: validate against a JSON Schema **document**, composed from several components and mounted where each one lives. The tag-derived schema stays in the core; reach for this when the schema is a document you publish, share or generate.
 
 </div>
 
@@ -223,7 +223,7 @@ cloud **parameter stores** are released:
 
 ## Should you use this?
 
-**Yes, if any of these describe you** — and note that only the first is about writing:
+**Yes, if any of these describe you**, and note that only the first is about writing:
 
 - you have more than two sources and have lost an afternoon to "which one set this?";
 - a long-running service reloads configuration, and you need reads that never straddle a
@@ -232,14 +232,14 @@ cloud **parameter stores** are released:
 - configuration lands in files that get committed, reviewed, or shared between people;
 - you want configuration-dependent tests that run in parallel and do not reach for process
   globals;
-- your settings have real types — enums, addresses, URLs — and you are tired of decoding
+- your settings have real types (enums, addresses, URLs) and you are tired of decoding
   them by hand.
 
 **Probably not, if** one file and a couple of environment variables cover you, nothing is
 ever written back, and nothing reloads. That is a large share of programs, and it is a
 genuinely well-served case: [viper](https://github.com/spf13/viper) is battle-tested by an
 enormous number of them, has an ecosystem this module does not, and will be a smaller
-dependency in your graph. Reach for the smaller tool when the smaller tool fits — see
+dependency in your graph. Reach for the smaller tool when the smaller tool fits. See
 [History](about/history.md) for how much of what is here was learned from years of using
 it.
 
@@ -250,32 +250,32 @@ then look up, then understand.
 
 <div class="grid cards" markdown>
 
-- :material-rocket-launch: **[Getting started](tutorials/getting-started.md)** — the tutorial.
+- :material-rocket-launch: **[Getting started](tutorials/getting-started.md)**: the tutorial.
   Build a store over a file, read values, ask where they came from, write a change back,
   and react to one made outside your process.
-- :material-file-tree: **[Load & merge](how-to/load-and-merge.md)** — files, embedded
+- :material-file-tree: **[Load & merge](how-to/load-and-merge.md)**: files, embedded
   defaults, the environment, flags, and the precedence chain.
-- :material-magnify: **[Read values](how-to/read-values.md)** — typed accessors, the
+- :material-magnify: **[Read values](how-to/read-values.md)**: typed accessors, the
   generic `Value[T]`, scoped views and struct decoding.
-- :material-content-save-edit: **[Write configuration](how-to/write-config.md)** —
+- :material-content-save-edit: **[Write configuration](how-to/write-config.md)**: 
   planning a write, where a change lands, conflicts, and shadowed writes.
-- :material-code-braces: **[Typed sections](how-to/typed-sections.md)** — project a
+- :material-code-braces: **[Typed sections](how-to/typed-sections.md)**: project a
   subtree onto your own struct with `UnmarshalSection` and `ObserveSection`.
-- :material-reload: **[Hot-reload](how-to/hot-reload.md)** — `Watch`, observers, and
+- :material-reload: **[Hot-reload](how-to/hot-reload.md)**: `Watch`, observers, and
   reacting to foreign changes.
-- :material-shield-check: **[Validate](how-to/validate-config.md)** — `Schema` and
+- :material-shield-check: **[Validate](how-to/validate-config.md)**: `Schema` and
   `ValidateStruct[T]` from `config:` struct tags.
-- :material-puzzle: **[Write a custom backend](how-to/custom-backend.md)** — make Consul,
+- :material-puzzle: **[Write a custom backend](how-to/custom-backend.md)**: make Consul,
   a secrets manager or an HTTP endpoint an ordinary layer.
-- :material-test-tube: **[Test with the mocks](how-to/test-with-mocks.md)** —
+- :material-test-tube: **[Test with the mocks](how-to/test-with-mocks.md)**: 
   `MockReader`, `MockBinder` and `MockObserved` in your tests.
-- :material-book-open-variant: **[Reference](reference/index.md)** — key syntax, the
+- :material-book-open-variant: **[Reference](reference/index.md)**: key syntax, the
   environment-variable mapping, struct tags, every error, every default.
-- :material-cancel: **[Limitations](reference/limitations.md)** — what it does not do, does
+- :material-cancel: **[Limitations](reference/limitations.md)**: what it does not do, does
   not guarantee, and will not be made to do.
-- :material-lightbulb-on: **[The Store](explanation/the-store.md)** — why one component
+- :material-lightbulb-on: **[The Store](explanation/the-store.md)**: why one component
   owns config I/O, and what follows from that rule.
-- :material-map-marker-path: **[Provenance](explanation/provenance.md)** — what `Origin`,
+- :material-map-marker-path: **[Provenance](explanation/provenance.md)**: what `Origin`,
   `DefinedIn` and `Explain` can and cannot answer.
 
 </div>
@@ -285,7 +285,7 @@ then look up, then understand.
 v0.3.0 is a breaking release. Two things changed: the Viper-backed container became the
 `Store`, and `afero.Fs` became a six-method `config.FS` the module defines itself.
 
-The **[migration guide](about/migrating.md)** covers both step by step — `Containable` becomes
+The **[migration guide](about/migrating.md)** covers both step by step: `Containable` becomes
 `Reader`, the several constructors become `NewStore`, `afero.NewOsFs()` becomes
 `config.OS()`, and the handful of call sites that are genuine ports rather than renames
 each get their own section.
@@ -308,22 +308,22 @@ For how the module got here, see [History](about/history.md).
 ## Reference
 
 **[The reference section](reference/index.md)** covers the surfaces you *write* rather than
-the ones you call — the exact rules, looked up when you need them:
+the ones you call. These are the exact rules, looked up when you need them:
 
-- **[Keys and paths](reference/keys-and-paths.md)** — the dotted-path grammar, key casing,
+- **[Keys and paths](reference/keys-and-paths.md)**: the dotted-path grammar, key casing,
   how layers merge per value shape, and what `Allow`/`Deny` patterns match.
-- **[Environment variables](reference/environment-variables.md)** — how a variable name
+- **[Environment variables](reference/environment-variables.md)**: how a variable name
   becomes a key, what the prefix does, and when a name is ambiguous.
-- **[Struct tags](reference/struct-tags.md)** — every tag validation reads, every tag
+- **[Struct tags](reference/struct-tags.md)**: every tag validation reads, every tag
   decoding reads, and which are silently ignored.
-- **[Errors](reference/errors.md)** — every exported error value, what returns it, and what
+- **[Errors](reference/errors.md)**: every exported error value, what returns it, and what
   to do about it.
-- **[Defaults and limits](reference/defaults-and-limits.md)** — every interval, file mode
+- **[Defaults and limits](reference/defaults-and-limits.md)**: every interval, file mode
   and built-in bound.
-- **[Limitations](reference/limitations.md)** — what the module does not do, will not do,
+- **[Limitations](reference/limitations.md)**: what the module does not do, will not do,
   and cannot do.
 
-The Go API reference — every type, method and signature — lives on
+The Go API reference (every type, method and signature) lives on
 **[pkg.go.dev](https://pkg.go.dev/gitlab.com/phpboyscout/go/config)**, which is where a
 language API reference belongs: generated from the source it documents, so it cannot drift
 from it.
