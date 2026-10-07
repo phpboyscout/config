@@ -1,7 +1,9 @@
 package config
 
 import (
+	"fmt"
 	"testing"
+	"time"
 )
 
 // Merge and provenance are the foundation the Store rests on: routing decides
@@ -385,5 +387,61 @@ func TestSource_StringDistinguishesDocumentsForAnyKind(t *testing.T) {
 				t.Errorf("String() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// A literal dotted key shares its provenance path with "q beneath p", so a
+// scalar p that pruned everything under "p." erased it whenever Go's map order
+// happened to merge the dotted key first. Twenty pairs make that order near
+// certain to arise in one run. go/config#19.
+func TestMerge_ALiteralDottedKeyKeepsItsProvenance(t *testing.T) {
+	t.Parallel()
+
+	values := map[string]any{}
+	for i := range 20 {
+		values[fmt.Sprintf("p%d", i)] = i
+		values[fmt.Sprintf("p%d.q", i)] = i
+	}
+
+	_, origin := mergeLayers([]Layer{layer("base.yaml", values)})
+
+	for key := range values {
+		if _, ok := origin[key]; !ok {
+			t.Errorf("provenance lost for %q", key)
+		}
+	}
+}
+
+// Merging must cost time in proportion to the keys merged. A scalar leaf used
+// to scan every recorded path for ones to prune, which made a large map
+// quadratic: 7.4 s for 40,000 keys. Compared as a ratio so the bound does not
+// depend on the machine: 8x the keys should take about 8x the time, and the
+// quadratic shape took about 64x. go/config#18.
+func TestMerge_IsLinearInMapSize(t *testing.T) {
+	if testing.Short() {
+		t.Skip("timing comparison")
+	}
+
+	timeMerge := func(n int) time.Duration {
+		values := map[string]any{}
+		for i := range n {
+			values[fmt.Sprintf("k%d", i)] = i
+		}
+
+		layers := []Layer{layer("base.yaml", map[string]any{"table": values})}
+
+		best := time.Duration(1<<63 - 1)
+		for range 3 {
+			start := time.Now()
+			mergeLayers(layers)
+			best = min(best, time.Since(start))
+		}
+
+		return best
+	}
+
+	small, large := timeMerge(2_000), timeMerge(16_000)
+	if ratio := float64(large) / float64(small); ratio > 24 {
+		t.Errorf("8x the keys took %.1fx the time (%v vs %v); want roughly linear", ratio, large, small)
 	}
 }

@@ -134,13 +134,20 @@ func mergeInto(dst map[string]any, origin map[string]Source, src map[string]any,
 
 		nested, isMap := asStringMap(value)
 		if !isMap {
+			_, replacesSubtree := asStringMap(dst[key])
+
 			dst[key] = value
 			origin[path] = source
 
 			// A scalar replacing a subtree takes ownership of the whole path:
 			// the keys beneath it are no longer reachable, so their provenance
-			// would be a lie.
-			pruneProvenance(origin, path)
+			// would be a lie. Only then: pruning scans every recorded path, so
+			// doing it for each leaf made a large map quadratic (#18), and
+			// erased a literal dotted key that merely shares the "path." prefix
+			// (#19).
+			if replacesSubtree {
+				pruneProvenance(origin, path)
+			}
 
 			continue
 		}
