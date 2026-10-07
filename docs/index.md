@@ -102,7 +102,7 @@ so it changes the key you asked for, and nothing else.
 
 | | |
 |---|---|
-| **Provenance** | `Explain("server.port")` → `9090 (from ~/.app.yaml); also defined in embedded:defaults.yaml`. Recorded during the merge, not reconstructed after. |
+| **Provenance** | `Explain("server.port")` → `server.port = 9090 (from ~/.app.yaml); also defined in embedded:defaults.yaml`. Recorded during the merge, not reconstructed after. |
 | **Coherent reads** | A `View` is pinned to one snapshot, so two related values can never straddle a reload. Measured: **0** mismatched pairs in 11.6M reads, against 1,759 for a library reading live state. |
 | **Writes that preserve authorship** | Comments, key order, quoting and anchors survive. The change lands in the layer that *owns* the key, and a write that cannot take effect says so. |
 | **Notifications you can trust** | Exactly once per logical change, never for a rejected one, never out of order, pinned to one snapshot for the whole callback. |
@@ -238,8 +238,8 @@ cloud **parameter stores** are released:
 **Probably not, if** one file and a couple of environment variables cover you, nothing is
 ever written back, and nothing reloads. That is a large share of programs, and it is a
 genuinely well-served case: [viper](https://github.com/spf13/viper) is battle-tested by an
-enormous number of them, has an ecosystem this module does not, and will be a smaller
-dependency in your graph. Reach for the smaller tool when the smaller tool fits. See
+enormous number of them, has an ecosystem this module does not. Reach for the simpler tool when the simpler tool
+fits. See
 [History](about/history.md) for how much of what is here was learned from years of using
 it.
 

@@ -90,7 +90,7 @@ than guessed.
 |---|---|
 | Modules added | **16** — 7 for hclparse, hclwrite and cty, 9 for the `config` graph |
 
-This is the heaviest adapter: the config graph plus HashiCorp's HCL toolchain (`hashicorp/hcl/v2`,
+This is the heaviest format adapter: the config graph plus HashiCorp's HCL toolchain (`hashicorp/hcl/v2`,
 `zclconf/go-cty`) and what those bring. An allowlist test in the module states the full set. No
 filesystem library: you supply the `config.FS`.
 

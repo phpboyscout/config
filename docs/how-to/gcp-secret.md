@@ -217,7 +217,7 @@ would read another project's. `ErrNoProject` refuses at construction.
 | Requires | the `config` version named in this module's `go.mod` — `go get` brings it |
 | Capability since | `config` **v0.7.0**, the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
 
-This is **the heaviest adapter in the toolkit** — roughly five times AWS Secrets Manager's five
+This is **one of the heaviest adapters in the toolkit**, roughly five times AWS Secrets Manager's five
 modules or Azure Key Vault's six, because the Google API client stack is large and shared. Worth
 knowing before you add it to a small binary. The figure is pinned by an allowlist test in both
 directions.

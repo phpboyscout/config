@@ -20,7 +20,7 @@ exists. `Origin`, `DefinedIn`, `Explain` and `Shadows` are how you ask for it ba
 
 ## Four questions, four methods
 
-The three are not variations on one another. They answer genuinely different questions,
+The four are not variations on one another. They answer genuinely different questions,
 and reaching for the wrong one is how you end up with a misleading diagnostic.
 
 **`Origin(path) (Source, bool)` — who won?**

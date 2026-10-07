@@ -220,7 +220,7 @@ In tests, `mocks.MockContainable` becomes `mocks.NewMockReader`, with
 | `Observable.Run(Containable)` | `Observable.Run(Observed)` | |
 | `AddObserverFunc(func(Containable) error)` | `AddObserverFunc(func(Observed) error)` | |
 | `Observer` struct | `ObserverFunc` | |
-| `ValidateStruct[T](cfg Containable, ...)` | `ValidateStruct[T](cfg *View, ...)` | Takes the concrete view |
+| `ValidateStruct[T](cfg Containable, ...)` | `ValidateStruct[T](cfg Reader, ...)` | Takes any `Reader`, so a `View` or a snapshot |
 | `UnmarshalSection[T](cfg Containable, ...)` | `UnmarshalSection[T](cfg Reader, ...)` | Rename only |
 | `WithSectionDefaultFunc(func(Containable) T, merge)` | `WithSectionDefaultFunc(func(Observed) T, merge)` | Rename only |
 | `ErrConfigFileNotFound`, `ErrNoFilesFound` | `ErrNoSources`, and `fs.ErrNotExist` from a backend | |

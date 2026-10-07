@@ -43,9 +43,9 @@ in any of them is a real defect a user will eventually hit.
 - **Name the guarantee, not the mechanism.** `TestReadsNeverStraddleAReload` says what
   breaks if it fails; `TestView2` does not.
 
-Test helpers live alongside the tests that use them; `storeOn`, `memFS` and
-`memFilesystem` are the common ones. The afero adapter lives in `fs_afero_test.go`, which
-also exports `WrapAfero` and `NewMemFS` for the external `config_test` package.
+Test helpers live alongside the tests that use them; `storeOn` and `memFS` are
+the common ones. The afero adapter lives in `fs_afero_test.go`, which also exports
+`NewMemFS` for the external `config_test` package.
 
 ## Failure modes to watch for
 

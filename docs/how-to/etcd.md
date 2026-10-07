@@ -186,8 +186,8 @@ b, err := configetcd.FromConfig(clientv3.Config{Endpoints: []string{"localhost:2
 
 ### There is deliberately no zero-conf rung
 
-Every other remote adapter here offers a `Default()` over its SDK's own ambient
-convention. **etcd has none.** `clientv3` has no `DefaultConfig`, and its only
+Every other remote adapter here except `config-sftp` offers a `Default()` over its SDK's own
+ambient convention. **etcd has none.** `clientv3` has no `DefaultConfig`, and its only
 environment variable is `ETCD_CLIENT_DEBUG` — a debug flag, not an endpoint or a
 credential. It has neither an ambient credential chain *nor* endpoint discovery,
 so both halves would have to be invented.

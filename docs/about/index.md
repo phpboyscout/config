@@ -344,10 +344,10 @@ Worth calling out because the common alternative is worse than unsupported: vipe
 first document, silently discards the rest, and returns no error, so a key in your second
 document simply is not there.
 
-**Every failure is a named error you can branch on.** Seventeen sentinels (`ErrConflict`,
+**Every failure is a named error you can branch on.** Every exported error is a sentinel (`ErrConflict`,
 `ErrNoWritableLayer`, `ErrBackendUnsafe`, `ErrAmbiguousEnvKey`, `ErrPartialCommit` and the
-rest), all matched with `errors.Is`, so handling a specific failure never means comparing
-strings. Validation failures go further and carry a **hint**:
+rest, all listed in the [errors reference](../reference/errors.md)), matched with
+`errors.Is`, so handling a specific failure never means comparing strings. Validation failures go further and carry a **hint**:
 
 ```
 server.port: expected type int but got string (hint: ensure server.port has a value of type int)
@@ -358,12 +358,13 @@ and `Watch` all take a `context.Context` and honour cancellation, so configurati
 participates in your shutdown path instead of ignoring it.
 
 **A smaller dependency graph than the thing it replaces**, while doing more. Library
-dependencies only, no test-only packages:
+dependencies only, no test-only packages, with `config`'s row measured by `go list -deps` on
+2026-10-07:
 
 | | non-stdlib packages | distinct modules |
 |---|---|---|
 | viper 1.21.0 | 36 | 13 |
-| `config` | **20** | **8** |
+| `config` | **23** | **8** |
 
 **The filesystem is an interface this module defines, not one it imposes.** `config.FS` is
 six methods. `config.OS()` is the operating system; `config.Dir(path)` is backed by

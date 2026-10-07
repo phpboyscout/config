@@ -48,9 +48,12 @@ adapter is needed:
   semantics, including watching, with no dependency and no in-memory filesystem to stand in.
 
   ```go
-  store, _ := config.NewStore(ctx,
-      config.WithFiles(config.Dir("/etc/app"), "app.yaml"),
-  )
+  fsys, err := config.Dir("/etc/app")
+  if err != nil {
+      return err
+  }
+
+  store, err := config.NewStore(ctx, config.WithFiles(fsys, "app.yaml"))
   ```
 
 An adapter below is for when the file lives somewhere *neither* built-in reaches — compiled into the

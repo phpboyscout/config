@@ -42,7 +42,7 @@ func NewServer(cfg config.Reader) *Server {
 ```
 
 !!! tip "Do not hand-write a `Reader`"
-    `Reader` is broad — thirty methods, covering every accessor, provenance and both
+    `Reader` is broad — thirty-one methods, covering every accessor, provenance and both
     unmarshal entry points — and it grows as typed accessors are added. A hand-written
     fake has to be updated every time, for no benefit. Use `mocks.MockReader`, or a real
     store over an in-memory filesystem.

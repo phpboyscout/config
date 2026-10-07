@@ -191,7 +191,7 @@ The local keychain is the exception, and the reason it is one is worth reading b
   stream. Flat IDs verbatim, or one secret as a document. Its distinctive behaviour is version
   states: `latest` means most recently *created*, so a disabled newest version makes it unreadable
   and the adapter falls back to the newest enabled one — reporting that through a callback, because
-  provenance cannot carry a per-key resolution. **The heaviest adapter here at 39 modules.**
+  provenance cannot carry a per-key resolution. **At 39 modules, the heaviest of the secrets managers.**
 - [**`config-azure-keyvault`**](../how-to/azure-keyvault.md) — Azure Key Vault. Read-only,
   statically sensitive, polled at five minutes. The one store here with **no hierarchy at all**:
   names allow only letters, digits and hyphens, so a name is a key verbatim and structure comes

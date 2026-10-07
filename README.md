@@ -237,14 +237,14 @@ feels like.
   precedence and provenance independently, so `Explain` reports `/app.yaml#1`. The common
   alternative is worse than unsupported: viper reads the first document, silently discards
   the rest, and returns no error.
-- **Every failure is a named error you can branch on**: seventeen sentinels matched with
+- **Every failure is a named error you can branch on**: every exported error is a sentinel matched with
   `errors.Is`, so handling a specific failure never means comparing strings. Validation
   errors carry a fix hint alongside the message.
 - **Context on every operation that does I/O**, so configuration work participates in your
   shutdown path instead of ignoring it.
-- **A smaller dependency graph than the thing it replaces**, while doing more: 20
+- **A smaller dependency graph than the thing it replaces**, while doing more: 23
   non-stdlib packages across 8 modules, against viper's 36 across 13 (library only, no test
-  dependencies). The filesystem is a six-method interface this module defines, so you are
+  dependencies; config's side measured with `go list -deps` on 2026-10-07). The filesystem is a six-method interface this module defines, so you are
   not made to import one.
 - **Typed sections + validation.** `ObservedSection[T]` keeps a struct current across
   reloads. It is decoded in one operation, so it never holds some fields from before a reload
@@ -274,7 +274,7 @@ decoding by hand.
 **Probably not**, if one file and a couple of environment variables cover you, nothing is
 written back and nothing reloads. That is a large share of programs and a well-served case:
 [viper](https://github.com/spf13/viper) is battle-tested by an enormous number of them, has
-an ecosystem this module does not, and is a smaller dependency. Much of what is here was
+an ecosystem this module does not. Much of what is here was
 learned from years of using it (see the
 [history](https://config.go.phpboyscout.uk/about/history/)).
 
