@@ -1,7 +1,10 @@
 package config
 
 import (
+	"context"
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -367,5 +370,30 @@ func TestSnapshot_GetDoesNotLeakLiveState(t *testing.T) {
 	again, _ := snap.Get("server.hosts")
 	if fresh, _ := again.([]any); fresh[0] != "a" {
 		t.Errorf("server.hosts[0] = %v after mutation, want a", fresh[0])
+	}
+}
+
+// Keys must list a literal dotted key every time, as the keys-and-paths page
+// promises, even though no dotted path can address it. go/config#19.
+func TestSnapshot_KeysListsLiteralDottedKeysEveryTime(t *testing.T) {
+	t.Parallel()
+
+	var doc strings.Builder
+
+	doc.WriteString("table:\n")
+
+	for i := range 20 {
+		fmt.Fprintf(&doc, "  p%d: %d\n  \"p%d.q\": %d\n", i, i, i, i)
+	}
+
+	for run := range 3 {
+		s, err := NewStore(context.Background(), WithReaders(NamedSource{Name: "c.yaml", Content: []byte(doc.String())}))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := len(s.Snapshot().Keys()); got != 40 {
+			t.Fatalf("run %d: Keys() = %d, want all 40", run, got)
+		}
 	}
 }
