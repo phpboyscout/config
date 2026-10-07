@@ -25,5 +25,5 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 )
