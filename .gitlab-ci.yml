@@ -1,7 +1,7 @@
 # .gitlab-ci.yml — pipeline assembled from phpboyscout/cicd components.
 #
 #   merge_request_event → lint, test, security, canary-subset  (the merge gate)
-#   default branch      → colophon, zensical-pages deploy, canary-full
+#   default branch      → colophon, zensical-pages deploy, canary-full (Go, module or CI changes only)
 #   Release MR          → + canary-full (the pre-release gate)
 #   tag v*.*.*          → zensical-pages docs for the release
 #   schedule            → renovate, canary-full
@@ -181,7 +181,11 @@ canary-subset:
 
 # Full matrix — every module that requires the core; canary-coverage fails
 # when one is missing. Runs on the pre-release surfaces only: the Release MR,
-# default-branch pipelines, and the nightly schedule.
+# default-branch pipelines, and the nightly schedule. The Release MR and the
+# schedule are unconditional. The default branch is change-gated with the same
+# globs as canary-subset, because a docs or image-pin commit cannot break an
+# adapter build and the Release MR re-proves it before anything ships
+# (go/config#6).
 canary-full:
   extends: .canary
   parallel:
@@ -217,6 +221,11 @@ canary-full:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "colophon/release/main"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - "**/*.go"
+        - "go.mod"
+        - "go.sum"
+        - ".gitlab-ci.yml"
 
 # The matrix above is hand-written, and a new sibling does not add itself to
 # it (go/config#9). This fails when the group holds a module requiring the core
