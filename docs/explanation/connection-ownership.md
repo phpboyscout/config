@@ -186,6 +186,7 @@ anything to release**:
 | `config-gcp-secret`, `config-gcp-parameter` | gRPC — *"must be Closed"* | `*OwnedBackend` |
 | `config-gcp-gcs` | HTTP — *"need not be called at program exit"* | `*OwnedFS` |
 | `config-sftp` | a subsystem channel | `*OwnedFS` — closes the subsystem, **never your SSH connection** |
+| `config-etcd` | gRPC (`clientv3`) | `*OwnedBackend`, from `FromConfig` (since v0.3.0) |
 | `config-azure-blob` | HTTP — no `Close` at all | plain `config.FS` |
 | everything else | nothing to release | plain `config.Backend` |
 

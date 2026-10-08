@@ -182,7 +182,15 @@ Building the client yourself is the default. One further rung exists:
 ```go
 // You assembled the config; the adapter builds the client.
 b, err := configetcd.FromConfig(clientv3.Config{Endpoints: []string{"localhost:2379"}}, "app/")
+
+store, err := config.NewStore(ctx, config.WithBackend(b), config.WithCloser(b))
+defer store.Close()
 ```
+
+**`FromConfig` returns `*OwnedBackend`, which must be closed.** It built the etcd
+client, so it owns the client's connections and goroutines. Hand it to the store
+with `WithCloser`, as above, and closing the store releases it. Since
+config-etcd v0.3.0; before that, nothing could close it.
 
 ### There is deliberately no zero-conf rung
 
