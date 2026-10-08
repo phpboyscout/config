@@ -1,5 +1,20 @@
 # Changelog
 
+## [v0.20.1](https://gitlab.com/phpboyscout/go/config/-/releases/v0.20.1)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.20.0...v0.20.1)
+
+### Notes
+
+- Loading a configuration containing a large map no longer takes time quadratic
+  in its size (40,000 keys: 7.4 s down to 55 ms through config-json). `Keys()`
+  now reliably lists a key containing a literal dot when a sibling key names its
+  prefix, where it previously dropped some of them at random on each load.
+
+### Bug Fixes
+
+- prune provenance only when a scalar replaces a subtree ([217e532](https://gitlab.com/phpboyscout/go/config/-/commit/217e5321ea0c7b22e9b4aaca1b64e7b4a0049e15))
+
 ## [v0.20.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.20.0)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.19.0...v0.20.0)
