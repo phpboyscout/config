@@ -259,7 +259,7 @@ b := configvault.FromClient(client, "secret", "app/config")
 
 | | |
 |---|---|
-| Modules added | **26** — 17 for the Vault SDK, 9 for the `config` graph |
+| Adds | the Vault SDK, on top of the `config` graph |
 | Requires | the `config` version named in this module's `go.mod` — `go get` brings it |
 | Capability since | `config` **v0.7.0**, the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
 

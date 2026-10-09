@@ -92,7 +92,7 @@ b, err := ssmambient.Default(ctx, "/app")
 ```
 
 **The subpackage is not decoration.** Resolving the ambient AWS credential chain
-costs ten further modules — `sso`, `ssooidc`, `sts`, `imds` and the rest — so it
+pulls in `sso`, `ssooidc`, `sts`, `imds` and the rest, so it
 is kept out of the adapter's own graph. Import it and you pay for it; do not and
 your footprint is exactly what it was. There is a test asserting precisely that.
 
@@ -109,10 +109,10 @@ To share one resolved chain across several adapters — and across `go/signing` 
 
 | | |
 |---|---|
-| Modules added | **14** — 5 for the AWS SSM SDK, 9 for the `config` graph |
+| Adds | the AWS SSM SDK, on top of the `config` graph |
 
-The config graph plus the AWS SDK for Go v2's SSM client (`service/ssm` and the SDK core — five
-modules, asserted by an allowlist test). You build the client, so its config/credentials packages
+The config graph plus the AWS SDK for Go v2's SSM client (`service/ssm` and the SDK core,
+asserted by an allowlist test). You build the client, so its config/credentials packages
 are yours, not the adapter's. The testcontainers/LocalStack integration suite is test-only.
 
 ## Related

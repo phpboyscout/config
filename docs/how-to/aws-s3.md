@@ -82,10 +82,9 @@ import s3ambient "gitlab.com/phpboyscout/go/config-aws-s3/ambient"
 fsys, err := s3ambient.Default(ctx, "my-bucket")
 ```
 
-**The subpackage is not decoration**, and it costs less here than for its
-siblings: seven further modules rather than ten, because S3's larger service graph
-already carries `internal/v4a`, `accept-encoding` and `presigned-url`. Each
-adapter measures its own rather than quoting another's.
+**The subpackage is not decoration**, though it costs less here than for its
+siblings, because S3's larger service graph already carries `internal/v4a`,
+`accept-encoding` and `presigned-url`.
 
 **There is no default region**, and the bucket is required. AWS documents no
 region default, so an empty one is `ErrNoRegion` rather than a guess.
@@ -94,7 +93,7 @@ region default, so an empty one is `ErrNoRegion` rather than a guess.
 
 | | |
 |---|---|
-| Modules added | **20** — 11 for the AWS S3 SDK, 9 for the `config` graph |
+| Adds | the AWS S3 SDK, on top of the `config` graph |
 
 The AWS SDK for Go v2 S3 packages, plus `config` and what it already brings — asserted by an
 allowlist test pinned to exactly the S3 SDK modules, so a consumer reading from S3 never compiles

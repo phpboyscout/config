@@ -170,7 +170,7 @@ was.
 cacheSchema, err := configschema.FromJSON("cache-plugin", cacheDoc)
 ```
 
-It stays a separate module on purpose. Twenty-five adapters depend on `config` and each
+It stays a separate module on purpose. Every adapter depends on `config` and each
 pins its dependency footprint, so a JSON Schema library linked into the core would widen
 every one of them for a capability most do not use.
 

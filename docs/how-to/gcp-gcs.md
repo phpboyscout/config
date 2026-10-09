@@ -108,7 +108,7 @@ location to supply.
 
 | | |
 |---|---|
-| Modules added | **54** — 45 for the Cloud Storage SDK, 9 for the `config` graph |
+| Adds | the Cloud Storage SDK, on top of the `config` graph |
 
 The Cloud Storage SDK — the heaviest dependency graph in the adapter family, and the honest cost of
 the client — plus `config`, asserted by an allowlist test. Because it is its own module, only a

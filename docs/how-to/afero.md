@@ -82,7 +82,7 @@ which is safe, because `config` treats a real path as a claim rather than proof 
 
 | | |
 |---|---|
-| Modules added | **11** — 2 for [afero](https://github.com/spf13/afero), 9 for the `config` graph |
+| Adds | [afero](https://github.com/spf13/afero), on top of the `config` graph |
 
 afero, `config`, and what those two already bring — asserted by an allowlist test in the module,
 so an unforeseen transitive addition fails its build rather than arriving quietly.

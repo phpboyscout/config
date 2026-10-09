@@ -69,7 +69,7 @@ the path is used as given.
 
 | | |
 |---|---|
-| Modules added | **10** — 1 for [go-billy](https://github.com/go-git/go-billy), 9 for the `config` graph |
+| Adds | [go-billy](https://github.com/go-git/go-billy), on top of the `config` graph |
 
 go-billy, `config`, and what those two already bring — asserted by an allowlist test in the module,
 so an unforeseen transitive addition fails its build rather than arriving quietly.

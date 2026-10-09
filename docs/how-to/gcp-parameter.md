@@ -117,7 +117,7 @@ so every parameter lives under one and `global` is the ordinary value.
 
 | | |
 |---|---|
-| Modules added | **39** — 30 for the Parameter Manager SDK, 9 for the `config` graph |
+| Adds | the Parameter Manager SDK, on top of the `config` graph |
 
 The config graph plus the Google Cloud Parameter Manager client — one of the **heaviest** graphs in the
 adapter family (the first-party gRPC/protobuf/auth stack). It is asserted honestly by an allowlist test.

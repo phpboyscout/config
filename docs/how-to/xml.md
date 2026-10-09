@@ -79,7 +79,7 @@ shadowed rather than failing.
 
 | | |
 |---|---|
-| Modules added | **none** — everything it links comes from the `config` graph, and an allowlist test in the module fails if that changes |
+| Adds | **nothing** beyond the `config` graph, and an allowlist test in the module fails if that changes |
 
 `encoding/xml` is standard library, so there is no parser module — and no filesystem library
 either, because you supply the `config.FS`.

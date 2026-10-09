@@ -67,7 +67,7 @@ Values are strings; the read path casts. The format is read-only.
 
 | | |
 |---|---|
-| Modules added | **none** — everything it links comes from the `config` graph, and an allowlist test in the module fails if that changes |
+| Adds | **nothing** beyond the `config` graph, and an allowlist test in the module fails if that changes |
 
 A `.properties` file is parsed with the standard library, so there is no parser module — and no
 filesystem library either, because you supply the `config.FS`.

@@ -185,7 +185,7 @@ b, err := secretsambient.DefaultSecret(ctx, "app/config", codec)
 ```
 
 **The subpackage is not decoration.** Resolving the ambient AWS credential chain
-costs ten further modules, so it is kept out of the adapter's own graph — with a
+pulls in `sso`, `sts`, `imds` and the rest, so it is kept out of the adapter's own graph — with a
 test asserting the parent's footprint has not grown.
 
 **There is no default region.** AWS documents none, so an empty one is
@@ -195,11 +195,11 @@ test asserting the parent's footprint has not grown.
 
 | | |
 |---|---|
-| Modules added | **14** — 5 for the AWS SDK, 9 for the `config` graph |
+| Adds | the AWS SDK, on top of the `config` graph |
 | Requires | the `config` version named in this module's `go.mod` — `go get` brings it |
 | Capability since | `config` **v0.7.0**, the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
 
-Five modules for the SDK is the **leanest of any backend adapter in this toolkit**: the AWS SDK for
+Its SDK is the **leanest of any backend adapter in this toolkit**: the AWS SDK for
 Go v2 ships per service, so reading secrets does not drag in the rest of AWS. Note what is absent —
 `aws-sdk-go-v2/config` and `credentials` are how *you* build a client, so they are yours, not the
 module's.

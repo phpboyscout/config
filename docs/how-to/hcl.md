@@ -88,7 +88,7 @@ than guessed.
 
 | | |
 |---|---|
-| Modules added | **16** — 7 for hclparse, hclwrite and cty, 9 for the `config` graph |
+| Adds | hclparse, hclwrite and cty, on top of the `config` graph |
 
 This is the heaviest format adapter: the config graph plus HashiCorp's HCL toolchain (`hashicorp/hcl/v2`,
 `zclconf/go-cty`) and what those bring. An allowlist test in the module states the full set. No

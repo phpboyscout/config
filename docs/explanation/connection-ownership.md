@@ -59,8 +59,8 @@ graph each adapter actually hands a consumer:
 
 | Family | Rung 3 | Rung 4 |
 |---|---|---|
-| AWS | free | **+7 to +10 modules** |
-| Azure | free | **+7 modules** |
+| AWS | free | **costs** `sso`, `sts`, `imds` and the rest |
+| Azure | free | **costs** `azidentity` and MSAL |
 | GCP | free | free |
 | Vault, Consul | free | free |
 
@@ -77,9 +77,9 @@ One extra import, and in exchange the adapter's own dependency footprint is
 exactly what it always was. Each of those subpackages carries a test asserting
 its parent's graph has not grown — so if the split ever leaks, the build says so.
 
-AWS costs 7 on `config-aws-s3` and 10 on the other two, because S3's larger
-service graph already carries three of the credential modules. Each adapter
-measures its own rather than quoting a sibling's.
+The AWS chain costs less on `config-aws-s3` than on the other two, because S3's larger
+service graph already carries some of the credential modules. Each adapter's
+own test measures its own rather than trusting a sibling's.
 
 ## Sharing a connection is deliberate, never automatic
 

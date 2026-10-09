@@ -190,7 +190,7 @@ b, err := kvambient.Default(ctx, vaultURL)
 ```
 
 **The subpackage is not decoration.** Resolving the ambient Azure identity chain
-costs seven further modules — `azidentity`, MSAL, `golang-jwt` and, notably,
+pulls in `azidentity`, MSAL, `golang-jwt` and, notably,
 `pkg/browser`, so an interactive credential can open a sign-in page. Reasonable
 for a developer tool to carry, odd for a service.
 
@@ -206,7 +206,7 @@ request.
 
 | | |
 |---|---|
-| Modules added | **15** — 6 for the Key Vault SDK, 9 for the `config` graph |
+| Adds | the Key Vault SDK, on top of the `config` graph |
 | Requires | the `config` version named in this module's `go.mod` — `go get` brings it |
 | Capability since | `config` **v0.7.0**, the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
 

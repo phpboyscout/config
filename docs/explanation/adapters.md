@@ -23,6 +23,12 @@ dependency graph carries the one integration you reached for and nothing else: a
 reading TOML never compiles the XML parser, and a consumer configuring from Consul never pulls
 a cloud SDK it does not touch.
 
+**Every module in the family guards its own dependency graph.** Each carries a test that lists
+the modules a consumer inherits from it, so a dependency arriving through a version bump fails
+that module's build instead of reaching yours quietly. Keeping the graph small is deliberate, and
+the test is what holds it there. The docs say what each adapter brings rather than how many
+modules that comes to, because the test is the only place that number stays true.
+
 ## What every adapter inherits
 
 An adapter only teaches the store how to *read* (and, where it makes sense, *write* and
@@ -177,8 +183,8 @@ The local keychain is the exception, and the reason it is one is worth reading b
   each filename is a key. Not one system but a shape three of them share: a mounted
   Kubernetes ConfigMap or Secret, Docker and Podman secrets under `/run/secrets`, and
   systemd credentials. Read-only by default with opt-in writes, and **it adds no
-  module** — which is much of why it exists, since the alternative for a ConfigMap is a
-  38-module Kubernetes client to read data the pod already has. Its integration suite
+  module** — which is much of why it exists, since the alternative for a ConfigMap is the
+  whole Kubernetes client to read data the pod already has. Its integration suite
   proves the mount layout against a real cluster rather than against documentation.
 - [**`config-keychain`**](../how-to/keychain.md) — the local OS keychain, and the odd one out of
   this group in two ways. It is **writable**, because the token it holds is one the application
@@ -191,7 +197,7 @@ The local keychain is the exception, and the reason it is one is worth reading b
   stream. Flat IDs verbatim, or one secret as a document. Its distinctive behaviour is version
   states: `latest` means most recently *created*, so a disabled newest version makes it unreadable
   and the adapter falls back to the newest enabled one — reporting that through a callback, because
-  provenance cannot carry a per-key resolution. **At 39 modules, the heaviest of the secrets managers.**
+  provenance cannot carry a per-key resolution. **The heaviest of the secrets managers.**
 - [**`config-azure-keyvault`**](../how-to/azure-keyvault.md) — Azure Key Vault. Read-only,
   statically sensitive, polled at five minutes. The one store here with **no hierarchy at all**:
   names allow only letters, digits and hyphens, so a name is a key verbatim and structure comes
@@ -201,7 +207,7 @@ The local keychain is the exception, and the reason it is one is worth reading b
   sensitive, polled. Reads a **prefix by default** — the reversal of Vault's shape, because
   `BatchGetSecretValue` returns a whole prefix in one request — or one secret as a whole document,
   the RDS-managed shape. A partial read is refused rather than served with keys missing; a staging
-  label can be selected, at the cost of the bulk read. Its SDK is **five modules**, the leanest
+  label can be selected, at the cost of the bulk read. Its SDK is the leanest of any
   backend adapter in the toolkit.
 
 ### Roadmap
@@ -244,10 +250,10 @@ schema is written. `config-schema` supplies the JSON Schema dialect, its library
 ingestion.
 
 That split is the same dependency-footprint argument the adapters are built on, applied to a
-capability rather than a source. Twenty-five adapters depend on `config`, and each pins its
+capability rather than a source. Every adapter depends on `config`, and each pins its
 footprint; a JSON Schema library linked into the core would widen every one of them for
 something most do not use. Behind an interface it costs them nothing, and a consumer who wants
-it adds one module.
+it adds `config-schema`.
 
 The tag-derived `config.NewSchema` stays in the core, so the common case needs no extra module
 at all. Reach for `config-schema` when the schema is a **document** — one you already publish,

@@ -168,7 +168,7 @@ replacing it.
 
 | | |
 |---|---|
-| Modules added | **21** — 9 for the `config` graph, 12 for `credentials` |
+| Adds | `credentials`, on top of the `config` graph |
 | Requires | the `config` version named in this module's `go.mod` — `go get` brings it |
 | Capability since | `config` **v0.10.0**, the release adding `BoundedKeySpace`, which a declared-key backend needs; and `credentials` **v0.2.2**, the release in which the keychain backend began honouring its context |
 

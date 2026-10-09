@@ -113,7 +113,7 @@ over the connection.
 
 | | |
 |---|---|
-| Modules added | **12** — 3 for pkg/sftp and its filesystem walker, 9 for the `config` graph |
+| Adds | pkg/sftp and its filesystem walker, on top of the `config` graph |
 
 `github.com/pkg/sftp` and `golang.org/x/crypto` (for the SSH transport), plus `config` and what it
 already brings — asserted by an allowlist test in the module. The tests run against an in-process

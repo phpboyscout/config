@@ -209,7 +209,7 @@ it. This is settled rather than pending — see
 
 | | |
 |---|---|
-| Modules added | **25** — 15 for the etcd client, 10 for the `config` graph |
+| Adds | the etcd client, on top of the `config` graph |
 | Requires | the `config` version named in this module's `go.mod` — `go get` brings it — and etcd **v3** |
 
 The etcd client weighs the same as Consul's and less than half of the Kubernetes `client-go` —

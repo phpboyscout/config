@@ -209,7 +209,7 @@ cloud **parameter stores** are released:
   at load, batches that commit atomically across keys, and a native change feed that replays from
   the load revision so nothing is missed while the watch attaches. Kubernetes ConfigMaps are
   deliberately **not** on this list: one already reaches a pod as a file or an environment
-  variable, so `config-filekv` above covers the gap without a 38-module API client.
+  variable, so `config-filekv` above covers the gap without the Kubernetes API client.
 
 ### Not an adapter: JSON Schema validation
 

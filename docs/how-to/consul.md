@@ -145,7 +145,7 @@ refresh underneath you.
 
 | | |
 |---|---|
-| Modules added | **24** — 15 for the Consul API client, 9 for the `config` graph |
+| Adds | the Consul API client, on top of the `config` graph |
 
 The config graph plus the Consul SDK (`github.com/hashicorp/consul/api` and its client
 dependencies) — the honest cost of talking to Consul, asserted by an allowlist test in the module

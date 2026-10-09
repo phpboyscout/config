@@ -213,14 +213,13 @@ would read another project's. `ErrNoProject` refuses at construction.
 
 | | |
 |---|---|
-| Modules added | **39** — 30 for the Secret Manager SDK, 9 for the `config` graph |
+| Adds | the Secret Manager SDK, on top of the `config` graph |
 | Requires | the `config` version named in this module's `go.mod` — `go get` brings it |
 | Capability since | `config` **v0.7.0**, the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
 
-This is **one of the heaviest adapters in the toolkit**, roughly five times AWS Secrets Manager's five
-modules or Azure Key Vault's six, because the Google API client stack is large and shared. Worth
-knowing before you add it to a small binary. The figure is pinned by an allowlist test in both
-directions.
+This is **one of the heaviest adapters in the toolkit**, several times the size of AWS Secrets Manager's
+or Azure Key Vault's, because the Google API client stack is large and shared. Worth knowing before you add it
+to a small binary. The graph is pinned by an allowlist test in both directions.
 
 ## Related
 
