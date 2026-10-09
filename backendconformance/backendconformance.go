@@ -32,6 +32,14 @@
 //		})
 //	}
 //
+// Run the suite once per value mode the backend offers. A backend with a value
+// codec holds keys that decode to a subtree beside keys that stay scalar, and
+// its load and conflict paths must agree on both; a seed of plain scalars never
+// reaches that mix. config-filekv shipped a codec under which every write was a
+// conflict because only its plain mode was run. Its
+// TestBackendConformance_WritableWithCodec is the pattern: a second Run whose
+// NewBackend enables the codec and stores a document beside the flat keys.
+//
 // It uses the standard library testing package and nothing else — deliberately
 // no testify — so an adapter that runs it takes on no assertion-library
 // dependency it would otherwise avoid.
