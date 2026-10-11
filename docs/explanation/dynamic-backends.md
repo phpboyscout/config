@@ -199,8 +199,9 @@ the release would wait on running against a real vault.
 **The release did not wait.** It shipped unproven, and the suite's own comment had predicted the
 consequence: "the moment one adapter ships unproven, the bar is lowered for every one after it."
 
-It was finally run against a real vault on 2026-08-17. **Every claim held**, but the suite itself
-failed three ways, none of them visible to a fake: secret names derived from Go test names carry
+It was finally run against a real vault on 2026-08-17. **Every claim it tested held.** One of the
+five, that a certificate-backed secret is listed as managed, has no test and is still unobserved.
+The suite itself failed three ways, none of them visible to a fake: secret names derived from Go test names carry
 underscores Key Vault rejects; `DeleteSecret` soft-deletes, so the suite worked exactly once per
 vault and then failed with `409 Conflict`; and a cleanup that purged immediately after deleting did
 nothing at all, because deletion is asynchronous.

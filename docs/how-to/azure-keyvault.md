@@ -20,7 +20,8 @@ go get gitlab.com/phpboyscout/go/config-azure-keyvault
 
     Key Vault has no emulator, so the unit tests drive a hand-written fake of the SDK surface and the
     family's conformance suite. The integration suite under `test/integration/` runs against a real
-    vault. It was first run on 2026-08-17 and every behavioural claim on this page held. It needs
+    vault. It was first run on 2026-08-17 and every claim it tests held. The managed-secret
+    claim has no test yet, so that one is still taken from Microsoft's documentation. It needs
     `INT_TEST_INTEGRATION=1` and `AZURE_KEYVAULT_URL`, and it does not run in the module's CI
     pipeline, so a regression in the service wiring would show up when someone next runs it by hand.
     [How dynamic backends work](../explanation/dynamic-backends.md) tells the story of that first run.
