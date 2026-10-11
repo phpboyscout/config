@@ -54,6 +54,26 @@ file, and [`WithFiles`](load-and-merge.md) already reads it — including hot re
 because the kubelet rewrites the mount in place. Consumed with `envFrom`, a ConfigMap
 is environment variables, and `WithEnv` already reads those.
 
+A ConfigMap holding **several documents**, such as `base.yaml` and `site.yaml`,
+mounts as several files, and each should be its own layer rather than one layer of
+keys. `WithFiles` takes them in precedence order, first as the base and last as the
+winner:
+
+```go
+store, err := config.NewStore(ctx,
+	config.WithFiles(config.OS(),
+		"/etc/config/base.yaml",
+		"/etc/config/site.yaml", // outranks base.yaml
+	),
+	config.WithEnv("MYAPP"),
+)
+```
+
+Name the files rather than listing the directory. Their order is a precedence
+decision, and taking it from whatever the directory holds would make a file added
+to the ConfigMap later change which value wins without anyone choosing that. Each
+file keeps its own provenance, so `Explain` names the one that supplied a value.
+
 Reach for this adapter when the ConfigMap holds **many scalar keys**, which mounts as
 many files, or when you are reading a secrets directory that never had a document in
 the first place.

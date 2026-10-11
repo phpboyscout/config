@@ -177,33 +177,58 @@ absent at the next load.
 
 ## Getting a client
 
-Building the client yourself is the default. One further rung exists:
+Building the client yourself is the default. Two further rungs exist:
 
 ```go
 // You assembled the config; the adapter builds the client.
 b, err := configetcd.FromConfig(clientv3.Config{Endpoints: []string{"localhost:2379"}}, "app/")
 
+// Nothing at all: the environment etcdctl reads.
+b, err := configetcd.Default("app/")
+
 store, err := config.NewStore(ctx, config.WithBackend(b), config.WithCloser(b))
 defer store.Close()
 ```
 
-**`FromConfig` returns `*OwnedBackend`, which must be closed.** It built the etcd
+**Both return `*OwnedBackend`, which must be closed.** The adapter built the etcd
 client, so it owns the client's connections and goroutines. Hand it to the store
-with `WithCloser`, as above, and closing the store releases it. Since
-config-etcd v0.3.0; before that, nothing could close it.
+with `WithCloser`, as above, and closing the store releases it. `FromConfig` has
+done this since config-etcd v0.3.0; before that, nothing could close it.
 
-### There is deliberately no zero-conf rung
+### `Default` reads what etcdctl reads
 
-Every other remote adapter here except `config-sftp` offers a `Default()` over its SDK's own
-ambient convention. **etcd has none.** `clientv3` has no `DefaultConfig`, and its only
-environment variable is `ETCD_CLIENT_DEBUG` — a debug flag, not an endpoint or a
-credential. It has neither an ambient credential chain *nor* endpoint discovery,
-so both halves would have to be invented.
+`clientv3` has no `DefaultConfig` of its own, but etcd's command-line tool
+documents one: every global flag can be set as `ETCDCTL_` plus its name. So a
+machine that can run `etcdctl get` against a cluster already has what `Default`
+needs, and a tool built on `config` reaches the same cluster from the same shell.
 
-Adopting a provider's documented default is not the same act as inventing one, so
-`config-etcd` stops at `FromConfig` and `ErrNoEndpoints` says so where you meet
-it. This is settled rather than pending — see
-[who owns the connection](../explanation/connection-ownership.md).
+It reads seven variables and no others:
+
+| Variable | Sets |
+|---|---|
+| `ETCDCTL_ENDPOINTS` | the endpoints, comma-separated |
+| `ETCDCTL_CACERT`, `ETCDCTL_CERT`, `ETCDCTL_KEY` | TLS, which is on when any of the three is set |
+| `ETCDCTL_USER`, `ETCDCTL_PASSWORD` | the credentials; `ETCDCTL_USER` may be `user:password` when `ETCDCTL_PASSWORD` is unset |
+| `ETCDCTL_DIAL_TIMEOUT` | the dial timeout, as a duration such as `3s` |
+
+It departs from `etcdctl` in three places, each on purpose:
+
+- **No endpoint is an error, not `localhost:2379`.** `ErrNoEndpoints` names the
+  variable. A configuration store that guesses its source serves wrong values
+  instead of failing.
+- **A user with no password is an error, not a prompt.** A library has no
+  terminal to ask on.
+- **`ETCDCTL_INSECURE_SKIP_TLS_VERIFY` is never read.** If a test cluster needs
+  it, build the config yourself and use `FromConfig`.
+
+A variable it cannot use, such as a dial timeout of `3` with no unit or a
+certificate without its key, fails at `Default` with `ErrMalformedEnv`, naming the
+variable. With `ETCDCTL_DIAL_TIMEOUT` unset there is no dial timeout at all:
+nothing dials until `Load`, and `Load`'s context bounds it. Neither rung contacts
+etcd, so an unreachable cluster is a `Load` error.
+
+The reasoning, including why this convention was adopted when `clientv3` has
+none, is in [who owns the connection](../explanation/connection-ownership.md).
 
 ## What it costs
 

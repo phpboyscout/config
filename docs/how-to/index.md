@@ -97,7 +97,7 @@ provider's native config, or — for most of them — take the ambient credentia
 chain and supply nothing but the target.
 
 Injection is the default and stays recommended. The reasoning, the cost of each
-ambient rung, and the two adapters that deliberately have none are in
+ambient rung, and the adapters that deliberately stop short are in
 [who owns the connection](../explanation/connection-ownership.md).
 
 ## Elsewhere

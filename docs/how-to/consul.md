@@ -114,7 +114,8 @@ b, err := configconsul.Default("app/")
 ```
 
 `Default` inherits **Consul's own** documented `127.0.0.1:8500`, not one this
-adapter invented — which is why [`config-etcd`](etcd.md) has no equivalent.
+adapter invented. etcd documents no such default for its client, so
+[`config-etcd`'s `Default`](etcd.md#getting-a-client) refuses without an endpoint instead.
 
 Neither rung contacts Consul: `capi.NewClient` does no network I/O, so a failure
 here is a malformed config and reaching the agent stays deferred to the first

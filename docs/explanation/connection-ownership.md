@@ -145,6 +145,13 @@ Every adapter refuses when the target is missing, rather than guessing:
 | bucket, container | `gcp-gcs`, `aws-s3`, `azure-blob` |
 | vault URL, endpoint, service URL | `azure-keyvault`, `azure-appconfig`, `azure-blob` |
 | address | `vault` |
+| endpoint | `etcd` |
+
+`config-etcd` is the one adapter whose ambient rung reads the target as well,
+because etcd's own tooling keeps it in the environment: `Default` reads
+`ETCDCTL_ENDPOINTS`, the variable `etcdctl` uses. That is still the caller
+answering, in the place an operator already answered it. With the variable
+unset it refuses, where `etcdctl` would assume `localhost:2379`.
 
 There is one deliberate exception in the other direction. `config-vault`'s
 `Default` inherits Vault's own documented `127.0.0.1:8200`, because **adopting a
@@ -263,14 +270,7 @@ For completeness: a connection string is a static secret, and Azure's may carry 
 SAS with an expiry. That rung is injected rather than ambient, so the credential
 is already in your hands — the same hazard, but not a hidden one.
 
-## Three adapters that stop short, and why
-
-**`config-etcd` has no ambient rung, permanently.** `clientv3` has neither an
-ambient credential chain nor endpoint discovery — unlike every other provider
-here, *both* halves would have to be invented. A `Default()` could only be
-`FromConfig` with made-up environment parsing bolted on, and everything of
-substance there is already `FromConfig`. Use `FromConfig` with the endpoints you
-know.
+## Two adapters that stop short, and why
 
 **`config-sftp` stops at rung 3.** An ambient SSH default would have to choose a
 host-key verification policy on your behalf, and every option is wrong for
