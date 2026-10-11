@@ -13,7 +13,7 @@ marks share the wider phpboyscout palette so the projects read as one family.
 
 ## The mark
 
-config's logo is a stack of layered configuration plates — teal, indigo and amber — resolving down through three arrows into a single container: many sources, merged in precedence order into one, behind one small interface. Drawn as a clean flat-isometric mark in the wider phpboyscout palette of petrol-teal, amber, cream and charcoal.
+config's logo is a stack of layered configuration plates (teal, indigo and amber) resolving down through three arrows into a single container: many sources, merged in precedence order into one, behind one small interface. Drawn as a clean flat-isometric mark in the wider phpboyscout palette of petrol-teal, amber, cream and charcoal.
 
 ---
 
@@ -21,7 +21,7 @@ config's logo is a stack of layered configuration plates — teal, indigo and am
 
 ### Vector (recommended)
 
-Scales indefinitely without quality loss — use it for the web, print and
+Scales indefinitely without quality loss. Use it for the web, print and
 high-resolution displays.
 
 - [Transparent (logo_transparent.svg)](../images/branding/logo_transparent.svg)

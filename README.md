@@ -9,7 +9,7 @@
 [![Coverage](https://gitlab.com/phpboyscout/go/config/badges/main/coverage.svg)](https://gitlab.com/phpboyscout/go/config/-/graphs/main/charts)
 [![phpboyscout Go toolkit](https://img.shields.io/badge/phpboyscout-Go%20toolkit-554488?logo=gitlab&logoColor=white)](https://go.phpboyscout.uk)
 
-<em>Part of the <a href="https://go.phpboyscout.uk">phpboyscout Go toolkit</a> &mdash; small, framework-free Go modules extracted from <a href="https://gitlab.com/phpboyscout/go-tool-base">go-tool-base</a>. Docs: <a href="https://config.go.phpboyscout.uk">config.go.phpboyscout.uk</a></em>
+<em>Part of the <a href="https://go.phpboyscout.uk">phpboyscout Go toolkit</a>: small, framework-free Go modules extracted from <a href="https://gitlab.com/phpboyscout/go-tool-base">go-tool-base</a>. Docs: <a href="https://config.go.phpboyscout.uk">config.go.phpboyscout.uk</a></em>
 
 </div>
 
@@ -59,7 +59,8 @@ Plus the ordinary things, done deliberately. Precedence is the order you added t
 rather than a fixed ranking you cannot change. `Value[T]` reads any type including your own
 `encoding.TextUnmarshaler` implementations. There is no global singleton, so
 configuration-dependent tests run in parallel without touching process state. And the
-environment prefix is required as a security control.
+environment prefix is required, because without one any variable that matches a key could
+reconfigure your tool.
 
 ## Reacting to change: told once, told in order, told the truth
 
@@ -157,7 +158,7 @@ server:
 </tr>
 </table>
 
-Every comment is gone, the order is now alphabetical rather than meaningful, a default the
+Every comment is gone. The order is alphabetical rather than meaningful. A default the
 program never had written down is now pinned into the user's file. And a production
 password that arrived from an environment variable and was never in any file is now
 sitting in one that is probably in git.
@@ -198,8 +199,8 @@ implement**:
 A read-only Consul layer implements one interface. A backend with a real subscription
 implements `WatchableBackend` and gets push-based reload without polling anything. Nothing
 forces a source to pretend it can do something it cannot, and that is what makes a single
-fat interface with stubbed methods so unpleasant to live with.
-See **[Write a custom backend](https://config.go.phpboyscout.uk/how-to/custom-backend/)**.
+fat interface with stubbed methods so unpleasant to live with. See
+**[Write a custom backend](https://config.go.phpboyscout.uk/how-to/custom-backend/)**.
 
 A file in **another format** is smaller still: the file machinery is written once, so you
 supply only a `Codec` (`Decode` for reading, plus `EditingCodec`'s `Check`/`Apply`/`Empty`
@@ -237,19 +238,20 @@ feels like.
   precedence and provenance independently, so `Explain` reports `/app.yaml#1`. The common
   alternative is worse than unsupported: viper reads the first document, silently discards
   the rest, and returns no error.
-- **Every failure is a named error you can branch on**: every exported error is a sentinel matched with
-  `errors.Is`, so handling a specific failure never means comparing strings. Validation
-  errors carry a fix hint alongside the message.
+- **Every failure is a named error you can branch on.** Every exported error is a sentinel
+  matched with `errors.Is`, so handling a specific failure never means comparing strings.
+  Validation errors carry a fix hint alongside the message.
 - **Context on every operation that does I/O**, so configuration work participates in your
   shutdown path instead of ignoring it.
 - **A smaller dependency graph than the thing it replaces**, while doing more: 23
-  non-stdlib packages across 8 modules, against viper's 36 across 13 (library only, no test
-  dependencies; config's side measured with `go list -deps` on 2026-10-07). The filesystem is a six-method interface this module defines, so you are
-  not made to import one.
-- **Typed sections + validation.** `ObservedSection[T]` keeps a struct current across
+  non-stdlib packages across 8 modules, against viper 1.21.0's 36 across 13. Library only,
+  no test dependencies, and config's side re-measured with `go list -deps` on 2026-10-11.
+  The filesystem is a six-method interface this module defines, so you are not made to
+  import one.
+- **Typed sections that stay current.** `ObservedSection[T]` keeps a struct current across
   reloads. It is decoded in one operation, so it never holds some fields from before a reload
-  and some from after, and republished only when the struct actually changed. Defaults take
-  *your* merge function, so "merge" means what your type needs. `Schema` /
+  and some from after, and it is republished only when the struct actually changed. Defaults
+  take *your* merge function, so "merge" means what your type needs. `Schema` and
   `ValidateStruct[T]` check field rules on both reload and write.
 - **Everything is a layer.** Files, one document within a multi-document file, defaults,
   environment, flags and runtime `AddLayer` sources all take part in precedence, provenance
@@ -273,9 +275,9 @@ decoding by hand.
 
 **Probably not**, if one file and a couple of environment variables cover you, nothing is
 written back and nothing reloads. That is a large share of programs and a well-served case:
-[viper](https://github.com/spf13/viper) is battle-tested by an enormous number of them, has
-an ecosystem this module does not. Much of what is here was
-learned from years of using it (see the
+[viper](https://github.com/spf13/viper) is battle-tested by an enormous number of them and
+has an ecosystem this module does not. Much of what is here was learned from years of using
+it (see the
 [history](https://config.go.phpboyscout.uk/about/history/)).
 
 ## Install
@@ -359,6 +361,8 @@ See the [migration guide](https://config.go.phpboyscout.uk/about/migrating/) and
 ## Documentation
 
 Full guides and the precedence/hot-reload model: **[config.go.phpboyscout.uk](https://config.go.phpboyscout.uk)**.
+Each guarantee above, with the reasoning and the measurements behind it, is argued in full in
+[What it does, and why](https://config.go.phpboyscout.uk/about/).
 API reference: **[pkg.go.dev](https://pkg.go.dev/gitlab.com/phpboyscout/go/config)**.
 
 ## License

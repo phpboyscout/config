@@ -20,7 +20,7 @@ the small distance between what Viper offered and what one project needed.
 
 The package was published at
 [github.com/phpboyscout/config](https://github.com/phpboyscout/config), where it
-stayed stable for a long time — small tweaks, the occasional fix, and a series
+stayed stable for a long time: small tweaks, the occasional fix, and a series
 of private forks as it travelled into different companies alongside its author.
 That is an unglamorous kind of longevity, and a telling one: code that gets
 carried from job to job is code that keeps earning its place.
@@ -51,8 +51,8 @@ and should change only the file that actually owns the key.
 That request was not, on its own, exotic. What made it decisive is that it could
 not be satisfied by wrapping. Viper writes by re-encoding its resolved view of
 the world, which means a saved file loses every comment its author wrote and
-gains every value that came from somewhere else — including secrets that arrived
-through the environment. No amount of wrapping changes that, because the
+gains every value that came from somewhere else (including secrets that arrived
+through the environment). No amount of wrapping changes that, because the
 information needed to do better is discarded during the merge, long before a
 write is contemplated.
 
@@ -69,8 +69,8 @@ and so a write can be aimed at the layer that owns the key.
 
 That is the [Store](../explanation/the-store.md). Along the way the document
 layer became [`yamldoc`](https://yamldoc.go.phpboyscout.uk), a separate module
-for editing YAML without destroying what a person wrote in it, and Viper — by
-then reduced to resolving typed values from data handed to it — turned out to
+for editing YAML without destroying what a person wrote in it, and Viper, by
+then reduced to resolving typed values from data handed to it, turned out to
 have nothing left to do that was not already being done directly by the two
 libraries it wraps for the purpose.
 
@@ -84,9 +84,9 @@ per cent of what most projects will ever need from configuration, and it makes
 that ninety-five per cent simple and efficient to reach. Any project that fits
 inside it should use it and get on with something more interesting.
 
-This module exists because a particular set of requirements — comment-preserving
+This module exists because a particular set of requirements (comment-preserving
 layer-correct writes, per-key provenance, multi-document files as first-class
-layers — sits outside what Viper sets out to do. That is a difference in scope,
+layers) sits outside what Viper sets out to do. That is a difference in scope,
 not in quality.
 
 None of this would exist without it. A decade of Viper being dependable is what

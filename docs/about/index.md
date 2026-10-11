@@ -70,8 +70,8 @@ Beyond that, the ordinary things done deliberately:
 - **No global singleton, and tests that do not fight each other.** There is no package-level
   instance to configure; stores are values. Read the environment from a function instead of
   the process, the filesystem from `config.Dir(t.TempDir())` or your own `config.FS`, and
-  use the published mocks, so config-dependent
-  tests run in parallel without touching global state. → [Test with the mocks](../how-to/test-with-mocks.md)
+  use the published mocks. Config-dependent tests then run in parallel without touching
+  global state. → [Test with the mocks](../how-to/test-with-mocks.md)
 - **The environment prefix is required**, and it is a security control rather than
   tidiness. Without one, any variable matching a configuration key could reconfigure your
   tool. On a shared CI runner or multi-tenant host, an unrelated process setting
@@ -344,10 +344,11 @@ Worth calling out because the common alternative is worse than unsupported: vipe
 first document, silently discards the rest, and returns no error, so a key in your second
 document simply is not there.
 
-**Every failure is a named error you can branch on.** Every exported error is a sentinel (`ErrConflict`,
-`ErrNoWritableLayer`, `ErrBackendUnsafe`, `ErrAmbiguousEnvKey`, `ErrPartialCommit` and the
-rest, all listed in the [errors reference](../reference/errors.md)), matched with
-`errors.Is`, so handling a specific failure never means comparing strings. Validation failures go further and carry a **hint**:
+**Every failure is a named error you can branch on.** Every exported error is a sentinel
+(`ErrConflict`, `ErrNoWritableLayer`, `ErrBackendUnsafe`, `ErrAmbiguousEnvKey`,
+`ErrPartialCommit` and the rest, all listed in the [errors reference](../reference/errors.md)),
+matched with `errors.Is`, so handling a specific failure never means comparing strings.
+Validation failures go further and carry a **hint**:
 
 ```
 server.port: expected type int but got string (hint: ensure server.port has a value of type int)
@@ -358,8 +359,8 @@ and `Watch` all take a `context.Context` and honour cancellation, so configurati
 participates in your shutdown path instead of ignoring it.
 
 **A smaller dependency graph than the thing it replaces**, while doing more. Library
-dependencies only, no test-only packages, with `config`'s row measured by `go list -deps` on
-2026-10-07:
+dependencies only, no test-only packages, with `config`'s row re-measured by `go list -deps`
+on 2026-10-11:
 
 | | non-stdlib packages | distinct modules |
 |---|---|---|

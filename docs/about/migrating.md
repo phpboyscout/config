@@ -7,8 +7,8 @@ tags: [migration, upgrade]
 # Migrating from v0.2.x
 
 v0.2.x was a wrapper around Viper. This release is not: a `Store` owns every read, write
-and watch, and **Viper is no longer a dependency** — it is absent from `go.mod`, `go.sum`
-and every source file.
+and watch, and **`github.com/spf13/viper` is no longer a dependency**. It is absent from
+`go.mod` and `go.sum`.
 
 Be realistic about the size of this. Most of the surface renames mechanically, but a
 handful of call sites are genuine ports rather than substitutions, and every one of them
@@ -24,7 +24,8 @@ The typed-section *semantics* are frozen. `ObservedSection[T]`, delivery only wh
 decoded struct actually changes, the monotonic `Version()`, and the `WithSection*` options
 all behave exactly as they did. What changed is the *parameter types* they are handed.
 
-So a package that declares its own one-method interface and never imports this module —
+So a package that declares its own one-method interface, and never imports this module,
+needs no change at all:
 
 ```go
 type SettingsSource interface {
@@ -32,15 +33,15 @@ type SettingsSource interface {
 }
 ```
 
-— needs no change at all. `*config.ObservedSection[T]` still satisfies it structurally.
+`*config.ObservedSection[T]` still satisfies it structurally.
 That decoupling boundary is the reason the module exists, and it held. If your reusable
 packages are written this way, the port is confined to the code that constructs
 configuration, not the code that consumes it.
 
-## Step 1 — construction
+## Step 1: construction
 
 There is one constructor now. Sources are added in precedence order and later ones win,
-so the order of the options *is* the precedence chain — there is no separate ranking to
+so the order of the options *is* the precedence chain. There is no separate ranking to
 remember.
 
 Before:
@@ -58,7 +59,7 @@ After:
 ```go
 store, err := config.NewStore(ctx,
     config.WithReaders(config.NamedSource{Name: "embedded:defaults.yaml", Content: defaults}),
-    config.WithFiles(config.OS(), paths...),   // was an afero.Fs — see step 2
+    config.WithFiles(config.OS(), paths...),   // was an afero.Fs, see step 2
     config.WithEnv("MYTOOL"),
     config.WithFlags(flags),
     config.WithSchema(schema),
@@ -74,18 +75,18 @@ Two things to note.
 
 `NewStore` loads immediately; there is no unloaded state to handle. And a configuration
 that parses but fails schema validation is returned *alongside* `ErrInvalidConfig` rather
-than discarded — the usual `if err != nil { return }` still fails fast, but a tool whose
+than discarded. The usual `if err != nil { return }` still fails fast, but a tool whose
 job is to repair configuration can check for `ErrInvalidConfig` specifically and carry on
 with a usable `Store`. Every other failure returns nil.
 
 `RequireFirstSource()` makes the first backend mandatory, which is the closest equivalent
 to the old required-base-file behaviour. Note that it applies to whichever backend you
-added first — if that is your embedded defaults, it is those that become mandatory.
+added first, so if that is your embedded defaults, it is those that become mandatory.
 
 There is no equivalent of `LoadEnv`. If you relied on a `.env` file being read from the
 working directory, load it yourself before calling `NewStore`.
 
-## Step 2 — the filesystem
+## Step 2: the filesystem
 
 `WithFiles` no longer takes an `afero.Fs`. It takes `config.FS`, a six-method interface
 this module defines, and the module ships two implementations.
@@ -102,7 +103,7 @@ entirely.
 
 ### If you have an `afero.Fs` to pass through
 
-Wrap it. The adapter is six methods, and two optional ones worth including — without
+Wrap it. The adapter is six methods, plus two optional ones worth including. Without
 `RealPath` your filesystem is polled rather than watched natively, and without `Readlink`
 a write through a symlink replaces the link instead of following it:
 
@@ -125,8 +126,8 @@ func (a aferoFS) MkdirAll(path string, perm fs.FileMode) error {
 
 !!! warning "Only implement `RealPath` when the filesystem really has OS paths"
     `RealPather` is how the module decides whether native notification can work at all. An
-    adapter that implements it unconditionally — returning `false` from the method rather
-    than not having the method — makes every filesystem look watchable, so `fsnotify` is
+    adapter that implements it unconditionally (returning `false` from the method rather
+    than not having the method) makes every filesystem look watchable, so `fsnotify` is
     selected and the absence of anything to watch is discovered one path at a time.
 
     Give the method to a type that wraps `*afero.OsFs` or `*afero.BasePathFs`, and use a
@@ -146,16 +147,16 @@ store, err := config.NewStore(ctx, config.WithFiles(fsys, "config.yaml"))
 ```
 
 It is a real directory, so watching works and a write behaves exactly as it does in
-production — which an in-memory filesystem cannot exercise.
+production, which an in-memory filesystem cannot exercise.
 
 !!! warning "`Dir` takes paths relative to its root"
     Pass `"config.yaml"`, not `"/tmp/xyz/config.yaml"`. An absolute path is treated as an
-    attempt to escape the root and fails with `path escapes from parent` — **not**
-    `fs.ErrNotExist`. The distinction matters: a missing optional source is normal and
+    attempt to escape the root and fails with `path escapes from parent`, **not**
+    `fs.ErrNotExist`. The distinction matters. A missing optional source is normal and
     skipped, whereas an escape is fatal, so an absolute path turns a merely-absent file
     into a hard failure.
 
-## Step 3 — the mechanical rename
+## Step 3: the mechanical rename
 
 `Containable` is gone. The read surface is `Reader`, and it is deliberately free of any
 dependency's types: nothing in it exposes an underlying library, because anything
@@ -190,12 +191,12 @@ must take the `*Store` (or a `Binder`) instead, not a scoped view.
 In tests, `mocks.MockContainable` becomes `mocks.NewMockReader`, with
 `mocks.NewMockBinder` and `mocks.NewMockObserved` alongside it.
 
-## Step 4 — what was removed, and what replaces it
+## Step 4: what was removed, and what replaces it
 
 | Removed | Use instead | Note |
 |---|---|---|
 | `Containable` | `Reader` | Rename; the accessor set is a superset |
-| `Containable.GetViper()` | typed accessors, `Store.Snapshot()`, `Store.AddLayer` | See below — the five real uses each have a first-class answer |
+| `Containable.GetViper()` | typed accessors, `Store.Snapshot()`, `Store.AddLayer` | See below: the five real uses each have a first-class answer |
 | `Containable.Set(key, value)` | `Store.Apply(ctx, config.Set(...))` | Staging and persisting are one step now |
 | `Containable.WriteConfigAs(dest)` | `Store.Apply` | The old method wrote the *merged* view, including env-sourced secrets |
 | `Containable.BindPFlag(key, flag)` | `WithFlags(flags, BindFlag(...))` at construction | Bindings now survive a reload |
@@ -203,7 +204,7 @@ In tests, `mocks.MockContainable` becomes `mocks.NewMockReader`, with
 | `Containable.ConfigFiles()` | `Store.Sources()`, or `Snapshot().Layers()` filtered on `Kind == SourceFile` | Layers carry provenance, not just paths |
 | `Containable.Sub(key)` | `View.Sub(key) *View` | Still nil when absent, so `if sub != nil` guards behave |
 | `Containable.Validate(schema)` | `View.Validate(schema)` | Not on `Reader`; a validating function must take `*View` |
-| `Container.Close()` | the `stop` func returned by `Store.Watch` | Watching is now started explicitly, not implicitly |
+| `Container.Close()` | `Store.Close()`, or the `stop` func returned by `Store.Watch` | Watching is now started explicitly, not implicitly |
 | `Container.SetSchema(schema)` | `WithSchema(schema)` at construction | |
 | `Container.GetObservers()` | `Store.Observers()` | |
 | `NewFilesContainer`, `NewReaderContainer` | `NewStore` with `WithFiles` / `WithReaders` | |
@@ -226,19 +227,19 @@ In tests, `mocks.MockContainable` becomes `mocks.NewMockReader`, with
 | `ErrConfigFileNotFound`, `ErrNoFilesFound` | `ErrNoSources`, and `fs.ErrNotExist` from a backend | |
 | `DefaultReloadDebounce` | `DefaultPollInterval` | |
 
-## Step 5 — the genuinely breaking cases
+## Step 5: the genuinely breaking cases
 
 ### `GetViper()`
 
 Across all repositories this escape hatch was reached for exactly five distinct methods.
-Three of them are now first-class:
+Each now has a first-class answer:
 
 | Old | New |
 |---|---|
 | `cfg.GetViper().GetStringSlice(key)` | `cfg.GetStringSlice(key)` |
 | `cfg.GetViper().Set(key, value)` | `store.Apply(ctx, config.Set(key, value))` |
 | `cfg.GetViper().AllSettings()` | `store.Snapshot().Values()` |
-| `cfg.GetViper().ConfigFileUsed()` | `cfg.Origin(path)` — or `store.Sources()` for the whole list |
+| `cfg.GetViper().ConfigFileUsed()` | `cfg.Origin(path)`, or `store.Sources()` for the whole list |
 | `cfg.GetViper().MergeConfig(r)` | `store.AddLayer(ctx, "computed", r)` |
 
 `ConfigFileUsed()` is the interesting one. It answered "the last file read", which for a
@@ -260,12 +261,12 @@ lands in the file beneath it and is reported as shadowed rather than silently ha
 effect. Compiled-in defaults belong in `WithReaders` at construction instead, where they
 sit at the bottom of the order.
 
-### `WriteConfigAs` — read this one carefully
+### `WriteConfigAs`: read this one carefully
 
 This is the most important change in the release, and it is a bug fix as much as a port.
 
 `WriteConfigAs` serialised Viper's `AllSettings()`, which is the **merged** view. That
-means it wrote environment-sourced values — including secrets injected as env vars — into a
+means it wrote environment-sourced values (including secrets injected as env vars) into a
 file on disk, alongside every compiled-in default the user never asked for. It also dropped
 empty maps, because `AllSettings()` omits `key: {}`. Consumers worked around this by
 constructing a second, throwaway Viper containing only the keys they meant to persist, and
@@ -305,8 +306,8 @@ if _, err := store.Apply(ctx, config.Set("telemetry.enabled", enabled)); err != 
 The write preserves comments, key order and block style in the target file, and only the
 key you named is touched.
 
-If you need to know where a write will land before committing it — a `--dry-run`, or a
-settings screen previewing its own changes — `Plan` returns exactly what `Apply` would
+If you need to know where a write will land before committing it (a `--dry-run`, or a
+settings screen previewing its own changes), `Plan` returns exactly what `Apply` would
 execute:
 
 ```go
@@ -342,7 +343,7 @@ Flags are now a backend, declared at construction. This fixes a real defect: und
 container a reload rebuilt Viper from files and silently discarded every flag binding, so a
 `--port` the user passed stopped applying the first time the config file changed.
 
-Only flags the user actually changed contribute — that filtering is now the backend's job,
+Only flags the user actually changed contribute. That filtering is now the backend's job,
 not yours. Binding a flag left at its default is how a flag default silently masks
 configuration, and the user has no way to discover why their file is being ignored.
 
@@ -360,7 +361,7 @@ for key, flag := range boundFlags {
 }
 ```
 
-After — at construction, adding the flag backend last so an explicit flag outranks
+After, at construction, with the flag backend added last so an explicit flag outranks
 everything:
 
 ```go
@@ -391,7 +392,7 @@ fmt.Fprintln(w, string(data))
 ```
 
 `Values()` returns a copy, so mutating it cannot affect the snapshot. Note that this is the
-merged view — if you are producing output for a user, mask anything whose `Origin` is
+merged view, so if you are producing output for a user, mask anything whose `Origin` is
 `SourceEnv` before printing it.
 
 ### `Set`
@@ -410,17 +411,17 @@ snap, err := store.Apply(ctx,
 Batched changes land together. If you genuinely wanted an in-process override that is never
 persisted, that is `AddLayer`.
 
-## Step 6 — `ObserveSection`
+## Step 6: `ObserveSection`
 
 The semantics are unchanged. What changed is the first parameter: `ObserveSection` now
 takes a `Binder`, which is anything with `View() *View` and
 `AddObserverFunc(func(Observed) error)`. `*Store` satisfies it, so at the call site this is
-usually just passing the store instead of the container — and the closures passed to
+usually just passing the store instead of the container, and the closures passed to
 `WithSectionDefaultFunc` and friends take a `config.Observed` where they took a
 `config.Containable`.
 
 !!! note "`ApplyInitial` is new capability, not a required fix"
-    The apply callback fires on change and not on binding — and that was true in v0.2.x
+    The apply callback fires on change and not on binding, and that was true in v0.2.x
     too, where `apply` was likewise only reachable from inside the registered observer. If
     your bindings already work, this step does not break them, and you need no
     `ApplyInitial` call to preserve current behaviour.
@@ -474,12 +475,12 @@ test satisfies the interface without dragging in the machinery that loads one, a
 `Current()`, `Value()`, `Exists()` and `Version()` are untouched, as are
 `WithSectionDefaults`, `WithSectionEqual`, `WithSectionValidator` and `WithSectionApply`.
 
-## Step 7 — watching
+## Step 7: watching
 
 !!! danger "If you do not add a `Watch` call, hot-reload silently stops working"
     This is the one migration step with no compiler error and no runtime error to tell you
-    it was missed. v0.2.x started a watcher **during construction** — `watchConfig` ran from
-    every constructor — so consumers got hot-reload without asking and without a call site
+    it was missed. v0.2.x started a watcher **during construction**: `watchConfig` ran from
+    every constructor, so consumers got hot-reload without asking and without a call site
     to port.
 
     There is nothing to rename here. There is a call to *add*, and if you skip it the code
@@ -489,7 +490,7 @@ test satisfies the interface without dragging in the machinery that loads one, a
     a component re-reading configuration. If any of it exists, you need `Watch`.
 
 Watching is explicit now, and it fails loudly when it cannot work. The old container's
-implicit watcher silently did nothing on a filesystem the operating system could not see —
+implicit watcher silently did nothing on a filesystem the operating system could not see,
 so hot reload was quietly dead in exactly the tests and virtual-worktree tools that most
 needed it. Explicit is the fix for both problems: you can see the call, and it tells you
 when it cannot do its job.
@@ -505,11 +506,12 @@ defer stop()
 
 Pass `WithPollInterval(d)` to tune polling, or `WithWatcher(w)` to drive change detection
 deterministically in tests. `NewWatcher` picks native notification where it works and
-polling everywhere else. `Store.Close()` does not exist; the returned `stop` is the whole
-lifecycle.
+polling everywhere else. To end watching at shutdown, call the returned `stop` for one
+watch or `Store.Close()` for all of them. After `Close`, `Reload`, `Apply`, `AddLayer` and
+`Watch` return `ErrStoreClosed`, while reads keep answering from the last configuration.
 
-`WithReloadDebounce` becomes `WithSettleInterval`, and moves from construction to `Watch`
-— it only ever applied to foreign changes, and now sits where those are handled.
+`WithReloadDebounce` becomes `WithSettleInterval`, and moves from construction to `Watch`,
+because it only ever applied to foreign changes and now sits where those are handled.
 
 ## What you gain
 
@@ -544,5 +546,5 @@ instead of being silently deleted.
 - Individual reads are always coherent, but a *sequence* of them can straddle a reload. Use
   `store.With(func(v *config.View) error { ... })` for a block of related reads.
 - Serialisation is in-process only. It does not coordinate between processes.
-- Invisible and bidirectional characters are escaped on write — a Trojan Source mitigation
+- Invisible and bidirectional characters are escaped on write, as a Trojan Source mitigation
   (CVE-2021-42574). The escape is lossless; every visible character survives verbatim.
