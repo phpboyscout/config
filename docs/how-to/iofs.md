@@ -77,6 +77,15 @@ sub, _ := fs.Sub(embedded, "config")
 store, _ := config.NewStore(ctx, config.WithFiles(configiofs.Wrap(sub), "app.yaml"))
 ```
 
+## Listing a directory
+
+[`config-filekv`](filekv.md) reads a whole directory, so it needs `config.DirLister`. `Wrap`
+claims it only where the filesystem can list: one that implements `fs.ReadDirFS`, such as
+`embed.FS` or `fstest.MapFS`, or one whose root opens as a listable directory, such as
+`zip.Reader`. Checking the root is the only I/O `Wrap` does. A filesystem that can do
+neither is wrapped without `ReadDir`, and `configfilekv.New` says it cannot list rather
+than failing a directory at a time.
+
 ## What it costs
 
 | | |

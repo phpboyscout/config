@@ -84,7 +84,8 @@ individual parameters and you want a backend like `config-aws-ssm`.
   `Stat`, `Rename`, `Remove` and `MkdirAll`. A write is committed by staging content beside the
   target and **renaming over it**, so a reader never observes a half-written file. An adapter
   implements those six and, where the filesystem can honour them, the optional
-  [`RealPather`](backends.md) and [`LinkReader`](backends.md).
+  [`RealPather`](backends.md), [`LinkReader`](backends.md) and `DirLister`, which a backend
+  reading a whole directory, such as `config-filekv`, needs.
 - **The layer is an ordinary layer.** Once wrapped, the filesystem feeds a normal file layer:
   precedence, per-key merge, provenance, coherent snapshots and fail-closed reload all work exactly
   as they do for `config.OS()`. `Explain` names the file, wherever it physically lives.

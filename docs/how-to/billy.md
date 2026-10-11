@@ -65,6 +65,12 @@ wrapped filesystem — a config file reached through a symlink is written *throu
 having the link replaced with a regular file. Where a path is not a link, the filesystem says so and
 the path is used as given.
 
+## Listing a directory
+
+`billy.Filesystem` mandates `ReadDir` too, so `config-billy` satisfies `config.DirLister` for every
+wrapped filesystem. That is what [`config-filekv`](filekv.md) needs to read a directory of
+single-value files, so a mounted secrets directory can be tested over `memfs`.
+
 ## What it costs
 
 | | |

@@ -63,7 +63,9 @@ is discovered one path at a time instead of up front. It compiles, it looks righ
 quietly costs native notification with nothing to report it.
 
 So `Wrap` returns one of four concrete types, claiming `RealPather` and `LinkReader`
-independently and only where the filesystem can honour each:
+independently and only where the filesystem can honour each. All four satisfy
+`config.DirLister`, since every afero filesystem can list a directory, so
+[`config-filekv`](filekv.md) can read a mount over an `afero.MemMapFs` in a test:
 
 | Filesystem | Real paths | Symlinks | Result |
 |---|---|---|---|
