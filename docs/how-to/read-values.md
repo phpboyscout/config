@@ -53,9 +53,9 @@ decoding one.
 
 ## Read the type you actually want
 
-There is a named accessor for the common widths and shapes — `GetInt32`, `GetInt64`,
+There is a named accessor for the common widths and shapes (`GetInt32`, `GetInt64`,
 `GetUint` through `GetUint64`, `GetFloat64`, `GetTime`, `GetStringSlice`, `GetIntSlice`,
-`GetStringMap`, `GetStringMapString`, `GetStringMapStringSlice`.
+`GetStringMap`, `GetStringMapString`, `GetStringMapStringSlice`).
 
 For anything else, use `config.Value[T]`, which reads any type at all:
 
@@ -66,8 +66,9 @@ limits, err := config.Value[map[string]int](view, "quotas")
 ```
 
 It is a function rather than a method because Go does not allow type parameters on
-methods — the same reason `UnmarshalSection` and `ValidateStruct` are functions. It takes
+methods, which is also why `UnmarshalSection` and `ValidateStruct` are functions. It takes
 a `Reader`, so it works against a `View`, an `Observed` handed to an observer, or a mock.
+An absent key yields the zero value and no error, like the named accessors.
 
 `MustValue[T]` is the panic-on-error variant, for package initialisation and tests.
 
@@ -85,9 +86,9 @@ Beyond the Go built-ins, these decode from their ordinary written form:
 | `Europe/London` | `*time.Location` |
 | `a,b,c` | `[]string` |
 
-**And any type of your own implementing `encoding.TextUnmarshaler`.** That is how Go
-expresses an enum or a domain type, so your types decode without this module having heard
-of them:
+**Any type of your own implementing `encoding.TextUnmarshaler` also decodes.** That is how
+Go expresses an enum or a domain type, so your types work without this module having
+heard of them:
 
 ```go
 type Severity int
@@ -130,8 +131,9 @@ The same hooks are used when decoding a struct, so a `Severity` field inside a
 n := view.GetSizeInBytes("max_upload")   // 10485760
 ```
 
-Units are binary — `kb`, `mb`, `gb`, `tb` are powers of 1024. A bare number is a count of
-bytes. Anything unparseable reads as `0`, as the other accessors return their zero value.
+Units are binary: `kb`, `mb`, `gb` and `tb` are powers of 1024. A bare number, or one
+suffixed `b`, is a count of bytes. Anything unparseable reads as `0`, as the other
+accessors return their zero value.
 
 ## Scope reads to a subtree
 
@@ -144,7 +146,7 @@ if db := view.Sub("database"); db != nil {
 }
 ```
 
-It returns `nil` when the key is absent — check it. Provenance still reports the full
+It returns `nil` when the key is absent, so check it. Provenance still reports the full
 path, so a scoped view does not lose track of where its values came from.
 
 ## Decode a whole struct
@@ -174,8 +176,8 @@ for _, key := range view.Keys() {
 ```
 
 `Keys` returns every leaf path, sorted, including keys whose value is an empty container.
-`store.Snapshot().Values()` returns the whole merged tree as a map — a copy, so mutating
-it cannot affect the store.
+`store.Snapshot().Values()` returns the whole merged tree as a map. It is a copy, so
+mutating it cannot affect the store.
 
 ## Find what is set in more than one place
 
@@ -195,7 +197,7 @@ token = from APP_TOKEN, shadowing 2
 ```
 
 Only paths that more than one layer defines appear, so there is nothing to filter. It
-reports leaves only — a populated subtree has no single winning layer to name — and it
+reports leaves only, since a populated subtree has no single winning layer to name, and it
 carries paths and sources, never values.
 
 Through a scoped view the paths are scoped too, so you can hand one straight back:
@@ -232,9 +234,9 @@ if err != nil {
 
 ## Related
 
-- [Use typed sections](typed-sections.md) — decode a subtree onto your own struct
-- [Load & merge configuration](load-and-merge.md) — where the values come from
-- [Provenance](../explanation/provenance.md) — `Origin`, `DefinedIn`, `Explain`, `Shadows`, and why each value won
-- [Keys and paths](../reference/keys-and-paths.md) — what a path can and cannot address
-- [Struct tags](../reference/struct-tags.md) — the tags decoding reads, and the types that decode from text
-- [Defaults and limits](../reference/defaults-and-limits.md#sizes) — the binary suffixes `GetSizeInBytes` understands
+- [Use typed sections](typed-sections.md): decode a subtree onto your own struct
+- [Load & merge configuration](load-and-merge.md): where the values come from
+- [Provenance](../explanation/provenance.md): `Origin`, `DefinedIn`, `Explain`, `Shadows`, and why each value won
+- [Keys and paths](../reference/keys-and-paths.md): what a path can and cannot address
+- [Struct tags](../reference/struct-tags.md): the tags decoding reads, and the types that decode from text
+- [Defaults and limits](../reference/defaults-and-limits.md#sizes): the binary suffixes `GetSizeInBytes` understands

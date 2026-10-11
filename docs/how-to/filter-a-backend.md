@@ -7,9 +7,8 @@ tags: [how-to, backends, filtering, secrets]
 # Bound what a backend contributes
 
 A backend contributes everything it can see. That is right for a config file you own,
-and wrong when the credential is broader than the application — a Consul prefix or an
-SSM path the token can read entirely, where this service should only be reading its own
-subtree.
+and wrong when the credential is broader than the application: a Consul prefix or an SSM
+path the token can read entirely, where this service should only read its own subtree.
 
 `config.Filtered` wraps any backend and bounds its key space:
 
@@ -29,7 +28,7 @@ learn.
 ## What the patterns mean
 
 Patterns match the **dotted path a key resolves at**, not the backend's native
-addressing — you do not need to know whether a store nests by `/`, by underscore, or not
+addressing, so you do not need to know whether a store nests by `/`, by underscore, or not
 at all.
 
 | Pattern | Matches | Does not match |
@@ -37,20 +36,20 @@ at all.
 | `db.host` | `db.host` | `db`, `db.host.name` |
 | `db.*` | `db.host` | `db.primary.host`, `db` |
 | `db.**` | `db.host`, `db.primary.host` | `db`, `cache.host` |
-| `**` | everything | — |
+| `**` | everything | nothing |
 
 The segment boundary is the whole design. `*` stops at one; `**` crosses any number.
-Deliberately not regular expressions: a regexp invites patterns that cross boundaries in
-ways that are hard to reason about against a tree, and a mistake in one silently
-**widens** a filter rather than narrowing it — the wrong direction when what it is
+Patterns are deliberately not regular expressions. A regexp invites patterns that cross
+boundaries in ways that are hard to reason about against a tree, and a mistake in one
+silently **widens** a filter rather than narrowing it, the wrong direction when what it is
 holding back is a secret.
 
 ## Allow, deny, and which wins
 
-- **Neither** — everything passes.
-- **`Allow` only** — a whitelist.
-- **`Deny` only** — a blacklist.
-- **Both** — allow, then deny. **Deny wins.**
+- **Neither**: everything passes.
+- **`Allow` only**: a whitelist.
+- **`Deny` only**: a blacklist.
+- **Both**: allow, then deny. **Deny wins.**
 
 Deny winning is the safe reading: a caller who has written both has expressed a
 narrowing intention twice, and resolving the overlap the other way would let an `Allow`
@@ -62,8 +61,9 @@ The layer simply does not carry it. Reads fall through to whatever lower layer d
 it, and if nothing does, the key is absent exactly as though the backend never held it.
 
 Writes follow from that without a special case: routing skips a backend that defines
-nothing for a key, so a write to a denied key lands in the next writable layer down —
-which is what *"this backend does not own this key"* should mean.
+nothing for a key, so a write to a denied key lands in the next writable layer down. That
+is what *"this backend does not own this key"* should mean. If a denied key should be
+refused and reported instead, use [`Constrained`](compose-schemas.md#bound-what-a-source-may-contribute).
 
 !!! warning "This is a visibility bound, not a security control"
 
@@ -89,8 +89,8 @@ That asymmetry is deliberate, and it is the one place `Filtered` behaves differe
 depending on what it wraps.
 
 The leak guard works by asking which source *defines* a key. A filtered-out key defines
-nothing — so without this, denying `db.password` on Vault would make a write of it route
-into the plain file beneath and **not** be refused. The filter would have quietly
+nothing, so without this marking, denying `db.password` on Vault would make a write of it
+route into the plain file beneath and **not** be refused. The filter would have quietly
 re-opened the hole [`ErrSensitiveLeak`](../explanation/backends.md) exists to close, and
 the failure would be a secret on disk with no error at all.
 
@@ -106,9 +106,9 @@ Two consequences worth knowing:
 ## Capabilities pass through
 
 A filtered writable backend is still writable; a filtered watchable one still watchable.
-The wrapper claims exactly what the backend underneath it claims — no more, so the store
-never takes a path the backend cannot honour, and no less, so a capability you
-configured is not silently dropped.
+The wrapper claims exactly what the backend underneath it claims. Claiming more would let
+the store take a path the backend cannot honour; claiming less would silently drop a
+capability you configured.
 
 `ID()` and `Capabilities()` forward unchanged, which matters more than it looks:
 
@@ -121,8 +121,8 @@ Both are asserted by tests that fail if the forwarding is removed.
 
 ## Related
 
-- [Backends and capabilities](../explanation/backends.md) — what a backend declares, and what the store does with it
-- [Write configuration](write-config.md) — where a write lands, and how to name a layer yourself
-- [Keep tokens in the OS keychain](keychain.md) — a sensitive backend worth bounding
-- [Keys and paths](../reference/keys-and-paths.md#filter-patterns-for-allow-and-deny) — the exact pattern grammar, with worked matches
-- [Errors](../reference/errors.md#errsensitiveleak) — why a filtered secret still cannot be written to a plain layer
+- [Backends and capabilities](../explanation/backends.md): what a backend declares, and what the store does with it
+- [Write configuration](write-config.md): where a write lands, and how to name a layer yourself
+- [Keep tokens in the OS keychain](keychain.md): a sensitive backend worth bounding
+- [Keys and paths](../reference/keys-and-paths.md#filter-patterns-for-allow-and-deny): the exact pattern grammar, with worked matches
+- [Errors](../reference/errors.md#errsensitiveleak): why a filtered secret still cannot be written to a plain layer

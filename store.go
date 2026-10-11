@@ -1292,9 +1292,9 @@ func (s *Store) backendBySource() map[Source]Backend {
 // write-then-react-then-write cascade unrepresentable rather than something to
 // be detected and broken.
 //
-// Watching only covers file-backed sources. Environment variables and flags do
-// not change under a running process, and an in-memory source is changed by
-// the code that owns it.
+// Every [WatchableBackend] is watched, remote adapters included. Environment
+// variables, flags and in-memory sources are not, since nothing outside the
+// process changes them.
 //
 // A watcher that cannot function fails here rather than silently doing
 // nothing: an application that believes it will hear about changes and never

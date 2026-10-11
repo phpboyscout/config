@@ -6,7 +6,7 @@ tags: [how-to, writes]
 
 # Write configuration
 
-You need to persist a change — a user flipped a setting, a command took a `--set` flag, a
+You need to persist a change: a user flipped a setting, a command took a `--set` flag, a
 first-run wizard is writing its answers. This guide covers planning a write, applying it,
 where the change lands, and what to do when it does not go through.
 
@@ -40,7 +40,7 @@ if err != nil {
 ```
 
 The two files are why routing has something to choose between, and the environment layer
-is why a write can succeed without taking effect — both come up below. See
+is why a write can succeed without taking effect. Both come up below. See
 [Load & merge](load-and-merge.md) for the full set of source options.
 
 ## Plan first: a dry run that cannot drift
@@ -67,7 +67,7 @@ A line carries `(new key)` when the change creates a key rather than replacing o
 `— shadowed by <source>` when the write will land but not take effect.
 
 `Plan.String()` renders the plan for a `--dry-run` flag or a preview pane. The routing it
-shows is not an approximation of what `Apply` would do — it is the same routing pass,
+shows is not an approximation of what `Apply` would do. It is the same routing pass,
 which is why a dry run here cannot drift from the real thing the way a separate preview
 implementation would.
 
@@ -114,11 +114,11 @@ settings screen saving fifty fields should make one `Apply` call, not fifty.
 The snapshot you get back is built **from the content just written**, not by re-reading
 the files afterwards. There is no window in which the configuration in memory disagrees
 with the configuration on disk, and no waiting on a watcher to notice. Observers are
-notified exactly once for the whole batch — and not at all if the write left the
+notified exactly once for the whole batch, and not at all if the write left the
 resolved configuration exactly as it was. The file may still have been rewritten, but
 observers react to values, and none of them moved.
 
-`Set` and `Remove` are one type — `Change` — rather than two methods, because they route
+`Set` and `Remove` are one type, `Change`, rather than two methods, because they route
 identically and often need to land together. Replacing a subtree by removing some keys and
 setting others only works if both halves commit as one batch.
 
@@ -153,13 +153,13 @@ plan, err := store.Plan(
 
     Routing's default is right far more often than a hand-picked target, and pinning is
     how an edit ends up written somewhere nobody reads. `Plan` will tell you where a
-    change is going and whether anything still outranks it — check it before you commit
+    change is going and whether anything still outranks it, so check it before you commit
     to a pin.
 
 **The case that genuinely justifies it is promotion**: moving a setting from a
 project-scoped config up into a user's global one, where the two are layers of the same
 store. The value has to land in a specific layer, and that layer is not the one routing
-would pick — that is the whole point of the operation.
+would pick. That is the whole point of the operation.
 
 ```go
 // promote, and clear the project's own copy so the promoted value is not
@@ -170,9 +170,9 @@ store.Apply(ctx,
 )
 ```
 
-`To` and `ToDocument` work on `Remove` as well as `Set`, and inside a batch — which is
-what makes the pair above one atomic-as-the-backend-allows operation rather than two
-writes with a window between them.
+`To` and `ToDocument` work on `Remove` as well as `Set`, and inside a batch. That is what
+makes the pair above one atomic-as-the-backend-allows operation rather than two writes
+with a window between them.
 
 ### What a name matches
 
@@ -185,14 +185,14 @@ for _, target := range store.WritableTargets() {
 ```
 
 - **Only `Name` and `Document` are matched.** That is why `To` takes a name rather than
-  a `config.Source` — a `Source` built by hand invites filling in `Kind` or `Writable`
+  a `config.Source`: a `Source` built by hand invites filling in `Kind` or `Writable`
   and believing they select something.
 - **A multi-document file** shares one name across its documents, so `To(name)` means
   document 0. Use `ToDocument(name, 1)` to address the second.
 - **A name matching nothing returns `ErrInvalidTarget`**, rather than falling back to
   routing. A typo is a typo, not a request to guess.
-- **Where more than one layer carries a name**, the highest-precedence one wins — the
-  one whose value you can read back.
+- **Where more than one layer carries a name**, the highest-precedence one wins, being
+  the one whose value you can read back.
 - **A key a backend does not contribute is not a target.** That includes keys hidden by
   [a filter](filter-a-backend.md), which is how a filtered backend stops being written
   to without being made read-only.
@@ -205,8 +205,8 @@ or not; that is a safety invariant rather than a routing preference. See
 ## "Written, but it still does not take effect"
 
 A write can succeed and change nothing about the resolved configuration, because a
-higher-precedence layer still defines the key. This is not an error — writing the file is
-what you asked for — but a caller who cannot say so will leave the user staring at a
+higher-precedence layer still defines the key. This is not an error, since writing the file is
+what you asked for, but a caller who cannot say so will leave the user staring at a
 setting that refuses to move.
 
 `Operation.Effective()` reports whether the change will be visible once written, and
@@ -291,11 +291,11 @@ _, err := store.Apply(ctx, config.Set("avatars.default", map[string]any{
 ```
 
 Anything previously under `avatars.default` and not in that map is gone. This is
-deliberate — deep-merging would make "this subtree is now exactly this" inexpressible, and
+deliberate: deep-merging would make "this subtree is now exactly this" inexpressible, and
 that is precisely what a consumer replacing a catalogue needs.
 
 **It is a sharp edge.** By supplying a map you assert ownership of that subtree and accept
-that comments, anchors and block styles *within* it may not survive — see
+that comments, anchors and block styles *within* it may not survive; see
 [why replacing a map is different](../explanation/write-fidelity.md#why-replacing-a-map-is-different).
 
 If you know what changed, say so precisely. Diff your before and after, and issue targeted
@@ -313,7 +313,7 @@ Execution is prepare → verify → commit. Everything expensive or likely to fa
 while nothing is visible; the commit itself is a sequence of atomic renames.
 
 The verify step re-checks every target against a fingerprint of what was read. If anything
-changed underneath — another process, a text editor, a deploy tool — the whole batch is
+changed underneath (another process, a text editor, a deploy tool), the whole batch is
 abandoned with `ErrConflict` and **no target is modified**. Committing over it would
 silently discard someone else's work.
 
@@ -338,34 +338,25 @@ disagreement, put it in front of a person.
 
 Be clear about the limit: **serialisation is in-process only**. Concurrent `Apply` calls
 within one process cannot interleave, so two writers can never both decide to write and
-then overwrite each other. Across processes there is no lock — portable cross-process
-locking needs lock files and is out of scope — and conflict detection is the whole defence.
+then overwrite each other. Across processes there is no lock, because portable cross-process
+locking needs lock files and is out of scope, so conflict detection is the whole defence.
 It is a good defence, but it is detection, not prevention.
 
 ## Validation
 
-If the Store carries a schema, a write is validated by building the candidate snapshot it
-would produce — including the env and flag layers — and validating **that**. It is the same
-construction path a reload uses, so pre-write validation and the reload it causes cannot
-disagree.
-
-Two rules follow, and both matter:
-
-- **The resolved configuration is validated, never a single layer.** A base file missing a
-  key that its overlay supplies is legitimate, and layer-scoped validation would reject a
-  perfectly correct write.
-- **Only violations your change introduces are rejected.** A configuration that is already
-  invalid stays editable — otherwise one missing key makes the config unfixable through the
-  very surface designed to fix it. The error distinguishes the two, reporting pre-existing
-  violations separately and marking them as unaffected by your change.
-
-A rejected write modifies nothing. The failure wraps `ErrInvalidConfig`.
+If the Store carries a schema, a write is validated against the candidate snapshot it
+would produce, and the same construction path a reload uses builds that snapshot. Only
+violations your change introduces are rejected; a configuration that is already invalid
+stays editable. A rejected write modifies nothing, and the failure wraps
+`ErrInvalidConfig`. The full behaviour, with the error text, is in
+[Validate configuration](validate-config.md#writes-are-validated-too-but-only-for-what-they-break).
 
 ## Never write from inside an observer
 
 `Apply`, `Reload` and `AddLayer` return `ErrWriteFromObserver` when called from within
-an observer callback. This is refused outright rather than made to work: each such write is itself a
-change, which notifies, which runs the observer again — a cascade with no natural end.
+an observer callback. Each such write is itself a change, which notifies, which runs the
+observer again, so it is refused outright. See
+[hot-reload](hot-reload.md#do-not-write-from-inside-an-observer) for why.
 
 If an observer needs to change configuration, take the write *out* of the observation:
 
@@ -389,8 +380,7 @@ deferred writes is yours to decide, because you are the only one who knows which
 still matter.
 
 The check is scoped to the goroutine running the callback, so an unrelated goroutine
-writing while observers happen to be executing is fine — that write is legitimate and is
-not refused.
+writing while observers happen to be executing is not refused.
 
 ## Errors worth branching on
 
@@ -407,18 +397,20 @@ Match with `errors.Is`.
 | `ErrInvalidConfig` | the change would make the resolved configuration invalid |
 | `ErrBackendUnsafe` | a source contains a construct that cannot be safely round-tripped |
 | `ErrWriteFromObserver` | a write was attempted from inside an observer callback |
+| `ErrSensitiveLeak` | the change would write a sensitive source's key into a non-sensitive layer |
 | `ErrPartialCommit` | a multi-target commit failed partway and could not be fully rolled back |
 
-`ErrPartialCommit` is the one that should never happen and must not be glossed over. On a
-partial failure the Store restores the targets it has already committed; if restoration
-also fails, the error names precisely which targets are in which state. A caller is never
+`ErrPartialCommit` is the one that should never happen and must not be glossed over.
+Targets commit one after another. If one fails, the Store restores those already
+committed; if restoration also fails, the error names precisely which targets are in which
+state. A caller is never
 left guessing, and neither should the user be.
 
 ## Related
 
-- [What survives a write](../explanation/write-fidelity.md) — the fidelity contract in full
-- [Provenance](../explanation/provenance.md) — who supplied a value and what shadows it
-- [The Store](../explanation/the-store.md) — why one component owns config I/O
-- [Hot-reload](hot-reload.md) — reacting to changes made outside this process
-- [Errors](../reference/errors.md) — every error value a write can return, and what to do about each
-- [Defaults and limits](../reference/defaults-and-limits.md#file-modes-and-write-staging) — the modes a created file and directory carry
+- [What survives a write](../explanation/write-fidelity.md): the fidelity contract in full
+- [Provenance](../explanation/provenance.md): who supplied a value and what shadows it
+- [The Store](../explanation/the-store.md): why one component owns config I/O
+- [Hot-reload](hot-reload.md): reacting to changes made outside this process
+- [Errors](../reference/errors.md): every error value a write can return, and what to do about each
+- [Defaults and limits](../reference/defaults-and-limits.md#file-modes-and-write-staging): the modes a created file and directory carry

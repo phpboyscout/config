@@ -6,10 +6,9 @@ tags: [how-to, flags, cli]
 
 # Bind CLI flags
 
-A command-line flag should be able to override a configured value — but only when the
-user actually set it. `WithFlags` contributes a [pflag](https://github.com/spf13/pflag)
-flag set to the `Store` as an ordinary layer, and it contributes **only the flags the
-user changed**.
+A command-line flag should override a configured value, but only when the user actually
+set it. `WithFlags` contributes a [pflag](https://github.com/spf13/pflag) flag set to the
+`Store` as an ordinary layer, and it contributes **only the flags the user changed**.
 
 !!! note "Imports used below"
     ```go
@@ -32,7 +31,7 @@ deliberate input a user can give:
 
 ```go
 // cmd is a *cobra.Command here, but nothing requires cobra: WithFlags takes a
-// *pflag.FlagSet, so any source of one will do — see the testing recipe below.
+// *pflag.FlagSet, so any source of one will do. See the testing recipe below.
 store, err := config.NewStore(ctx,
 	config.WithFiles(config.OS(), "/etc/mytool/config.yaml"),
 	config.WithEnv("MYTOOL"),
@@ -48,21 +47,16 @@ changed flags, so the layer contributes nothing.
 
 ## A flag left at its default cannot clobber anything
 
-This is the point of the whole layer, so it is worth stating plainly.
-
 The flag backend walks the set with `pflag.FlagSet.Visit`, which iterates only the flags
 that were actually changed on the command line. A flag sitting at its compiled-in default
-therefore contributes **no value at all** — it does not appear in the layer, it does not
+therefore contributes **no value at all**. It does not appear in the layer, it does not
 appear in provenance, and it cannot outrank your file.
 
-The alternative, binding every flag regardless, is a well-known trap: the file says
-`port: 9090`, nobody passed `--port`, and the effective value is the flag default of
-`8080`. The user has no way to discover why their configuration is being ignored, because
-nothing in the file or the environment explains it.
-
-Under the previous design that filtering was the caller's discipline — you were expected
-to call `Visit` yourself and bind what it gave you, and forgetting was silent. It is now
-structural: there is no way to ask the store to contribute an unchanged flag.
+Binding every flag regardless is a well-known trap: the file says `port: 9090`, nobody
+passed `--port`, and the effective value is the flag default of `8080`. The user has no
+way to discover why their configuration is being ignored, because nothing in the file or
+the environment explains it. Here there is no way to ask the store to contribute an
+unchanged flag.
 
 ## Map a flag name to a configuration key
 
@@ -83,17 +77,17 @@ store, err := config.NewStore(ctx,
 `BindFlag` takes the flag name **without** its leading dashes. Flags you do not mention
 still contribute under the derived key; `BindFlag` is an override, not an allow-list.
 
-To keep a flag out of configuration altogether — an operational switch like `--verbose`
-or `--output` that is nobody's setting — bind it to the empty key:
+To keep a flag out of configuration altogether, such as an operational switch like
+`--output` that is nobody's setting, bind it to the empty key:
 
 ```go
 config.BindFlag("output", "")   // parsed as a flag, never a configuration value
 ```
 
 Avoid dots inside flag names. A flag literally named `--a.b` maps verbatim to the key
-`a.b`, which is rarely what anyone intends and is impossible to tell apart from the
-derived form afterwards. Configuration keys are lower-cased, so a flag name that differs
-only in case will not give you a distinct key.
+`a.b`, which is rarely what anyone intends and cannot be told apart from the derived form
+afterwards. Configuration keys are lower-cased, so a flag name that differs only in case
+will not give you a distinct key.
 
 ## Check that a flag really is winning
 
@@ -110,8 +104,8 @@ fmt.Println(view.Explain("server.port"))
 // server.port = 9090 (from flag:--port); also defined in /etc/mytool/config.yaml
 ```
 
-That is the quickest answer to "did my flag take effect?", and — more usefully — to "why
-is my config file being ignored?". See [Provenance](../explanation/provenance.md).
+That is the quickest answer to "did my flag take effect?" and to "why is my config file
+being ignored?". See [Provenance](../explanation/provenance.md).
 
 ## Flag values arrive as strings
 
@@ -119,14 +113,14 @@ The flag layer contributes each changed flag's string form, whatever the flag's 
 For reading that is invisible: `GetInt`, `GetBool`, `GetDuration` and friends coerce, so
 `--port 9090` reads back as the integer `9090`.
 
-Repeatable flags are the exception, and deliberately so. A `StringSlice` flag renders as
-`[a,b]` in string form, and storing that would give one garbage value rather than the two
-the user passed — so slice flags contribute a list, and `--tag a --tag b` reads back
-through `GetStringSlice` as `["a", "b"]`.
+Repeatable flags are the exception. A `StringSlice` flag renders as `[a,b]` in string
+form, and storing that would give one garbage value rather than the two the user passed.
+Slice flags therefore contribute a list, and `--tag a --tag b` reads back through
+`GetStringSlice` as `["a", "b"]`.
 
-It is visible to **schema validation**, which checks the resolved value's actual type. A
-field declared `int` in a schema struct will fail its type check when the winning value
-came from a scalar flag or an environment variable, because both hold strings:
+**Schema validation** does see it, because it checks the resolved value's actual type. A
+field declared `int` in a schema struct fails its type check when the winning value came
+from a scalar flag or an environment variable, because both hold strings:
 
 ```
 server.port: expected type int but got string (hint: ensure server.port has a value of type int)
@@ -137,13 +131,13 @@ schema or declare it as a string. See [Validate configuration](validate-config.m
 
 ## Flags are never a write target
 
-Flags are readable but not writable — a flag lives for one invocation, so persisting to
-one is meaningless. Write routing skips the flag layer entirely and lands the change in
-the highest-precedence writable layer instead.
+Flags are readable but not writable, since a flag lives for one invocation. Write routing
+skips the flag layer and lands the change in the highest-precedence writable layer
+instead.
 
-That has a consequence worth surfacing to users: a write to a key the user also passed on
-the command line succeeds, writes the file, and changes nothing about the resolved
-configuration, because the flag still wins. `Operation.Effective()` reports exactly that:
+So a write to a key the user also passed on the command line succeeds, writes the file,
+and changes nothing about the resolved configuration, because the flag still wins.
+`Operation.Effective()` reports exactly that:
 
 ```go
 plan, err := store.Plan(config.Set("server.port", 9090))
@@ -193,7 +187,7 @@ contributes nothing.
 
 ## Related
 
-- [Load & merge configuration](load-and-merge.md) — building a store and ordering sources
-- [Precedence & merge model](../explanation/precedence-and-merge.md) — how layers fold together
-- [Provenance](../explanation/provenance.md) — asking which layer supplied a value
-- [Write configuration](write-config.md) — why a flag can shadow a successful write
+- [Load & merge configuration](load-and-merge.md): building a store and ordering sources
+- [Precedence & merge model](../explanation/precedence-and-merge.md): how layers fold together
+- [Provenance](../explanation/provenance.md): asking which layer supplied a value
+- [Write configuration](write-config.md): why a flag can shadow a successful write

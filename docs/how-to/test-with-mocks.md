@@ -6,7 +6,7 @@ tags: [how-to, testing, mocks]
 
 # Test with the config mocks
 
-Code that reads configuration should take a `config.Reader`, not a concrete `*Store` —
+Code that reads configuration should take a `config.Reader`, not a concrete `*Store`,
 so a test can pass a mock, assert exactly which keys are read, and drive specific
 return values without building a real configuration file. The module ships generated
 [testify](https://github.com/stretchr/testify) mocks in the **`mocks`** package.
@@ -24,7 +24,7 @@ return values without building a real configuration file. The module ships gener
 | `MockWatchableBackend` | `config.WatchableBackend` | as above, for one that reports its own changes |
 
 `config.Watcher` is deliberately **not** mocked. It is a one-method interface, and a
-test usually wants to hold the trigger rather than script a return value — write the
+test usually wants to hold the trigger rather than script a return value. Write the
 four-line stub shown in
 [testing reload behaviour](hot-reload.md#testing-reload-behaviour).
 
@@ -42,8 +42,8 @@ func NewServer(cfg config.Reader) *Server {
 ```
 
 !!! tip "Do not hand-write a `Reader`"
-    `Reader` is broad — thirty-one methods, covering every accessor, provenance and both
-    unmarshal entry points — and it grows as typed accessors are added. A hand-written
+    `Reader` is broad: thirty-one methods covering every accessor, provenance and both
+    unmarshal entry points, and it grows as typed accessors are added. A hand-written
     fake has to be updated every time, for no benefit. Use `mocks.MockReader`, or a real
     store over an in-memory filesystem.
 
@@ -85,8 +85,8 @@ regression risk when someone adds a stray lookup.
 
 ### Mocking a `config.Value[T]` read
 
-`Value[T]` is a function over `Reader`, and it reads through `UnmarshalKey` — so that is
-what to expect, writing the result through the pointer it is handed:
+`Value[T]` is a function over `Reader` that reads through `UnmarshalKey`, so expect that
+call, writing the result through the pointer it is handed:
 
 ```go
 cfg.EXPECT().UnmarshalKey("log.level", mock.Anything).
@@ -97,12 +97,12 @@ cfg.EXPECT().UnmarshalKey("log.level", mock.Anything).
 ```
 
 If the keys read are not what your test is about, a real store over an in-memory file is
-less work than this — see [when you want real behaviour](#when-you-want-real-behaviour).
+less work than this; see [when you want real behaviour](#when-you-want-real-behaviour).
 
 ## Test an observer's logic
 
-An observer is handed a `config.Observed`, so `MockObserved` drives it directly — no
-watcher, no files, no timing:
+An observer is handed a `config.Observed`, so `MockObserved` drives it directly, with no
+watcher, files or timing:
 
 ```go
 cfg := mocks.NewMockObserved(t)
@@ -111,8 +111,8 @@ cfg.EXPECT().GetString("log.level").Return("debug")
 require.NoError(t, (&levelWatcher{}).Run(cfg))
 ```
 
-Observers often carry the riskiest logic in a service — restarting listeners, changing
-log levels — and this is the cheapest way to test it. For the reload machinery itself,
+Observers often carry the riskiest logic in a service, such as restarting listeners or
+changing log levels, and this is the cheapest way to test it. For the reload machinery itself,
 see [hot-reload](hot-reload.md#testing-reload-behaviour), which drives change detection
 with a stub `Watcher`.
 
@@ -172,8 +172,8 @@ func storeOver(t *testing.T, body string) *config.Store {
 
 ## When you want real behaviour
 
-If what you are testing is the *configuration* behaviour itself — merging, precedence,
-provenance, decoding — do not mock. Build a real `Store` from in-memory readers, which
+If what you are testing is the *configuration* behaviour itself (merging, precedence,
+provenance, decoding), do not mock. Build a real `Store` from in-memory readers, which
 needs no filesystem at all:
 
 ```go
@@ -188,7 +188,8 @@ require.NoError(t, err)
 assert.Equal(t, 9090, store.View().GetInt("server.port"))
 ```
 
-For file behaviour — watching, writing, missing overlays — use `config.Dir(t.TempDir())`.
+For file behaviour such as watching, writing and missing overlays, use
+`config.Dir(t.TempDir())`.
 It is a **real directory on disk**, cleaned up by `t.TempDir()`, so writes, renames,
 permissions and native watching all behave as they do in production. Paths are relative to
 its root, so write `"app.yaml"` and not `"/app.yaml"`:
@@ -205,7 +206,7 @@ require.NoError(t, err)
 Native watching works here, because `config.Dir` reports a real operating-system path. An
 in-memory filesystem does not, so `fsnotify` cannot see it and `Watch` falls back to
 polling. Either way a test that needs *deterministic* change detection should supply its own
-`Watcher` rather than wait on a timer or on the kernel — see
+`Watcher` rather than wait on a timer or on the kernel; see
 [Testing reload behaviour](hot-reload.md#testing-reload-behaviour).
 
 Use a mock to test *consumers* of configuration; use a real store to test
@@ -227,8 +228,8 @@ store, err := config.NewStore(ctx,
 
 ## Check which observers were registered
 
-`store.Observers()` returns the registered observers, which exists for exactly this —
-asserting that your wiring code registered what it should:
+`store.Observers()` returns the registered observers, and exists for asserting that your
+wiring code registered what it should:
 
 ```go
 registerObservers(store) // the code under test
@@ -249,8 +250,8 @@ fmt.Println(store.Sources())                // every backend, in precedence orde
 ```
 
 `view.Keys()` enumerates every leaf path, and `store.Snapshot().Values()` returns the
-merged configuration as a plain map — a copy, so printing or mutating it cannot affect
-the store. Remember that precedence is simply the order the sources were added, so
+merged configuration as a plain map. It is a copy, so printing or mutating it cannot
+affect the store. Remember that precedence is simply the order the sources were added, so
 `Sources()` is usually enough to explain a surprise on its own.
 
 ## Related

@@ -1,22 +1,22 @@
 ---
 title: Write a custom backend
-description: Make any remote system an ordinary layer by implementing Backend — reads, watch and compare-and-swap writes.
+description: Make any remote system an ordinary layer by implementing Backend, with reads, watch and compare-and-swap writes.
 tags: [how-to, backends, extending]
 ---
 
 # Write a custom backend
 
-You want configuration from somewhere this module has never heard of — Consul, a secrets
-manager, an HTTP endpoint, a database table, a device's NVRAM — and you want it to behave
+You want configuration from somewhere this module has never heard of, such as a secrets
+manager, an HTTP endpoint, a database table or a device's NVRAM, and you want it to behave
 like every other layer: precedence, provenance, shadowing, hot-reload, the lot.
 
 That is what `Backend` is for. This guide builds one end to end: reading first, then
 watching, then writing. Each stage works on its own, so stop wherever your source stops.
 
 !!! note "Reading a file in another format? You need a `Codec`, not a whole `Backend`."
-    If your source is a *file* in a format the core does not know — JSON, TOML, INI — the file
-    machinery is already written: reading, conflict detection, atomic writes, symlink handling
-    and watching are all format-agnostic and live in the core. You supply only the
+    If your source is a *file* in a format the core does not know, such as TOML or INI, the
+    file machinery is already written: reading, conflict detection, atomic writes, symlink
+    handling and watching are all format-agnostic and live in the core. You supply only the
     format-specific part, a `Codec`, and pass it to `config.NewCodecBackend(fsys, path, codec)`.
     A codec that also implements `EditingCodec` yields a writable backend automatically. This
     is how the sibling `config-<format>` modules are built; see the
@@ -26,12 +26,12 @@ watching, then writing. Each stage works on its own, so stop wherever your sourc
 !!! tip "The code here is compiled"
     Every snippet is taken from
     [`custombackend_test.go`](https://gitlab.com/phpboyscout/go/config/-/blob/main/custombackend_test.go)
-    in this module's own suite, where it is exercised against a fake remote — including the
+    in this module's own suite, where it is exercised against a fake remote, including the
     write path and the conflict case. It cannot drift from an API that still works.
 
 ## What we are building
 
-A backend over a remote key-value store with compare-and-swap semantics — the shape Consul,
+A backend over a remote key-value store with compare-and-swap semantics, the shape Consul,
 etcd and most parameter stores have. Keeping the service behind an interface is what lets
 the backend be tested without it:
 
@@ -98,7 +98,7 @@ func (b *remoteBackend) Load(ctx context.Context, _ []config.Layer) ([]config.La
 
 	if values == nil {
 		// Absent is not an error. The Store decides whether a missing source is
-		// fatal — see RequireFirstSource — so say "not there" and let it choose.
+		// fatal (see RequireFirstSource), so say "not there" and let it choose.
 		return nil, fs.ErrNotExist
 	}
 
@@ -110,7 +110,7 @@ func (b *remoteBackend) Load(ctx context.Context, _ []config.Layer) ([]config.La
 		Source: config.Source{
 			Kind:     config.SourceKind("remote"),
 			Name:     b.prefix,
-			Writable: true, // only if you implement WritableBackend — see below
+			Writable: true, // only if you implement WritableBackend; see below
 		},
 		Values: values,
 	}}, nil
@@ -122,8 +122,8 @@ func (b *remoteBackend) Load(ctx context.Context, _ []config.Layer) ([]config.La
     `ID()`. If they differ, reads work perfectly and **writes fail** with an error saying no
     backend answers to that name.
 
-    It is an easy mistake — an `ID()` of `"remote:" + prefix` reads better in a log — and it
-    fails nowhere near where you made it. Pick one string and use it for both.
+    It is an easy mistake, since an `ID()` of `"remote:" + prefix` reads better in a log, and
+    it fails nowhere near where you made it. Pick one string and use it for both.
 
 Register it like any other source. Precedence is the order you add them:
 
@@ -139,8 +139,11 @@ And it is now indistinguishable from a built-in layer:
 
 ```go
 view.GetInt("server.port")           // 9090, from the remote
-view.GetString("server.host")        // still "localhost" — merging is per-key
-view.Origin("server.port").String()  // "remote:app/"
+view.GetString("server.host")        // still "localhost": merging is per-key
+
+src, _ := view.Origin("server.port")
+src.String()                         // "remote:app/"
+
 view.DefinedIn("server.port")        // every layer defining it, lowest first
 ```
 
@@ -151,12 +154,12 @@ Four things decide how your layer behaves:
 | Field | What to set it to |
 |---|---|
 | `Source.Kind` | Your own `config.SourceKind("consul")`. It is a string type, so you are not limited to the built-in kinds. |
-| `Source.Name` | What a *user* would recognise — the key prefix, the endpoint, the table. It is what `Explain` prints, **and it must equal `ID()`**. |
+| `Source.Name` | What a *user* would recognise: the key prefix, the endpoint, the table. It is what `Explain` prints, **and it must equal `ID()`**. |
 | `Source.Writable` | `true` only if you also implement `WritableBackend`. Routing offers writable layers as targets, so claiming it without implementing it makes writes fail late. |
-| `Values` | A nested `map[string]any`. `{"server": {"port": 9090}}` — **not** a flat `{"server.port": 9090}`, which would create a key with a literal dot in its name. |
+| `Values` | A nested `map[string]any`, such as `{"server": {"port": 9090}}`, **not** a flat `{"server.port": 9090}`, which would create a key with a literal dot in its name. |
 
 `Values` must be a tree because that is what merging operates on. If your source is
-genuinely flat — most key-value stores are — split each key on your separator and nest it
+genuinely flat, as most key-value stores are, split each key on your separator and nest it
 before returning.
 
 You may return **more than one layer**. A multi-document YAML file returns one per
@@ -170,7 +173,7 @@ backends contributed, in order, and exists for the case where reading your own i
 depends on what is already defined.
 
 The environment backend is the real example: mapping `APP_SERVER_PORT` back to a dotted key
-is ambiguous — `server.port` or `server_port`? — so it resolves the name against the keys
+is ambiguous (`server.port` or `server_port`?), so it resolves the name against the keys
 already defined beneath it. It is an argument rather than a separate call precisely so it
 cannot be forgotten.
 
@@ -188,23 +191,25 @@ func (b *remoteBackend) Capabilities() config.Capabilities {
 ```
 
 Be honest here rather than generous. These describe your source so a heterogeneous set of
-backends can coexist without the weakest one setting the contract for everybody.
+backends can coexist without the weakest one setting the contract for everybody. Only
+`Sensitive` is enforced by the core today; the other three are declared for consumers and
+for the nested-store aggregate, which combines them.
 
 **`Sensitive` is the one to think hardest about.** It marks a backend as holding secret
 material, and a value from a sensitive source must never be written into a layer that is
 not. That is the [environment-secret leak](../about/index.md#writing-where-it-gets-genuinely-hard)
 wearing a different costume: a secrets-manager value flattened into a config file is the
-same incident by another route. Declaring `Sensitive: true` makes the core enforce it — a
+same incident by another route. Declaring `Sensitive: true` makes the core enforce it: a
 write that would land a key your backend owns into a non-sensitive layer beneath is refused
 with `config.ErrSensitiveLeak`, rather than silently written to the plain file.
 
 Note what is *not* here: nothing says whether you can be written to or watched. Those are
 answered by implementing the interfaces below, so the compiler checks them once instead of
-every caller checking a flag — and so a backend cannot claim one thing and do another.
+every caller checking a flag, and so a backend cannot claim one thing and do another.
 
 ## Watch: take part in hot-reload
 
-Implement `WatchableBackend` — one more method — and your source joins hot-reload. This
+Implement `WatchableBackend`, one more method, and your source joins hot-reload. This
 example assumes the remote offers a subscription:
 
 ```go
@@ -250,7 +255,7 @@ func (b *remoteBackend) Watch(
 Four things to get right:
 
 - **Call `onChange` on *possible* change.** You are not expected to know whether anything
-  that resolves actually moved — the Store re-reads, merges, validates and stays quiet if
+  that resolves actually moved: the Store re-reads, merges, validates and stays quiet if
   the result is identical. A spurious call costs a read and nothing else.
 - **`interval` is the polling interval** from `WithPollInterval`. Ignore it if you have a
   real subscription; use it if you must poll.
@@ -259,11 +264,12 @@ Four things to get right:
   goroutine.
 
 Set `NativeWatch: true` in your capabilities when you have a genuine subscription, so
-callers know foreign-change latency is push rather than poll.
+callers can tell foreign-change latency is push rather than poll. The Store watches your
+backend whatever this says; the flag is a declaration, not a switch.
 
 !!! note "Your backend does not need to debounce"
-    The Store coalesces a burst of change reports behind a settle window before reloading —
-    see [hot-reload](hot-reload.md#a-notification-means-something-really-changed). Report
+    The Store coalesces a burst of change reports behind a settle window before reloading.
+    See [hot-reload](hot-reload.md#a-notification-means-something-really-changed). Report
     changes as you see them and let the Store decide.
 
 ## Write: routing changes to your source
@@ -289,7 +295,7 @@ type Edit struct {
 }
 ```
 
-`Prepare` returns a `Pending` — staged work that is not yet visible:
+`Prepare` returns a `Pending`, staged work that is not yet visible:
 
 ```go
 type Pending interface {
@@ -353,7 +359,7 @@ type remotePending struct {
 	committed bool
 }
 
-// Layers is what this backend will contribute once committed — the
+// Layers is what this backend will contribute once committed: the
 // post-commit state, which is what lets the Store build the next snapshot
 // from what was just written instead of re-reading and hoping.
 func (p *remotePending) Layers() []config.Layer {
@@ -407,7 +413,7 @@ func (p *remotePending) Rollback(ctx context.Context) error {
 }
 
 // Discard abandons staged work. Nothing was written, so there is nothing to
-// undo — which is the point of staging.
+// undo, which is the point of staging.
 func (p *remotePending) Discard(context.Context) error { return nil }
 ```
 
@@ -420,7 +426,7 @@ func (p *remotePending) Discard(context.Context) error { return nil }
    and the caller gets `ErrPartialCommit` naming exactly what is in which state.
 
 !!! warning "`Verify` must compare against what `Load` read, not what `Prepare` read"
-    This is the single easiest thing to get wrong, and it fails silently — every write
+    This is the single easiest thing to get wrong, and it fails silently: every write
     succeeds, and conflict detection simply never fires.
 
     Routing decided where this write goes based on what `Load` saw. A change that landed
@@ -428,9 +434,8 @@ func (p *remotePending) Discard(context.Context) error { return nil }
     compares against *that*, you are comparing the intruder's data with itself and it will
     always match.
 
-    Keep the version from `Load` — as `remoteBackend.version` does above — and the
-    conflict is caught. There is a test for exactly this case in the suite, because the
-    first draft of this guide got it wrong.
+    Keep the version from `Load`, as `remoteBackend.version` does above, and the
+    conflict is caught. The conformance suite has a test for exactly this case.
 
 If your source cannot do any of this safely, **do not implement `WritableBackend`.** A
 read-only layer is a perfectly good citizen: routing skips it, `Apply` lands in the next
@@ -440,7 +445,7 @@ than silently failing.
 ## If your backend resolves its own connection
 
 Everything above assumes the client is handed to you. If your backend instead
-resolves its own — from an ambient credential chain, say — it takes on three
+resolves its own (from an ambient credential chain, say), it takes on three
 further obligations, and the
 [conformance suite](https://gitlab.com/phpboyscout/go/config/-/tree/main/backendconformance)
 checks all three once you supply `Suite.NewUnreachable`.
@@ -458,11 +463,11 @@ backendconformance.Run(t, backendconformance.Suite{
 ```
 
 **`ID` and `Capabilities` must answer without a connection.** The Store calls
-both while ordering layers, routing writes and deciding what to watch — long
+both while ordering layers, routing writes and deciding what to watch, long
 before the first `Load`. A backend that connected to answer either would turn
 `NewStore` into a network operation.
 
-**A connection failure is an ordinary error from `Load`** — never a panic, and
+**A connection failure is an ordinary error from `Load`**, never a panic and
 never `fs.ErrNotExist`. That sentinel means the source is legitimately absent,
 which the Store may tolerate, so reporting an unreachable connection with it
 turns a hard failure into a silently missing layer. Absent and unreachable are
@@ -473,7 +478,7 @@ reloads; a credential chain that was not ready at startup must be picked up by t
 next `Load` rather than requiring a restart. This rules out `sync.OnceValues`,
 which caches the first error for the life of the process. If you want the
 memoise-success-but-never-failure behaviour without writing it, take
-[`go/clientlifecycle`](https://clientlifecycle.go.phpboyscout.uk) — it is
+[`go/clientlifecycle`](https://clientlifecycle.go.phpboyscout.uk), which is
 that state machine and nothing else, with no dependencies.
 
 ### Writing the `heal` correctly
@@ -483,7 +488,7 @@ the exact defect it exists to catch.
 
 **`heal` must change the world, never your backend.** Flip a flag the *client*
 reads, or make the fake server start answering. If `heal` hands back a new backend
-— or swaps the one you gave it — it erases any failure the backend had cached, and
+or swaps the one you gave it, it erases any failure the backend had cached, and
 a backend that caches its failure will sail through.
 
 ```go
@@ -505,8 +510,8 @@ re-made, whereas a value proves the healed path *read* it.
 
 ## Shipping read-only first, and adding writes later
 
-Shipping a backend that reads before it writes is a normal and supported path — often the
-right one, when the format deserves a structure-preserving writer that does not exist yet.
+Shipping a backend that reads before it writes is a normal and supported path, often the
+right one when the format deserves a structure-preserving writer that does not exist yet.
 Reading is most of the value and arrives far sooner.
 
 Four things make the later promotion uneventful:
@@ -517,7 +522,7 @@ Four things make the later promotion uneventful:
    which way it is going to move.
 3. **Assert the current capability in your tests.** While read-only, assert that routing
    skips your layer and a write lands beneath it. When you add writing, that assertion flips
-   — the transition shows up as a test change you make deliberately, not as behaviour you
+   so the transition shows up as a test change you make deliberately, not as behaviour you
    discover later.
 4. **Release it as a minor version with a release note** stating what changed, in the terms
    below.
@@ -527,7 +532,7 @@ Four things make the later promotion uneventful:
 Precisely two things, and only one is a surprise:
 
 **Writes to keys your layer defines start working.** Before promotion they routed to the
-layer beneath yours and were reported as ineffective — `Operation.Effective()` false, with
+layer beneath yours and were reported as ineffective, with `Operation.Effective()` false with
 your layer named in `ShadowedBy`. The module was already saying the write would not take
 effect. Afterwards it does.
 
@@ -628,13 +633,13 @@ func TestRemoteBackend(t *testing.T) {
 
 Worth covering, because each is a way a backend can be subtly wrong:
 
-- **precedence** — that being added later actually wins;
-- **per-key merging** — that a key you do not supply still comes from below;
-- **provenance** — that `Origin` names you, with the name a user would recognise;
-- **absence** — that `fs.ErrNotExist` is tolerated rather than fatal;
-- **hot-reload** — that a change reaches observers, if you implement `Watch`;
-- **writes** — that `Apply` reaches the source *and* that the Store's view agrees;
-- **conflicts** — that a change landing after `Load` is refused with `ErrConflict`.
+- **precedence**: that being added later actually wins;
+- **per-key merging**: that a key you do not supply still comes from below;
+- **provenance**: that `Origin` names you, with the name a user would recognise;
+- **absence**: that `fs.ErrNotExist` is tolerated rather than fatal;
+- **hot-reload**: that a change reaches observers, if you implement `Watch`;
+- **writes**: that `Apply` reaches the source *and* that the Store's view agrees;
+- **conflicts**: that a change landing after `Load` is refused with `ErrConflict`.
 
 The last two matter most, because a write path that never detects a conflict passes every
 happy-path test you will write.
@@ -645,7 +650,7 @@ fake of the service behind it is usually clearer.
 
 ## Related
 
-- [Backends & capabilities](../explanation/backends.md) — why the interfaces are split
-- [Load & merge configuration](load-and-merge.md) — how layers combine
-- [React to changes with hot-reload](hot-reload.md) — the observer contract your `Watch` feeds
-- [Write configuration](write-config.md) — routing, conflicts and `ErrPartialCommit`
+- [Backends & capabilities](../explanation/backends.md): why the interfaces are split
+- [Load & merge configuration](load-and-merge.md): how layers combine
+- [React to changes with hot-reload](hot-reload.md): the observer contract your `Watch` feeds
+- [Write configuration](write-config.md): routing, conflicts and `ErrPartialCommit`

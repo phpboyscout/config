@@ -35,8 +35,8 @@ how that works.
 ## Unmarshal a section
 
 `UnmarshalSection[T]` decodes the subtree at `key` into a `Section[T]`. It takes a
-`config.Reader`, so a `*View` — or a mock — will do. Field tags are **relative to**
-the section key:
+`config.Reader`, so a `*View` or a mock will do. Field tags are **relative to** the
+section key:
 
 ```go
 type ServerSettings struct {
@@ -53,7 +53,7 @@ if err != nil {
 	return err
 }
 
-srv := section.Value    // ServerSettings — a plain struct field, not a method
+srv := section.Value    // ServerSettings: a plain struct field, not a method
 if !section.Exists {
 	// the "server" key was absent; srv is the zero value (or your defaults)
 }
@@ -63,7 +63,7 @@ if !section.Exists {
 
 !!! note "Which struct tag?"
     Section decoding treats **`mapstructure:`** as canonical, and accepts **`yaml:`**
-    and **`json:`** as aliases — a value spelled under any of the three resolves, with
+    and **`json:`** as aliases. A value spelled under any of the three resolves, with
     `yaml` consulted before `json`. An untagged field matches its own name. Embedded
     structs are flattened, and `,squash` / `,inline` do what they do elsewhere.
 
@@ -71,11 +71,11 @@ if !section.Exists {
     mechanism that reads **`config:`** (plus `validate:` / `enum:` / `default:`). A
     struct can carry both sets of tags.
 
-`MustUnmarshalSection[T]` is the panic-on-error variant — use it **sparingly**, in tests
-or package defaults where a panic is acceptable; production code should handle the error.
+`MustUnmarshalSection[T]` is the panic-on-error variant. Use it **sparingly**, in tests or
+package defaults where a panic is acceptable; production code should handle the error.
 `view.SectionExists("server")` checks presence without decoding, which lets you
-distinguish *absent* from *present-but-empty* (e.g. an optional provider block, or an
-"is this configured yet?" check).
+distinguish *absent* from *present-but-empty*, such as an optional provider block or an
+"is this configured yet?" check.
 
 !!! warning "One-shot decode leaves long-lived components stale"
     `UnmarshalSection` is a **snapshot**. A long-lived component that decodes once and
@@ -93,7 +93,7 @@ changed.
 
 !!! warning "Register `OnObserverError` or those failures are silent"
     When a reload cannot be decoded or validated, the binding keeps the last good
-    section and returns the error from its observer — which goes to
+    section and returns the error from its observer, which goes to
     `store.OnObserverError`. Without a handler registered there, a section that has
     quietly stopped tracking the file looks exactly like one that has not changed.
 
@@ -103,11 +103,11 @@ changed.
     })
     ```
 
-Its first argument is a `config.Binder` — anything with a `View() *View` and an
+Its first argument is a `config.Binder`: anything with a `View() *View` and an
 `AddObserverFunc`. A `*Store` is one, and so is a stub you write for a test:
 
 ```go
-// srv is your component — whatever holds the listener, pool or client that
+// srv is your component: whatever holds the listener, pool or client that
 // these settings configure. It is not this module's type.
 srv := newServer()
 
@@ -142,7 +142,7 @@ world. You say when your dependencies exist:
 
 ```go
 // Declared before the binding, assigned after it. The callback closes over the
-// variable, not over its value, so it sees the real server once it exists —
+// variable, not over its value, so it sees the real server once it exists,
 // and nothing calls it until ApplyInitial does.
 var srv *Server
 
@@ -163,10 +163,10 @@ if err := settings.ApplyInitial(); err != nil {
 }
 ```
 
-`ApplyInitial` hands the callback the current section with `Initial: true` and
-`Previous: nil`. Calling it twice is a no-op, so it is safe in a startup path that may
-run more than once, and it does nothing if a reload already beat it — you never get an
-older section delivered after a newer one.
+`ApplyInitial` hands the callback the current section with `Initial: true` and a zero
+`Previous`. Calling it twice is a no-op, so it is safe in a startup path that may run more
+than once, and it does nothing if a reload already beat it, so you never get an older
+section delivered after a newer one.
 
 If your callback does not care which delivery it is handling, ignore `Initial` and
 reconfigure the same way each time. That is usually the right shape.
@@ -175,24 +175,24 @@ reconfigure the same way each time. That is usually the right shape.
 
 | Method | Returns |
 |---|---|
-| `Value() T` | the current value (a copy) — **a method here**, unlike `Section[T].Value` |
+| `Value() T` | the current value (a copy); **a method here**, unlike `Section[T].Value` |
 | `Current() *T` | pointer to the current snapshot; for anything `ObserveSection` returns this is non-nil even when the section is absent, pointing at the zero value or your defaults |
 | `Exists() bool` | whether the latest snapshot came from an explicit section |
 | `Version() uint64` | starts at 1 after the initial decode, and bumps **only** when the typed section actually changed |
 
 !!! warning "Snapshots are read-only, and you must re-read them"
-    Treat the value behind `Current()` as **immutable** — never mutate it in place. It is
+    Treat the value behind `Current()` as **immutable** and never mutate it in place. It is
     a published snapshot that other goroutines may be reading. Call `Current()` again
     when you need to observe a later reload; a pointer you captured earlier keeps
     pointing at the older snapshot.
 
-    `Version()` counts **changes, not reloads** — an unrelated reload leaves it alone.
+    `Version()` counts **changes, not reloads**; an unrelated reload leaves it alone.
 
 ### Whole-snapshot comparison
 
 The binding compares **complete typed snapshots**, not individual keys. An unrelated
-config reload — a change somewhere else in the file — does **not** bump `Version()`
-and does **not** invoke your apply callback. When the section does change,
+config reload, such as a change elsewhere in the file, does **not** bump `Version()` and
+does **not** invoke your apply callback. When the section does change,
 `SectionChange[T]` carries both `Previous` and `Current` (plus `Initial`, `Changed`,
 `Version`), so a component reconfigures from a whole settings object instead of
 diffing individual keys.
@@ -202,7 +202,7 @@ diffing individual keys.
 | Option | Purpose |
 |---|---|
 | `WithSectionValidator(func(T) error)` | reject an invalid snapshot; the previous good one is kept |
-| `WithSectionApply(func(SectionChange[T]) error)` | run on a real change — reconfigure your component |
+| `WithSectionApply(func(SectionChange[T]) error)` | run on a real change, to reconfigure your component |
 | `WithSectionDefaults(defaults T, merge func(defaults, overlay T) T)` | seed defaults and define how an overlay merges over them |
 | `WithSectionDefaultFunc(func(Observed) T, merge func(defaults, overlay T) T)` | as above, but the defaults are computed from the configuration snapshot being decoded |
 | `WithSectionEqual(func(previous, current Section[T]) bool)` | custom change detection when the default comparison isn't right |
@@ -231,7 +231,7 @@ A package that may one day become its own module should **not** import this one 
 to read reload-aware settings. Define a minimal interface locally:
 
 ```go
-// in your reusable package — no config import at all
+// in your reusable package; no config import at all
 
 // ServerSettings is declared here, by the package that consumes it.
 type ServerSettings struct {
@@ -256,9 +256,8 @@ func (s *Server) addr() string {
 ```
 
 `*config.ObservedSection[ServerSettings]` satisfies that shape structurally, so the
-wiring code passes it in and your package stays dependency-free. This is exactly how
-the phpboyscout toolkit modules were decoupled before extraction — the settings struct
-and a one-method interface are the whole contract.
+wiring code passes it in and your package stays dependency-free. The settings struct and
+a one-method interface are the whole contract.
 
 ## Related
 
@@ -266,4 +265,4 @@ and a one-method interface are the whole contract.
 - [Validate configuration](validate-config.md)
 - [Load & merge configuration](load-and-merge.md)
 - [Test with the config mocks](test-with-mocks.md)
-- [Struct tags](../reference/struct-tags.md#decoding-tags) — `mapstructure`, `yaml` and `json`, and the types that decode from text
+- [Struct tags](../reference/struct-tags.md#decoding-tags): `mapstructure`, `yaml` and `json`, and the types that decode from text

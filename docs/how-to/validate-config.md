@@ -6,8 +6,8 @@ tags: [how-to, validation]
 
 # Validate configuration
 
-Catch a bad configuration at load time — a missing required key, a typo, a value outside
-an allowed set — instead of at a call site three layers deep. A typo like `server.prot`
+Catch a bad configuration at load time (a missing required key, a typo, a value outside an
+allowed set) instead of at a call site three layers deep. A typo like `server.prot`
 otherwise produces a silent zero value, discovered only when something fails at runtime.
 
 Validation always runs against the **resolved** configuration, never a single layer. A
@@ -45,8 +45,8 @@ individually would reject a perfectly correct setup.
 !!! tip "If your schema is a JSON Schema document"
 
     This page covers the schema `config` builds from struct tags, which needs no extra
-    module. If your schema is a **document** — one you already publish, share with a
-    non-Go consumer, or generate — use
+    module. If your schema is a **document** that you already publish, share with a
+    non-Go consumer, or generate, use
     [`config-schema`](https://gitlab.com/phpboyscout/go/config-schema) instead. It
     satisfies the same interface, so everything below applies unchanged. See
     [Compose schemas](compose-schemas.md).
@@ -71,16 +71,16 @@ type AppConfig struct {
 | Tag | Effect |
 |---|---|
 | `config:"a.b"` | maps the field to a dot-separated configuration key |
-| `validate:"required"` | fails when the key is **absent** — see below |
+| `validate:"required"` | fails when the key is **absent**; see below |
 | `enum:"a,b,c"` | fails when the value is not one of the listed values |
-| `default:"x"` | **recorded on the field schema — does not set the value** |
+| `default:"x"` | **recorded on the field schema; does not set the value** |
 | `description:"…"` | recorded on the field schema; no message currently reads it |
-| `config:"-"` | skips a scalar field — but a **struct** field is still walked, exactly as an untagged one is ([why](../reference/struct-tags.md#how-untagged-struct-fields-become-key-prefixes)) |
+| `config:"-"` | skips a scalar field, but a **struct** field is still walked, exactly as an untagged one is ([why](../reference/struct-tags.md#how-untagged-struct-fields-become-key-prefixes)) |
 
 !!! warning "`required` is the whole of the `validate` vocabulary"
     The tag is split on commas and every token compared against the literal string
-    `required`. A tag written for another validation library —
-    `validate:"required,min=1,oneof=8080 9090"` — applies `required` and **silently
+    `required`. A tag written for another validation library, such as
+    `validate:"required,min=1,oneof=8080 9090"`, applies `required` and **silently
     discards the rest**. There is no warning; the constraint simply does not exist.
 
     The full tag reference, including which Go types the schema can and cannot describe,
@@ -94,7 +94,7 @@ type AppConfig struct {
     Strings are the one exception: a required string that is present but empty fails,
     because YAML writes an absent value as the empty string and the two cannot be told
     apart here. If you need a non-zero number, express that as a check of your own
-    rather than as `required` — see [validate your own slice](#validate-your-own-slice-not-the-world).
+    rather than as `required`; see [validate your own slice](#validate-your-own-slice-not-the-world).
 
 A nested struct without a `config` tag is walked, and its lower-cased field name becomes a
 key prefix for any child tag that contains no dot of its own. So `Server.Port` tagged
@@ -103,15 +103,15 @@ would. Both spellings work; pick one and stay with it.
 
 !!! warning "Validation reads; it never writes"
     The `default:` tag is hint text only. Validation does not inject defaults into the
-    configuration. Defaults belong in exactly one place — your shipped or embedded
-    defaults layer, added with `WithReaders` — because a second source of defaults will
+    configuration. Defaults belong in exactly one place, your shipped or embedded
+    defaults layer added with `WithReaders`, because a second source of defaults will
     drift from the first. Do not define a default in both.
 
 !!! note "Two different sets of struct tags"
     Validation reads **`config:`** (plus `validate:`, `enum:`, `default:` and
     `description:`). [Section decoding](typed-sections.md) reads **`mapstructure:`**,
     falling back to `yaml:` then `json:` then the lower-cased field name. They are separate
-    mechanisms, and one struct may carry both sets — see
+    mechanisms, and one struct may carry both sets. See
     [Struct tags](../reference/struct-tags.md).
 
 ## Validate in one call
@@ -131,7 +131,7 @@ reflection. Calls that pass options build fresh, because an option can change th
 
 ## Build a schema you can reuse
 
-`SchemaOf[T]` gives you the `*Schema` itself, which is what you attach to a store:
+`SchemaOf[T]` gives you the `*StructSchema` itself, which is what you attach to a store:
 
 ```go
 schema, err := config.SchemaOf[AppConfig]()
@@ -189,7 +189,7 @@ you passed to `WithEnv`, so if you use one, say so in your own surrounding messa
 An unrecognised key produces a warning, not an error. That is deliberate: in a merged
 configuration several packages contribute to, an unknown key is usually *someone else's*
 key, and failing on it would make the file impossible to share. A key that is a parent of
-a known field is never reported — `server` is fine when `server.port` is in the schema.
+a known field is never reported: `server` is fine when `server.port` is in the schema.
 
 When you own the whole file and want typos caught hard, opt into strict mode:
 
@@ -214,8 +214,9 @@ if err != nil {
 
 ## Attach the schema to the store
 
-`WithSchema` validates every candidate configuration before it is published — the first
-load, every reload, and every write:
+`WithSchema` validates every candidate configuration before it is published: the first
+load, every reload, and every write. `WithSchema` takes the `Schema` interface, so the
+`*StructSchema` built above or any other implementation will do:
 
 ```go
 store, err := config.NewStore(ctx,
@@ -256,13 +257,13 @@ if err != nil && !errors.Is(err, config.ErrInvalidConfig) {
 _, err = store.Apply(ctx, config.Set("server.host", "localhost"))
 ```
 
-Every other failure — no sources, a source that cannot be read, one that cannot be parsed
-— still returns nil, because there is no configuration to hand back.
+Every other failure (no sources, a source that cannot be read, one that cannot be parsed)
+still returns a nil store, because there is no configuration to hand back.
 
 ## Writes are validated too, but only for what they break
 
 A write against a schema-carrying store is validated by building the candidate snapshot it
-would produce — including the environment and flag layers — and validating that. It is the
+would produce, including the environment and flag layers, and validating that. It is the
 same construction path a reload uses, so pre-write validation and the reload it causes
 cannot disagree.
 
@@ -295,7 +296,7 @@ perfectly fine.
 
 A rejected write modifies nothing. Violations are matched on key plus message, so a change
 that swaps one failure for a different one on the same key counts as introducing something
-new — which it has.
+new, which it has.
 
 ## The type check sees the layer's own type
 
@@ -309,12 +310,12 @@ So an `int` field supplied by `MYTOOL_SERVER_PORT` or `--port` fails its type ch
 server.port: expected type int but got string
 ```
 
-The reading path is unaffected — `GetInt` coerces — but validation is not a reading path.
+The reading path is unaffected, since `GetInt` coerces, but validation is not a reading path.
 If a key is routinely supplied by the environment or a flag, either leave it out of the
 typed schema or declare it as a string.
 
 The schema's type model is also coarser than Go's. It knows `string`, `int`, `float64`,
-`bool` and `duration`, and maps **everything else to `string`** — including unsigned
+`bool` and `duration`, and maps **everything else to `string`**, including unsigned
 integers, slices, maps and `time.Time`. A field declared `uint16` or `[]string` therefore
 fails its own type check against an ordinary YAML file. Use `int` for a validated numeric
 field, and leave collections out of the validated struct; the full mapping is in
@@ -326,8 +327,8 @@ Each package should validate its own keys with its own struct. There is delibera
 global schema: a central one would have to know which features are active in a given
 build, and would couple otherwise-independent packages together.
 
-This is also where checks a schema cannot express belong — anything relational, conditional,
-or needing a non-zero number rather than merely a present one:
+Checks a schema cannot express also belong here: anything relational, conditional, or
+needing a non-zero number rather than merely a present one:
 
 ```go
 type Pool struct {
@@ -367,7 +368,7 @@ one in place. See [Use typed sections](typed-sections.md).
 ## Testing validation
 
 Build a store over a throwaway directory and assert on the error. `config.Dir` takes paths
-**relative to its root**, so write `"config.yaml"` and not `"/config.yaml"` — an absolute
+**relative to its root**, so write `"config.yaml"` and not `"/config.yaml"`. An absolute
 path is treated as an attempt to escape the root and fails with `path escapes from parent`.
 
 ```go
@@ -387,11 +388,11 @@ assert.Contains(t, err.Error(), "log.level")
 
 ## Related
 
-- [Compose schemas from several components](compose-schemas.md) — several components, each validating its own subtree
-- [Load & merge configuration](load-and-merge.md) — building a store and ordering sources
-- [Use typed sections](typed-sections.md) — decode and validate one subtree
+- [Compose schemas from several components](compose-schemas.md): several components, each validating its own subtree
+- [Load & merge configuration](load-and-merge.md): building a store and ordering sources
+- [Use typed sections](typed-sections.md): decode and validate one subtree
 - [React to changes with hot-reload](hot-reload.md)
-- [Hot-reload safety](../explanation/hot-reload-safety.md) — why a rejected reload changes nothing
-- [Write configuration](write-config.md) — planning, routing and applying a change
-- [Struct tags](../reference/struct-tags.md) — every tag, what is honoured, and what is silently ignored
-- [Errors](../reference/errors.md#errinvalidconfig) — `ErrInvalidConfig` and `ErrEmptySchema` in full
+- [Hot-reload safety](../explanation/hot-reload-safety.md): why a rejected reload changes nothing
+- [Write configuration](write-config.md): planning, routing and applying a change
+- [Struct tags](../reference/struct-tags.md): every tag, what is honoured, and what is silently ignored
+- [Errors](../reference/errors.md#errinvalidconfig): `ErrInvalidConfig` and `ErrEmptySchema` in full

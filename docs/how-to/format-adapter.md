@@ -6,10 +6,11 @@ tags: [how-to, formats, extending]
 
 # Support a new file format
 
-The core reads and writes YAML. Any other file format — JSON, TOML, INI, one of your own —
-plugs in through a **codec**, shipped as its own module so no consumer inherits a parser they
-do not use. You write the format-specific part; the file machinery — reading, conflict
-detection, atomic writes, symlink handling, watching — is already written and shared.
+The core's own codec is YAML, which also reads JSON because YAML 1.2 is a superset of it.
+Any other file format, such as TOML, INI or one of your own, plugs in through a **codec**,
+shipped as its own module so no consumer inherits a parser they do not use. You write the
+format-specific part. The file machinery (reading, conflict detection, atomic writes,
+symlink handling, watching) is already written and shared.
 
 This guide builds a minimal format adapter, reading first then writing, and proves it with the
 conformance suite. Each stage stands on its own, so stop wherever your format stops: a
@@ -19,14 +20,14 @@ read-only codec is a first-class outcome, not a half-finished one.
     The codec below is the trivial `key=value` format the conformance suite tests itself with,
     in
     [`conformance/conformance_test.go`](https://gitlab.com/phpboyscout/go/config/-/blob/main/conformance/conformance_test.go).
-    It is deliberately not a real format — it is the smallest thing that exercises every part of
+    It is deliberately not a real format. It is the smallest thing that exercises every part of
     the seam, so it is the clearest thing to learn from. The full `Codec` and `EditingCodec`
     definitions are on
     [pkg.go.dev](https://pkg.go.dev/gitlab.com/phpboyscout/go/config#Codec).
 
 ## Read: implement a `Codec`
 
-Reading a format is one method — turn bytes into values:
+Reading a format is one method, turning bytes into values:
 
 ```go
 type Codec interface {
@@ -63,7 +64,7 @@ func (lineCodec) Decode(path string, src []byte) ([]map[string]any, error) {
 }
 ```
 
-Decode values with the format's **own** parser — `encoding/json`, a TOML library, your own
+Decode values with the format's **own** parser: a TOML library, `encoding/xml`, your own
 scanner. That is the whole job of a read-only codec. A consumer wires it exactly like a file:
 
 ```go
@@ -80,7 +81,7 @@ a file the codec cannot safely rewrite.
 
 ## Write: implement `EditingCodec` (optional)
 
-To make the format writable, add three methods — the same capability split as
+To make the format writable, add three methods. It is the same capability split as
 `Backend`/`WritableBackend`, one level down:
 
 ```go
@@ -92,7 +93,7 @@ type EditingCodec interface {
 }
 ```
 
-`Apply` folds the edits into the source, preserving whatever the format can — key order,
+`Apply` folds the edits into the source, preserving whatever the format can: key order,
 comments, indentation. `Check` runs at **load**, so a source you cannot round-trip safely is
 refused before the user has made edits to lose. For the trivial format there is nothing to
 refuse and nothing to preserve beyond key order:
@@ -109,10 +110,10 @@ func (editableLineCodec) Apply(_ string, src []byte, edits []config.Edit) ([]byt
 }
 ```
 
-That is all. `NewCodecBackend` now returns a writable backend **automatically** — nothing about
-how it is constructed changes — and the file machinery does the rest.
+That is all. `NewCodecBackend` now returns a writable backend **automatically**, with no
+change to how it is constructed, and the file machinery does the rest.
 
-!!! warning "You do not touch the file machinery — and that is the point"
+!!! warning "You do not touch the file machinery, and that is the point"
     Staging to a temp path, committing by atomic rename, preserving mode, resolving symlinks,
     and **detecting a change that landed between load and write** are the core's job, done once.
     That last one is the subtle trap the seam exists to remove: the conflict fingerprint must be
@@ -120,9 +121,9 @@ how it is constructed changes — and the file machinery does the rest.
     never implements it, your codec cannot get it wrong.
 
     Keep the **documents-versus-values boundary**: `Decode` produces values; `Apply` edits
-    bytes. If your format needs a structure-preserving editor (as YAML uses `yamldoc` and JSON
-    uses key-order-aware editing), decode with one path and edit with the other, and never let
-    the editor's decoded values reach the read side — the two disagree about scalar types.
+    bytes. If your format needs a structure-preserving editor (YAML uses `yamldoc`), decode
+    with one path and edit with the other, and never let the editor's decoded values reach
+    the read side, because the two disagree about scalar types.
 
 ## Prove it with the conformance suite
 
@@ -157,31 +158,31 @@ one named subtest per contract, so a failure names exactly which one broke:
 | `no_edit_is_a_noop` | *(editing codecs)* `Apply` with no edits changes no value |
 | `conflict_detected` | *(editing codecs)* a change between load and write is refused with `ErrConflict` |
 
-The suite uses the standard library `testing` package and nothing else — no testify — so running
+The suite uses the standard library `testing` package and no testify, so running
 it adds no assertion-library dependency to your module. It exercises real file semantics through
 `config.Dir(t.TempDir())`.
 
 What it deliberately does **not** assert is format-specific: multi-document provenance (only
 some formats have documents) and exact scalar types (`8080` as an int or a string). Those belong
-in your adapter's own fidelity tests, alongside the conformance run — what your format guarantees
-to preserve, and, equally important, what it does not.
+in your adapter's own fidelity tests, alongside the conformance run: what your format guarantees
+to preserve and, equally important, what it does not.
 
 ## Ship it as its own module
 
-One module per format — `config-json`, `config-toml`, `config-<yours>` — rather than a shared
-one, so a consumer needing JSON does not pull a TOML parser into their `go.sum`:
+One module per format (`config-toml`, `config-<yours>`) rather than a shared
+one, so a consumer needing TOML does not pull an HCL parser into their `go.sum`:
 
 ```
 module gitlab.com/you/config-<format>
 
-require gitlab.com/phpboyscout/go/config v0.5.0 // the release the codec seam landed in
+require gitlab.com/phpboyscout/go/config vX.Y.Z // the release you build against
 ```
 
 Export a constructor that hides the codec, so a consumer writes
 `config.WithBackend(yourformat.New(fsys, path))`, and run the conformance suite in your module's
 tests.
 
-If you ship read-only first and add writing later, that is a supported lifecycle — but cut
+If you ship read-only first and add writing later, that is a supported lifecycle, but cut
 it as a **minor** version with a release note, because it changes behaviour a consumer did
 not ask to change. A backend that cannot write is skipped by routing, so a write of a key it
 holds lands in the next writable layer beneath. The moment it *can* write, that same write
@@ -191,9 +192,9 @@ now land somewhere else. Say so in the note. The mechanics are in
 
 ## Related
 
-- [Backends & capabilities](../explanation/backends.md) — why a file's format is a codec, and
+- [Backends & capabilities](../explanation/backends.md): why a file's format is a codec, and
   how the type system decides what a backend can do
-- [Write a custom backend](custom-backend.md) — for a source that is **not** a file: Consul, a
-  secrets manager, an HTTP endpoint
-- [What survives a write](../explanation/write-fidelity.md) — the preservation contract your
+- [Write a custom backend](custom-backend.md): for a source that is **not** a file, such as
+  Consul, a secrets manager or an HTTP endpoint
+- [What survives a write](../explanation/write-fidelity.md): the preservation contract your
   `Apply` is held to
