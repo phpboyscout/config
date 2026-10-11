@@ -1,6 +1,6 @@
 ---
 title: Read GCP Parameter Manager
-description: Make GCP Parameter Manager a config layer with config-gcp-parameter — one parameter as a document or a prefix of many, why it is read-only, and the polling cadence.
+description: Make GCP Parameter Manager a config layer with config-gcp-parameter, covering one parameter as a document or a prefix of many, why it is read-only, and the polling cadence.
 tags: [how-to, adapters, backends, gcp, parameter-manager]
 ---
 
@@ -15,7 +15,7 @@ consumers who need it.
 go get gitlab.com/phpboyscout/go/config-gcp-parameter
 ```
 
-You build and configure the Parameter Manager client — project, location and credentials stay
+You build and configure the Parameter Manager client, so project, location and credentials stay
 yours. Parameter Manager parameters are heavyweight, versioned, document-shaped resources, so the
 adapter reads them **two ways**.
 
@@ -25,19 +25,21 @@ If the values are static, or already arrive as environment variables, `WithEnv` 
 them with no SDK.
 
 Reach for Parameter Manager when values are managed centrally and change without a
-deploy. Read-only here, so pair it with a writable layer if your application persists
+deploy. It is read-only here, so pair it with a writable layer if your application persists
 anything.
 
 ## Single document (default)
 
-One named parameter is one layer: its latest version's payload is the whole document. Pass a
-`config.Codec` to decode it into a tree:
+One named parameter is one layer, and its current version's payload is the whole document. Parameter
+Manager has no "latest" alias, so the adapter lists the versions and takes the most recently created
+**enabled** one. A parameter with no enabled version is treated as absent. Pass a `config.Codec` to
+decode the payload into a tree:
 
 ```go
 import (
 	parametermanager "cloud.google.com/go/parametermanager/apiv1"
 	"gitlab.com/phpboyscout/go/config"
-	configgcp "gitlab.com/phpboyscout/go/config-gcp-parameter"
+	configgcpparameter "gitlab.com/phpboyscout/go/config-gcp-parameter"
 	configjson "gitlab.com/phpboyscout/go/config-json"
 )
 
@@ -45,14 +47,15 @@ client, _ := parametermanager.NewClient(ctx)
 
 store, err := config.NewStore(ctx,
 	config.WithFiles(fsys, "/etc/app.yaml"),
-	config.WithBackend(configgcp.FromClient(client, "my-project", "global", "app-config",
-		configgcp.WithValueCodec(configjson.Codec{}))),   // decode the JSON payload
+	config.WithBackend(configgcpparameter.FromClient(client, "my-project", "global", "app-config",
+		configgcpparameter.WithValueCodec(configjson.Codec{}))), // decode the JSON payload
 )
 ```
 
 Parameter Manager declares each parameter's format (`JSON`/`YAML`/`UNFORMATTED`), but that field is
-**not** used to pick a codec — decoding is always the one you inject, uniform with the rest of the
-family. Without a codec the payload is a single string.
+**not** used to pick a codec. Decoding is always the codec you inject, uniform with the rest of the
+family. Without a codec, or when the codec rejects the payload, the payload is a single string held
+under the parameter's own id.
 
 ## Prefix (many parameters)
 
@@ -60,25 +63,34 @@ For a store organised as many small parameters, `FromClientPrefix` scans a name 
 each parameter as a leaf, Consul-style:
 
 ```go
-config.WithBackend(configgcp.FromClientPrefix(client, "my-project", "global", "app-"))
+config.WithBackend(configgcpparameter.FromClientPrefix(client, "my-project", "global", "app-"))
 ```
 
+The prefix is stripped from each parameter id and the rest is split on **both `-` and `/`** to make
+the key path. With prefix `app-`, the parameter `app-db-host` becomes `db.host`. Parameter ids allow
+hyphens but not slashes, so hyphens are what gives you nesting here, and a parameter whose name has a
+hyphen you meant literally will be split. This costs one payload fetch per matching parameter, and
+each parameter is its own layer, so provenance names the exact version a value came from.
+
 Either way the layer takes part in precedence, per-key merge, provenance and hot-reload like a file.
-`New`/`NewPrefix` take the narrow `PM` interface directly for testing.
+`New` and `NewPrefix` take the narrow `PM` interface directly for testing.
 
 ## Read-only
 
 Parameter Manager versions are immutable and it offers no compare-and-swap, so
 `config-gcp-parameter` is **read-only**: a write to a key it defines routes to the writable layer
-beneath, never to Parameter Manager. The adapter returns the **raw** payload (it does not resolve
-embedded Secret Manager references), so the layer is not sensitive. Write, and a secret-rendering
-variant, are tracked follow-ons.
+beneath, never to Parameter Manager. The adapter returns the **raw** payload and does not resolve
+embedded Secret Manager references, so the layer is not `Sensitive`. Keep secrets in
+[Secret Manager](gcp-secret.md). Write support, and a secret-rendering variant, are tracked
+follow-ons.
 
 ## Watching
 
-The adapter joins hot-reload by **polling** for a new latest version or a changed parameter set
-(`NativeWatch: false`); `WithPollInterval` sets the cadence (60s default, since each poll is a
-billed call).
+Parameter Manager has no change feed, so the adapter joins hot-reload by **polling**
+(`NativeWatch: false`) for a new current version or a changed parameter set. The default is **60
+seconds**, declared through `config.PollIntervalHinter` because each poll is a billed call. The
+`WithPollInterval` option changes the backend's own cadence, and `config.WithPollInterval` on
+`Store.Watch` overrides both.
 
 ## Getting a client
 
@@ -86,13 +98,14 @@ Building the client yourself is the default. Two further rungs exist, each in
 both shapes:
 
 ```go
-// You hold client options — an emulator endpoint, an explicit credentials file,
+// You hold client options: an emulator endpoint, an explicit credentials file,
 // or a credential resolved once with go/gcpclient and shared across adapters.
 b, err := configgcpparameter.FromOptions(ctx, "my-project", "global", "app-config", opts)
 b, err := configgcpparameter.FromOptionsPrefix(ctx, "my-project", "global", "app-", opts)
 
 // Application Default Credentials.
 b, err := configgcpparameter.Default(ctx, "my-project", "global", "app-config")
+b, err := configgcpparameter.DefaultPrefix(ctx, "my-project", "global", "app-")
 
 store, err := config.NewStore(ctx, config.WithBackend(b), config.WithCloser(b))
 defer store.Close()
@@ -105,13 +118,16 @@ options it yields to `FromOptions`. It hands out client options rather than a
 client precisely because the three GCP adapters need three different client
 types.
 
-**All four return `*OwnedBackend`, which must be closed.** Hand it to the store
-with `WithCloser`, as above; [gcp-secret](gcp-secret.md) says why.
+`FromOptions`, `FromOptionsPrefix`, `Default` and `DefaultPrefix` all return `*OwnedBackend`, which
+owns the client it built and **must be closed**. Hand it to the store with `WithCloser`, as above;
+[gcp-secret](gcp-secret.md) says why. A backend from `FromClient` is not owned, and the client you
+built stays yours to close.
 
-**Two things are still required.** Like Secret Manager these rungs need the
-**project**, because credentials name a principal rather than a project. Unlike
-it they also need the **location**: Parameter Manager has no project-level parent,
-so every parameter lives under one and `global` is the ordinary value.
+Two things are still required. Like Secret Manager, these rungs need the **project**, because
+credentials name a principal rather than a project (`ErrNoProject`). Unlike it, they also need the
+**location** (`ErrNoLocation`). Parameter Manager has no project-level parent, so every parameter
+lives under a location and `global` is the ordinary value. The why behind the ladder is in
+[who owns the connection](../explanation/connection-ownership.md).
 
 ## What it costs
 
@@ -119,11 +135,12 @@ so every parameter lives under one and `global` is the ordinary value.
 |---|---|
 | Adds | the Parameter Manager SDK, on top of the `config` graph |
 
-The config graph plus the Google Cloud Parameter Manager client — one of the **heaviest** graphs in the
-adapter family (the first-party gRPC/protobuf/auth stack). It is asserted honestly by an allowlist test.
+The config graph plus the Google Cloud Parameter Manager client, which brings the first-party
+gRPC, protobuf and auth stack. That is a heavy graph, and an allowlist test pins exactly what it
+is.
 
 ## Related
 
-- [How dynamic backends work](../explanation/dynamic-backends.md) — injected client, polling, and
+- [How dynamic backends work](../explanation/dynamic-backends.md): injected client, polling, and
   why some stores are read-only
-- [The adapter ecosystem](../explanation/adapters.md) — every adapter, with status and roadmap
+- [The adapter ecosystem](../explanation/adapters.md): every adapter, with status and roadmap

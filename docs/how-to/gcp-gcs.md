@@ -14,8 +14,8 @@ When a tool's configuration file lives in a **GCP Cloud Storage bucket**, the
 go get gitlab.com/phpboyscout/go/config-gcp-gcs
 ```
 
-You build and configure the storage client — credentials, project, options all stay yours — and hand
-it in with the bucket name:
+You build and configure the storage client, so credentials, project and options all stay yours, and
+hand it in with the bucket name:
 
 ```go
 import (
@@ -25,7 +25,7 @@ import (
 	configgcpgcs "gitlab.com/phpboyscout/go/config-gcp-gcs"
 )
 
-client, _ := storage.NewClient(ctx)   // your credentials, your options
+client, _ := storage.NewClient(ctx) // your credentials, your options
 defer client.Close()
 
 store, err := config.NewStore(ctx,
@@ -34,15 +34,15 @@ store, err := config.NewStore(ctx,
 )
 ```
 
-The `config.FS` name is the object name — `Wrap(client, "my-bucket")` reads and writes the object
+The `config.FS` name is the object name, so `Wrap(client, "my-bucket")` reads and writes the object
 `config.yaml`.
 
 ## When you do *not* need this
 
-If you read one object once at startup, fetching it and handing the bytes to
-[`WithReaders`](load-and-merge.md) needs no adapter.
+If you read one object once at startup, fetch it and hand the bytes to
+[`WithReaders`](load-and-merge.md). No adapter needed.
 
-Reach for `config-gcp-gcs` when the bucket should behave like a filesystem — several
+Reach for `config-gcp-gcs` when the bucket should behave like a filesystem: several
 files, writes routed back, or hot-reload noticing a change made elsewhere.
 
 ## A base context, because the SDK needs one
@@ -55,28 +55,28 @@ context, pass one:
 configgcpgcs.Wrap(client, "my-bucket", configgcpgcs.WithContext(ctx))
 ```
 
-Note that a cancelled base context makes every subsequent read fail — bind a context whose lifetime
-matches the store's.
+A cancelled base context makes every subsequent adapter operation fail, so bind a context whose
+lifetime matches the store's.
 
 ## The write is a real atomic move
 
 Unlike S3 and Azure Blob, Cloud Storage has a **native server-side move**, so the commit is a single
-atomic `ObjectHandle.Move` — no copy-then-delete, and no window where a crash could orphan a staging
-object. Conflict detection is the core's SHA-256 content fingerprint, captured at load: a write is
+`ObjectHandle.Move`. There is no copy-then-delete, and no window where a crash could orphan a staging
+object. Conflict detection is the core's SHA-256 content fingerprint, captured at load, so a write is
 refused if the object changed underneath it.
 
 ## Hot-reload is polled, at a calm cadence
 
 An object store has no local path, so it is watched by **polling**. Because each poll is a billed
-object read, `config-gcp-gcs` declares a **60-second** default through `config.PollIntervalHinter`,
-overridable with `WithPollInterval`.
+object read, `config-gcp-gcs` declares a **60-second** default through `config.PollIntervalHinter`.
+Override it with `config.WithPollInterval` on `Store.Watch`.
 
 ## Getting a client
 
 Building the client yourself is the default. Two further rungs exist:
 
 ```go
-// You hold client options — an emulator endpoint, an explicit credentials file,
+// You hold client options: an emulator endpoint, an explicit credentials file,
 // or a credential resolved once with go/gcpclient and shared across adapters.
 fsys, err := configgcpgcs.FromOptions(ctx, "my-bucket", opts)
 
@@ -94,15 +94,16 @@ options it yields to `FromOptions`. It hands out client options rather than a
 client precisely because the three GCP adapters need three different client
 types.
 
-**Both return `*OwnedFS`, which you can close.** The obligation is real but
-weaker than its Secret Manager sibling's: `storage.Client` is HTTP-backed and its
-documentation says `Close` "need not be called at program exit", where
-`secretmanager.Client` says it "must be Closed". `WithCloser` hands a filesystem
-to the store exactly as it does a backend.
+Both return `*OwnedFS`, which owns the client it built, so **close it**. `store.Close()` does that
+for you once you hand the filesystem over with `WithCloser`, as above. The obligation is real but
+weaker than for the Secret Manager sibling: `storage.Client` is HTTP-backed and its documentation
+says `Close` "need not be called at program exit", where `secretmanager.Client` says it "must be
+Closed". An empty bucket returns `ErrNoBucket`. A filesystem from `Wrap` is not owned, and the
+client you built stays yours to close.
 
-This is the **simplest zero-conf rung in the family**: a bucket name is globally
-unique, so unlike Secret Manager and Parameter Manager there is no project or
-location to supply.
+This is the simplest zero-conf rung in the family: a bucket name is globally unique, so unlike
+Secret Manager and Parameter Manager there is no project or location to supply. The why behind the
+ladder is in [who owns the connection](../explanation/connection-ownership.md).
 
 ## What it costs
 
@@ -110,15 +111,15 @@ location to supply.
 |---|---|
 | Adds | the Cloud Storage SDK, on top of the `config` graph |
 
-The Cloud Storage SDK — the heaviest dependency graph in the adapter family, and the honest cost of
-the client — plus `config`, asserted by an allowlist test. Because it is its own module, only a
-consumer reading from GCS compiles it. The tests run against
+The Cloud Storage SDK, plus `config`, asserted by an allowlist test. The SDK is a heavy graph, and
+the honest cost of the client. Because the adapter is its own module, only a consumer reading from
+GCS compiles it. The integration tests run against
 [fake-gcs-server](https://github.com/fsouza/fake-gcs-server) under testcontainers, so the suite needs
 no GCP project.
 
 ## Related
 
-- [How filesystem adapters work](../explanation/filesystem-adapters.md) — the object-store commit
+- [How filesystem adapters work](../explanation/filesystem-adapters.md): the object-store commit
   model and polled reload
-- [Read & write config in S3](aws-s3.md) · [Azure Blob](azure-blob.md) — the sibling object stores
-- [Backends & capabilities](../explanation/backends.md) — the `config.FS` interface
+- [Read & write config in S3](aws-s3.md) and [Azure Blob](azure-blob.md): the sibling object stores
+- [Backends & capabilities](../explanation/backends.md): the `config.FS` interface
