@@ -1,6 +1,6 @@
 ---
 title: Precedence & merge model
-description: How a value is resolved when several sources define it — precedence, per-key merge and shadowing.
+description: "How a value is resolved when several sources define it: precedence, per-key merge and shadowing."
 tags: [explanation, precedence, merge]
 ---
 
@@ -8,8 +8,8 @@ tags: [explanation, precedence, merge]
 
 This page explains how a value is resolved: which source wins when several define the
 same key, and how nested structures fold together. Understanding it means you can predict
-what `view.GetString("server.host")` will return without tracing the code, and — more
-usefully — work out why it returned something else.
+what `view.GetString("server.host")` will return without tracing the code and, more
+usefully, work out why it returned something else.
 
 ## There is no ranking baked into the module
 
@@ -56,7 +56,7 @@ check that what you built is what you meant.
 
 The single ordering rule works because the Store has only one notion of a source. A file,
 a document within a multi-document file, an in-memory reader, the environment, the flag
-set, a layer added at runtime with `AddLayer` — all of them are `Layer` values with a
+set, a layer added at runtime with `AddLayer`: all of them are `Layer` values with a
 `Source` identifying where they came from.
 
 Everything else in the module is expressed in terms of that ordering. Merge order is layer
@@ -101,10 +101,10 @@ then silently stops tracking changes to everything else in it.
 ### A scalar replacing a subtree takes the whole path
 
 The recursion only continues while both sides are mappings. If a higher layer sets a
-scalar where a lower layer had a subtree, the subtree is gone — not merged into, not
-partially retained — and the provenance of everything beneath it is discarded with it.
+scalar where a lower layer had a subtree, the subtree is gone, not merged into and not
+partially retained, and the provenance of everything beneath it is discarded with it.
 
-That is the honest outcome. Reporting that `db.host` came from `base.yaml` when
+Anything else would mislead. Reporting that `db.host` came from `base.yaml` when
 `db: disabled` has replaced the lot would send somebody to edit a value nobody reads.
 
 ### Sequences replace; they do not append
@@ -124,7 +124,7 @@ plugins: [c]
 
 The resolved value is `[c]`. Not `[a, b, c]`, and not `[c, b]`.
 
-This surprises people, so it is worth saying why nothing better was available. There is no
+This surprises people, so here is why nothing better was available. There is no
 correct general answer for merging two lists. Appending is right for a list of plugins and
 wrong for a list of allowed hosts, where an overlay usually means "these instead of
 those". Positional merge assumes the two lists describe the same things in the same order,
@@ -134,7 +134,7 @@ which is a per-key schema the module does not have and would have to invent.
 Every one of those choices is right sometimes and silently wrong the rest of the time, and
 a silently wrong merge of an allow-list is a security bug. Replacement is at least
 predictable, inspectable, and easy to reason about: the winning layer is the whole answer.
-If you want accumulation, model it as a mapping — whose merge behaviour is well defined —
+If you want accumulation, model it as a mapping, whose merge behaviour is well defined,
 or assemble the list in your own code from keys that each layer can contribute.
 
 ### Empty containers are values
@@ -164,12 +164,11 @@ b: 2
 
 resolves `a: 1`, `b: 2`, and provenance renders the second document as `config.yaml#1`.
 
-Be clear that this is *this module's* interpretation, adopted for consistency with how it
+This is *this module's* interpretation, adopted for consistency with how it
 already treats files, not something the YAML specification says. The specification
 describes a multi-document stream as a sequence of independent documents and takes no
-position on overlaying them. The alternative — refusing multi-document files, or reading
-only the first — would have meant a second rule for a construct that the layer model
-handles for free.
+position on overlaying them. Refusing multi-document files, or reading only the first,
+would have meant a second rule for a construct that the layer model handles for free.
 
 ## Keys are lower-cased
 
@@ -186,7 +185,7 @@ Mapping an environment variable name back to a dotted key is genuinely ambiguous
 variable name distinguishes them.
 
 Rather than guess, the environment backend resolves each name against the keys the layers
-beneath it already define — which is nearly always what a variable is overriding. A name
+beneath it already define, which is nearly always what a variable is overriding. A name
 matching nothing falls back to treating every underscore as a separator. When two existing
 keys would both be spelled the same way, the load fails with `ErrAmbiguousEnvKey` naming
 both candidates, rather than picking one in map iteration order and behaving differently
@@ -194,7 +193,8 @@ between runs of the same program.
 
 The prefix `WithEnv` requires is a security control rather than tidiness: without one, any
 environment variable matching a configuration key could silently reconfigure your tool on
-a shared CI runner or a multi-tenant host. See
+a shared CI runner or a multi-tenant host. An empty prefix therefore loads nothing at all
+instead of scanning the whole environment. See
 [Load & merge configuration](../how-to/load-and-merge.md#read-the-environment).
 
 !!! note "Never log a configuration value"
@@ -205,13 +205,13 @@ a shared CI runner or a multi-tenant host. See
 ## Reading a subtree
 
 `view.Sub("database")` returns a `*View` scoped to that subtree, reading through the same
-snapshot rather than holding a detached copy of it — every read is still resolved through
+snapshot rather than holding a detached copy of it. Every read is still resolved through
 the full path, so a scoped view cannot serve values the rest of the configuration has
 moved past. It returns `nil` when the key is absent, so `if sub != nil` guards behave.
 
-`SectionExists` reports whether a path holds a mapping. An empty path asks about the
-view's own root, which lets a caller check a scoped view without special-casing the top
-level.
+`SectionExists` reports whether a path holds a mapping. An empty path asks whether the
+view's own root holds anything, which lets a caller check a scoped view without
+special-casing the top level.
 
 ## What the model deliberately does not do
 
@@ -220,8 +220,8 @@ level.
   hint text. Defaults are a layer, contributed with `WithReaders`, so they take part in
   precedence and provenance like everything else.
 - **It does not read a `.env` file.** Nothing in this module loads one. If you want the
-  contents of a `.env` file to reach configuration, load it yourself and contribute it —
-  as a reader source at construction, or with `AddLayer` at runtime.
+  contents of a `.env` file to reach configuration, load it yourself and contribute it,
+  as a reader source at construction or with `AddLayer` at runtime.
 - **It does not interpolate.** There is no `${...}` expansion, no reference from one key
   to another, and no computed values. Every leaf comes verbatim from exactly one layer,
   which is what makes `Origin` able to answer honestly.
@@ -231,10 +231,10 @@ level.
 
 ## Related
 
-- [The Store](the-store.md) — why one component owns configuration I/O
-- [Provenance](provenance.md) — asking which layer supplied a value, and what shadows it
-- [Load & merge configuration](../how-to/load-and-merge.md) — building a store, in order
-- [Bind CLI flags](../how-to/bind-cli-flags.md) — why only changed flags contribute
-- [History](../about/history.md) — where this model came from
-- [Keys and paths](../reference/keys-and-paths.md) — the same rules stated as a lookup table
-- [Environment variables](../reference/environment-variables.md) — the full name-resolution algorithm
+- [The Store](the-store.md): why one component owns configuration I/O
+- [Provenance](provenance.md): asking which layer supplied a value, and what shadows it
+- [Load & merge configuration](../how-to/load-and-merge.md): building a store, in order
+- [Bind CLI flags](../how-to/bind-cli-flags.md): why only changed flags contribute
+- [History](../about/history.md): where this model came from
+- [Keys and paths](../reference/keys-and-paths.md): the same rules stated as a lookup table
+- [Environment variables](../reference/environment-variables.md): the full name-resolution algorithm

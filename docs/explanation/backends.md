@@ -7,8 +7,8 @@ tags: [explanation, backends, architecture]
 # Backends and capabilities
 
 A backend is a source of configuration. The Store owns everything about
-coordination — merging, provenance, snapshot construction, notification,
-serialising access — and a backend owns only the knowledge of how to read, and
+coordination (merging, provenance, snapshot construction, notification,
+serialising access), and a backend owns only the knowledge of how to read, and
 where relevant write and watch, its own sources.
 
 That division is the whole design. If coordination ever becomes per-backend, the
@@ -46,16 +46,16 @@ backend cannot claim one thing and do another.
 
 This module learned that the hard way. An earlier version carried a `Writable`
 flag *as well as* the interface, and writability ended up being decided three
-different ways — so a backend could be excluded as a write target while its file
+different ways, so a backend could be excluded as a write target while its file
 was missing and routed the moment it existed. The same source was writable or
 not depending on whether it happened to exist yet.
 
 ## A file's format is a codec, by the same reasoning
 
-Everything a *file* backend does — reading bytes, translating a missing file,
-fingerprinting content for conflict detection, staging to a temporary path,
-committing by atomic rename, preserving mode, resolving symlinks, rolling back,
-watching — is identical whatever format the file holds. Only two things depend
+Everything a *file* backend does is identical whatever format the file holds:
+reading bytes, translating a missing file, fingerprinting content for conflict
+detection, staging to a temporary path, committing by atomic rename, preserving
+mode, resolving symlinks, rolling back, watching. Only two things depend
 on the format: turning bytes into values, and editing bytes in place. Those two
 are a `Codec`:
 
@@ -74,7 +74,7 @@ type EditingCodec interface {                // optional
 
 This is the same capability split as `Backend`/`WritableBackend`, one level down.
 A format that cannot be round-tripped safely implements only `Decode`, and
-`NewCodecBackend` returns a backend that is *not* a write target — routing skips
+`NewCodecBackend` returns a backend that is *not* a write target. Routing skips
 it and a write lands in the next writable layer down, reported as shadowed rather
 than failing. A format that can be edited implements `EditingCodec`, and the
 backend it produces is writable. The type system decides, not a flag, exactly as
@@ -89,9 +89,9 @@ comment-preserving editor is the module's headline feature. Every other file
 format is a sibling `config-<format>` module supplying its own codec, so a
 consumer who needs JSON does not acquire a TOML parser in their dependency graph.
 Writing a codec is how a new file format is added without touching this module:
-the file machinery — including the conflict-detection subtlety that is easy to
-get wrong, where the fingerprint must be taken at load rather than at write — is
-written once and shared, rather than reimplemented and mis-implemented per format.
+the file machinery is written once and shared, rather than reimplemented per
+format. That includes the one subtlety that is easy to get wrong: the
+conflict-detection fingerprint must be taken at load, never at write.
 → [Write a custom backend](../how-to/custom-backend.md) · the
 [non-YAML format adapters spec](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0004-non-yaml-format-adapters)
 
@@ -108,18 +108,18 @@ several backends of different kinds are in play:
 | `NativeWatch` | Whether the backend can report foreign changes itself, or has to be polled. |
 | `Sensitive` | Whether it holds secret material. |
 
-`Sensitive` is enforced; the rest are declared ahead of the backend that will
-read them, because each carries a consequence that is much cheaper to record now
+`Sensitive` is enforced. The rest are declared ahead of any code that reads
+them, because each carries a consequence that is much cheaper to record now
 than to discover later:
 
 - **A value from a `Sensitive` backend must never be written into a layer that
   is not.** This is a security property. Configuration written back from a
   secret store into a plain file is how credentials end up in version control.
   The write path enforces it: because secrets backends are read-only, a write to
-  a key one owns routes down to the next writable layer — a plain file — so the
+  a key one owns routes down to the next writable layer (a plain file), so the
   core refuses that write with `ErrSensitiveLeak` rather than let the secret land
   there. A key hidden by [a filter](../how-to/filter-a-backend.md) keeps its
-  sensitive marking for exactly this reason — a denied key defines nothing, so
+  sensitive marking for exactly this reason: a denied key defines nothing, so
   without it the guard would stop firing and the filter would quietly re-open
   the hole it exists to close.
 - **The comment guarantee is document-backend-only.** Everything this module
@@ -146,7 +146,7 @@ Most backends ignore `below`. One kind cannot: a backend whose reading of its
 own input depends on what is already defined.
 
 The environment backend is that case. `APP_SERVER_PORT` could mean `server.port`
-or `server_port`, and nothing in the variable name says which — so it resolves
+or `server_port`, and nothing in the variable name says which, so it resolves
 the name against the keys the lower-precedence layers already define.
 
 That dependency used to be satisfied by a separate call made before `Load`,
@@ -160,7 +160,7 @@ forget, because there is no separate step.
 
 ## Related
 
-- [The Store](the-store.md) — why one component owns configuration I/O
-- [Provenance](provenance.md) — how a layer's identity is recorded and reported
+- [The Store](the-store.md): why one component owns configuration I/O
+- [Provenance](provenance.md): how a layer's identity is recorded and reported
 - [Precedence and the merge model](precedence-and-merge.md)
-- [Errors](../reference/errors.md) — the error values a backend is expected to return
+- [Errors](../reference/errors.md): the error values a backend is expected to return

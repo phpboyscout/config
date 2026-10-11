@@ -1,6 +1,6 @@
 ---
 title: What survives a write
-description: What survives a write — comments, key order, quoting and anchors — and why the file stays yours.
+description: Comments, key order, quoting and anchors survive a write, and why the file stays yours.
 tags: [explanation, writes, fidelity]
 ---
 
@@ -53,7 +53,7 @@ runs fine, and refuses a file the first time a user changes a setting.
 
 ### Invisible characters are escaped on write
 
-Every character a reader can see survives verbatim — emoji, CJK, accented Latin, Greek,
+Every character a reader can see survives verbatim: emoji, CJK, accented Latin, Greek,
 Cyrillic. Bidirectional controls and the invisible-space family (zero-width space, word
 joiner, soft hyphen and the rest) in a value this module *writes* are escaped instead. A
 value already in the file is the author's and stays as it was; every untouched byte does.
@@ -62,12 +62,12 @@ This is a security property rather than a formatting choice. Those characters ma
 document render one way and parse another: text that reads as one thing to the person
 reviewing it and means another to the machine. That is the Trojan Source construct
 ([CVE-2021-42574](https://nvd.nist.gov/vuln/detail/CVE-2021-42574)), and a configuration
-file — reviewed by eye, trusted by default, and often the thing that decides where
-traffic goes — is exactly where it matters.
+file, reviewed by eye, trusted by default and often the thing that decides where
+traffic goes, is exactly where it matters.
 
 The escaping is lossless: decoding returns the original string byte for byte, so a value
 containing a zero-width joiner still reads back containing one. The file will simply look
-different from what you fed it, which is the point — an invisible character becomes
+different from what you fed it, which is the point: an invisible character becomes
 visible.
 
 ## Why replacing a map is different
@@ -76,8 +76,8 @@ Setting a map-valued key replaces the node it addresses, and comments, anchors a
 styles *within* that subtree may not survive. That is not a gap in the contract above; it
 is what you asked for.
 
-By supplying a whole map you assert ownership of that subtree. The alternative —
-deep-merging it — would make "this subtree is now exactly this" inexpressible, which is
+By supplying a whole map you assert ownership of that subtree. The alternative,
+deep-merging it, would make "this subtree is now exactly this" inexpressible, and that is
 precisely what a consumer replacing a catalogue needs to say.
 
 The cost is real. A `themes:` subtree carrying two anchors, eight aliases, eighteen
@@ -91,7 +91,7 @@ If you know what changed, say so precisely: diff before against after and issue 
 
 ## Related
 
-- [Write configuration](../how-to/write-config.md) — the recipes
-- [Backends & capabilities](backends.md) — what a backend must support to be written to
-- [The Store](the-store.md) — why one component owns every write
-- [Limitations](../reference/limitations.md#writes) — what a write does not promise
+- [Write configuration](../how-to/write-config.md): the recipes
+- [Backends & capabilities](backends.md): what a backend must support to be written to
+- [The Store](the-store.md): why one component owns every write
+- [Limitations](../reference/limitations.md#writes): what a write does not promise

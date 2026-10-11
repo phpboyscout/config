@@ -21,8 +21,8 @@ difficulty before the guarantee is even needed.
 The decision worth understanding first is what the watcher is *not* for.
 
 Under the earlier design, a write propagated like this: write the file, `fsnotify` fires,
-wait out a debounce window, re-read every file, re-merge, swap, notify. A round trip
-through the filesystem — gated on a timing heuristic — to learn something the process
+wait out a debounce window, re-read every file, re-merge, swap, notify. That is a round
+trip through the filesystem, gated on a timing heuristic, to learn something the process
 already knew, because it had just written it.
 
 `Store.Apply` instead builds the next snapshot **directly from the content it just
@@ -34,23 +34,23 @@ That one change removes four problems structurally rather than mitigating them:
 
 - **Notification nondeterminism.** An own write notifies exactly once by construction, no
   matter how many files the batch touched. There is no coalescing heuristic to tune.
-- **The write → reload → react feedback loop.** An own write never re-enters through the
+- **The write, reload, react feedback loop.** An own write never re-enters through the
   watcher, so that particular cascade is unrepresentable rather than detected and broken.
-- **Debounce sensitivity for the process's own saves.** There is no timing window, because
-  there is no timing.
+- **Debounce sensitivity for the process's own saves.** There is no timing window to tune,
+  because the Store does not wait for anything.
 - **Redundant re-parsing** of files that did not change.
 
 It also closes a genuine failure mode: there is no interval during which the configuration
 in memory disagrees with the configuration on disk. `Apply` returns a snapshot that
 already reflects what it wrote.
 
-If you are looking for the debounce setting that used to exist here, this is why it does
-not: coalescing is now by *value* rather than by time, and the section on exactly-once
-notification below explains what replaced it.
+If you are looking for a debounce setting for your own writes, there is none, for the
+reason above. Changes made by someone else do still pass through a short settle window,
+and the section on exactly-once notification below covers it.
 
 ## The reload cycle
 
-A reload — whether triggered by the watcher or by calling `Reload` directly — runs the
+A reload, whether triggered by the watcher or by calling `Reload` directly, runs the
 same path:
 
 1. **Load every backend** in precedence order, from scratch, exactly as the first load
@@ -73,7 +73,7 @@ worked at startup and behaved differently an hour later.
 
 ## Fail-closed, with last-known-good retained
 
-A reload is rejected — and the previous snapshot stands — when any source fails to load or
+A reload is rejected, and the previous snapshot stands, when any source fails to load or
 parse, or when the candidate fails schema validation. `Reload` returns the error;
 `OnReloadError` callbacks are told.
 
@@ -92,7 +92,7 @@ last-known-good has nothing to fall back on, so a configuration that parses but 
 validation is published anyway *and* the error is returned. A store with no snapshot could
 not be read from or written through, which would make an invalid configuration unfixable
 by the very surface designed to fix it. The error still travels, so a caller that wants to
-fail fast does — the ordinary `if err != nil` is unchanged. Only a caller that explicitly
+fail fast does; the ordinary `if err != nil` is unchanged. Only a caller that explicitly
 checks for `ErrInvalidConfig` proceeds. See
 [Validate configuration](../how-to/validate-config.md#an-invalid-configuration-is-still-repairable).
 
@@ -101,28 +101,35 @@ checks for `ErrInvalidConfig` proceeds. See
 Two guarantees are worth relying on:
 
 **Exactly once per logical change.** One `Apply` touching two files notifies once, not
-twice. Own writes get this by construction; foreign changes get it because the reload is a
-single pass over every backend.
+twice. Own writes get this by construction. Foreign changes get it because the reload is
+a single pass over every backend and a burst of change reports is settled into one
+reload first.
 
 **A change that changes nothing notifies nobody.** After publishing, the Store compares
 the resolved values with the previous snapshot's and stays silent if they match.
 
 The second is doing more work than it appears to. Filesystem notification is *noisy*: it
 delivers events for permission changes, for atomic renames, and for editors that write a
-file in several passes. None of those alters configuration. A time-based debounce window
-guesses at which events belong together and gets it wrong at both ends — too short and one
-save becomes three reloads, too long and a legitimate change is delayed. Comparing
-configurations answers the question directly instead of estimating it, and the answer does
-not depend on how fast the filesystem is.
+file in several passes. None of those alters configuration. Comparing configurations
+answers "did anything change?" directly instead of estimating it from the events, and the
+answer does not depend on how fast the filesystem is.
 
-It also covers the case a debounce cannot: a file genuinely rewritten with different bytes
-but the same resolved values — comments reflowed, a key relocated to the layer that should
-own it — is not a configuration change, and announcing it would have every observer
-re-read values identical to the ones it holds. Without this rule, `Apply` and `Reload`
+Timing still has a small job, and only for foreign changes. A deploy that replaces two
+overlays produces two events, and nothing says they belong together. The Store waits for a
+burst to settle before reloading, 250 milliseconds by default (`WithSettleInterval`; zero
+disables it), and reloads at most four windows after the first event even if changes keep
+arriving. That turns the deploy into one reload and one notification. It is a heuristic:
+writes spaced further apart than the window are still seen as separate changes, so a
+multi-file change is only atomic if whoever makes it makes it atomically.
+
+The comparison also covers the case no window can: a file genuinely rewritten with
+different bytes but the same resolved values (comments reflowed, a key relocated to the
+layer that should own it) is not a configuration change, and announcing it would have every
+observer re-read values identical to the ones it holds. Without this rule, `Apply` and `Reload`
 disagree about what counts as a change, and an idempotent observer loops forever on a write
 that keeps being announced as news.
 
-The cost is honest: the comparison is a deep equality check over the merged values on every
+The cost is small: the comparison is a deep equality check over the merged values on every
 reload. For configuration-sized data that is nothing, and it is paid only when something
 fired.
 
@@ -133,16 +140,17 @@ not a handle onto "whatever is current".
 
 That is a correctness property, not a convenience. An observer reacting to one change
 could otherwise read some values before a second reload lands and some after, and produce
-a result that never existed as a coherent configuration — a host from one snapshot and a
+a result that never existed as a coherent configuration: a host from one snapshot and a
 port from the next. Pinning makes that unrepresentable for the duration of the callback,
 and it is why observers never need `With`. `cfg.Snapshot()` exposes the exact snapshot if
 you want its version or its layers.
 
 Observers run sequentially, in registration order, on the goroutine performing the reload.
 The list is copied under the lock and invoked outside it, so registering an observer
-concurrently with a reload is safe and a slow observer cannot deadlock the Store — but it
-does delay every later observer and the reload itself. Expensive work belongs on your own
-goroutine.
+concurrently with a reload is safe and a slow observer cannot deadlock the Store. It does
+delay every later observer and the reload itself, though, so expensive work belongs on
+your own goroutine. Delivery is also ordered: if a newer snapshot has already gone out, an
+older one that arrives late is dropped, because each snapshot is complete in itself.
 
 An observer that returns an error is reported and does not stop the ones after it. The
 configuration has already changed; one component being unable to react is no reason to
@@ -155,7 +163,7 @@ withhold the change from the rest. It must not pass silently either, which is wh
 still on its previous configuration. `OnObserverError` fires when the configuration **did**
 change and one component could not keep up. Conflating them would leave a caller unable to
 tell "your edit was refused" from "your edit landed and the metrics exporter did not
-restart" — two situations demanding opposite responses.
+restart": two situations demanding opposite responses.
 
 Announcing a rejection through the observer path would be worse still: it would tell every
 component that configuration changed when it did not.
@@ -165,21 +173,14 @@ component that configuration changed when it did not.
 `Apply`, `Reload` and `AddLayer` return `ErrWriteFromObserver` when called from within an
 observer callback. The obvious question is why this is not simply made to work.
 
-`Apply → notify → observer → Apply → notify` is a loop entirely inside the Store. The
-watcher plays no part in it, so the structural fix above does not touch it, and nothing
-else prevented it — a probe measured recursion depth 21, bounded only because the probe
-gave up.
-
-None of the available mitigations is worth having. Suppressing the nested notification
-leaves every *other* observer indefinitely stale. Coalescing needs an iteration cap that is
-inevitably arbitrary. A depth ceiling converts a crash into an error without making the
-program correct. And a convergent observer would settle on its own anyway, while a
-non-convergent one cannot converge under any design — so the only question is what a
-program that is already broken gets, and the answer should be a clear error rather than a
-subtle one.
+`Apply`, notify, observer, `Apply`, notify is a loop entirely inside the Store. The
+watcher plays no part in it, so the structural fix above does not touch it. Every
+mitigation on offer (suppressing the nested notification, coalescing, a depth ceiling) leaves
+the program no more correct, so the write is refused instead. [The Store](the-store.md#writing-from-inside-an-observer-is-refused)
+has the full argument, including the two defects that had been hiding the loop.
 
 So it is treated as what it is: a breakdown of the ownership model, refused at the
-boundary. The supported pattern is to take the write *out* of the observation — capture
+boundary. The supported pattern is to take the write *out* of the observation: capture
 what is needed, return, and write from somewhere else:
 
 ```go
@@ -207,21 +208,16 @@ go func() {
 Serialising and de-duplicating those deferred writes belongs to you, because you are the
 only party that knows which of them still matter.
 
-**The check is scoped to the goroutine running the callback**, and that is not incidental.
-Notification runs outside the Store's lock by design, since holding it across an observer
-would deadlock the Store. An unrelated goroutine may therefore be writing while observers
-execute, and that write is entirely legitimate — a plain flag could not tell it apart from
-the observer's own re-entrant call, and refusing it would be a worse defect than the
-cascade. Threading a marked `context.Context` through the observer interface was considered
-and rejected: an observer passing `context.Background()` would defeat it silently, turning
-a guaranteed refusal into a cooperative one.
+The check is scoped to the goroutine running the callback, so an unrelated goroutine writing
+while observers execute is unaffected. [The Store](the-store.md#writing-from-inside-an-observer-is-refused)
+explains why a flag or a marked context would not do.
 
 ## Watching is never silently absent
 
-`Watch` fails with `ErrWatchUnavailable` when there are no file-backed sources to watch,
-rather than returning successfully and doing nothing. An application that believes it will
-hear about changes and never will is worse off than one that knows it must restart —
-because the second will at least be restarted.
+`Watch` fails with `ErrWatchUnavailable` when no source can be watched, rather than
+returning successfully and doing nothing. An application that believes it will hear about
+changes and never will is worse off than one that knows it must restart, because the
+second will at least be restarted.
 
 The predecessor to this module got this wrong in an instructive way. It called
 `fsnotify.Add()` regardless of filesystem, which fails on an in-memory one, and swallowed
@@ -230,10 +226,12 @@ so.
 
 Underneath, the mechanism adapts rather than pretending:
 
-- **Native notification where it works.** `fsnotify` operates on real operating-system
+- **Native notification where it works.** For a file source, `fsnotify` operates on real operating-system
   paths, so a path is watched natively only after confirming that the file the OS has at
   the resolved location really is the file the store is reading.
-- **Polling everywhere else**, on an interval you can set with `WithPollInterval`. That
+- **Polling everywhere else**, every two seconds by default or at an interval you set with
+  `WithPollInterval`. A backend that polls something costly can declare a slower default,
+  and an explicit `WithPollInterval` still wins. That
   covers in-memory filesystems, wrappers that hide what they contain, network mounts where
   native notification is unreliable, and hosts that have exhausted their watch descriptors.
   A mixed set is handled by watching what can be watched and polling the rest, rather than
@@ -255,20 +253,22 @@ into the baseline and lost.
 
 ## What this does not give you
 
-Stated plainly, because each is a real edge:
+Each of these is a real edge:
 
-- **A notification is not an action.** Components holding operating-system state —
-  listeners, sockets, exporters, connection pools — do not reconfigure themselves when a
+- **A notification is not an action.** Components holding operating-system state
+  (listeners, sockets, exporters, connection pools) do not reconfigure themselves when a
   value changes. They need explicit restart or redial logic. A package that cannot
   genuinely reconfigure live should say so rather than pretend.
 - **Observers do not fire at startup.** They fire on changes only. If the same logic
-  applies at boot and on every reload, extract it and use it twice — a `*View` satisfies
-  `Observed`, so one function serves both paths.
+  applies at boot and on every reload, extract it and use it twice (a `*View` satisfies
+  `Observed`, so one function serves both paths).
 - **Side effects are not unwound.** If an observer applied a change and then returned an
   error, the configuration is still the new, valid one. The error is reported, not rolled
   back. Observers should be idempotent.
-- **Non-file sources are not watched.** Environment variables and flags do not change under
-  a running process, and an in-memory layer is changed by the code that owns it.
+- **Only watchable sources are watched.** Environment variables and flags do not change
+  under a running process, and an in-memory layer is changed by the code that owns it.
+  File sources and the remote adapters that implement `WatchableBackend` are watched, by
+  native notification or by polling.
 - **Cross-process coordination is out of scope.** Watching tells you a foreign change
   happened; it does not stop one landing midway through your own write. Conflict detection
   at commit is the defence there, and it detects rather than prevents. See
@@ -278,9 +278,9 @@ Stated plainly, because each is a real edge:
 
 ## Related
 
-- [React to changes with hot-reload](../how-to/hot-reload.md) — wiring it up
-- [The Store](the-store.md) — why one component owns configuration I/O
-- [Validate configuration](../how-to/validate-config.md) — gating reloads on a schema
-- [Use typed sections](../how-to/typed-sections.md) — the same fail-closed doctrine, one level down
-- [Write configuration](../how-to/write-config.md) — why an own write never reaches the watcher
-- [Defaults and limits](../reference/defaults-and-limits.md#watching-and-reload-timing) — the intervals this page reasons about
+- [React to changes with hot-reload](../how-to/hot-reload.md): wiring it up
+- [The Store](the-store.md): why one component owns configuration I/O
+- [Validate configuration](../how-to/validate-config.md): gating reloads on a schema
+- [Use typed sections](../how-to/typed-sections.md): the same fail-closed doctrine, one level down
+- [Write configuration](../how-to/write-config.md): why an own write never reaches the watcher
+- [Defaults and limits](../reference/defaults-and-limits.md#watching-and-reload-timing): the intervals this page reasons about

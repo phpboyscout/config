@@ -7,7 +7,7 @@ tags: [explanation, provenance]
 # Provenance
 
 Every configuration debugging session opens with the same question: *why is this value
-what it is?* Not "what is `db.host`" — the getter answers that — but "which of the six
+what it is?* Not "what is `db.host`" (the getter answers that) but "which of the six
 things that could have set it actually did, and what else is fighting over it".
 
 Most configuration libraries cannot answer that at all. They merge eagerly: files are
@@ -23,7 +23,7 @@ exists. `Origin`, `DefinedIn`, `Explain` and `Shadows` are how you ask for it ba
 The four are not variations on one another. They answer genuinely different questions,
 and reaching for the wrong one is how you end up with a misleading diagnostic.
 
-**`Origin(path) (Source, bool)` — who won?**
+**`Origin(path) (Source, bool)`: who won?**
 
 ```go
 if src, ok := view.Origin("db.host"); ok {
@@ -31,9 +31,9 @@ if src, ok := view.Origin("db.host"); ok {
 }
 ```
 
-One answer, or none. Use it when you need the winning layer as data — to decide which
+One answer, or none. Use it when you need the winning layer as data: to decide which
 file to open in an editor, to warn that a value came from the environment rather than
-from a reviewed file, to label a settings field as "set by `--host`".
+from a reviewed file, or to label a settings field as "set by `--host`".
 
 Environment variables and flags are ordinary layers here, so `Origin` will happily
 return `env:APP_DB_HOST`. That was a deliberate choice. An earlier design had the Store
@@ -53,9 +53,9 @@ for _, src := range view.DefinedIn("db.host") {
 A dedicated `FileOrigin` accessor was rejected precisely because its difference from
 `Origin` is subtle, and subtle differences are how callers pick the wrong one.
 
-**`DefinedIn(path) []Source` — who else defines it?**
+**`DefinedIn(path) []Source`: who else defines it?**
 
-Every layer that defines the path, in precedence order, lowest first — so the last entry
+Every layer that defines the path, in precedence order, lowest first, so the last entry
 is the one in effect. This is the list, not the winner.
 
 "Which file do I edit?" and "why is my edit not taking effect?" are the same question
@@ -63,7 +63,7 @@ asked from two directions, and both need the whole chain. If you only know the w
 you cannot tell someone that their carefully edited `base.yaml` is being overridden three
 layers up; if you only know the losers you cannot tell them what to do about it.
 
-**`Explain(path) string` — say it in one line.**
+**`Explain(path) string`: say it in one line.**
 
 ```go
 fmt.Println(view.Explain("db.host"))
@@ -78,7 +78,7 @@ the path is not set at all it says so plainly rather than returning an empty lin
 db.host is not set
 ```
 
-**`Shadows() []Shadow` — what is shadowed *anywhere*?**
+**`Shadows() []Shadow`: what is shadowed *anywhere*?**
 
 The three above answer for a path you already know. `Shadows` answers when you do not:
 
@@ -95,8 +95,8 @@ token: APP_TOKEN wins over 2 other layer(s)
 ```
 
 "What in this file is doing nothing?" is the same question as "why is my edit not taking
-effect?", asked without knowing which key to ask about — and not knowing the key is
-usually the situation you are in. Composing `Keys` with `DefinedIn` gives the same answer
+effect?", asked without knowing which key to ask about, which is usually the situation
+you are in. Composing `Keys` with `DefinedIn` gives the same answer
 in about a dozen lines; this exists because every consumer was writing those dozen lines.
 
 The rule of thumb: `Origin` when you are going to branch on the answer, `DefinedIn` when
@@ -105,12 +105,12 @@ you need the whole picture for one path, `Explain` when a person is going to rea
 
 ## Why provenance is leaf-only
 
-`Origin("db.host")` answers. `Origin("db")` — where `db` holds several keys — reports
+`Origin("db.host")` answers. `Origin("db")`, where `db` holds several keys, reports
 not-found, even though `db` plainly exists and `Get("db")` returns a map.
 
 That is not an omission. A populated subtree is *assembled*: `db.host` might come from
 `prod.yaml`, `db.port` from `base.yaml` and `db.password` from the environment. There is
-no single source for `db`, so naming one would be a lie — and the most likely lie is the
+no single source for `db`, so naming one would be a lie, and the most likely lie is the
 last layer to touch the subtree, which is the one a user is least likely to want.
 
 Rather than invent an answer, the merge deletes provenance for any path that turns out to
@@ -120,21 +120,22 @@ reaching for.
 
 `Shadows()` follows `Origin` rather than `DefinedIn` here: a populated subtree never
 appears in the report, because every entry has to name the layer in effect and for `db`
-there isn't one to name honestly. It also omits paths only one layer defines — those are
+there isn't one to name honestly. It also omits paths only one layer defines: those are
 not shadowed, and including them would mean filtering the report before you could use it.
-Those are the only two ways it differs from asking `DefinedIn` per key. `Explain` follows the same rule and says so out loud:
+Those are the only two ways it differs from asking `DefinedIn` per key.
+
+`Explain` follows the same rule and says so out loud:
 
 ```
 db is a subtree assembled from /etc/app/base.yaml, /etc/app/prod.yaml
 ```
 
-**An empty container is a leaf.** `key: {}` and `key: []` hold a value — just not any
-entries — so they carry provenance like any scalar. This follows from the module's wider
+**An empty container is a leaf.** `key: {}` and `key: []` hold a value, just not any
+entries, so they carry provenance like any scalar. This follows from the module's wider
 position that emptiness is a value and never implies absence: an empty map is present for
 `Has`, appears in `Keys()`, and survives a write untouched. Treating it as a leaf for
 provenance keeps that consistent; treating it as a subtree would make provenance disagree
-with the getters, which is exactly the class of inconsistency this design exists to
-remove.
+with the getters.
 
 There is a related case worth knowing about. If a higher layer sets a **scalar** at a path
 where a lower layer had a whole subtree, the subtree is no longer reachable, so the
@@ -150,11 +151,11 @@ Consider two files where the overlay sets `server.port: 9090` and the base sets 
 `server.port: 8080` and `server.host: localhost`. After the fold you hold one map:
 `{server: {host: localhost, port: 9090}}`. Nothing in that structure records that `port`
 came from the overlay and `host` from the base. The overlay's `8080` is not merely
-outranked — it is not present in the result at all.
+outranked, it is not present in the result at all.
 
 You cannot reconstruct this afterwards. You could re-read every source and re-run the
 merge, but then you are not inspecting the configuration you are actually using, you are
-inspecting one you have rebuilt and hoped matches — and if a file changed in between, it
+inspecting one you have rebuilt and hoped matches, and if a file changed in between, it
 does not. You could keep the raw layers and search them on demand, which is closer, but it
 duplicates the precedence rules in a second place where they can drift from the first.
 
@@ -166,7 +167,7 @@ frozen into the same immutable snapshot. They cannot disagree, because there is 
 computation to disagree with.
 
 This is also why a snapshot is the unit that carries provenance rather than the Store.
-`Origin` on a snapshot is a map lookup — no I/O, no re-parsing, no locking — and a
+`Origin` on a snapshot is a map lookup with no I/O, no re-parsing and no locking, and a
 snapshot taken an hour ago still answers honestly about the configuration it describes,
 not about whatever the files say now.
 
@@ -175,11 +176,14 @@ not about whatever the files say now.
 Provenance is not only a diagnostic. It is the input to write routing.
 
 When a change is routed, the Store walks the layers in reverse precedence order and picks
-the first **writable** layer that already defines the path — which is a provenance
+the first **writable** layer that already defines the path, which is a provenance
 question. It then asks which layers still outrank that target and also define the path,
-and reports them on the resulting operation as `ShadowedBy`. That is how you get told:
+and reports them on the resulting operation as `ShadowedBy`. That is how you get told,
+in a plan's text form:
 
-> written to `/etc/app/prod.yaml`, but `env:APP_DB_HOST` still wins
+```text
+set db.host → /etc/app/prod.yaml — shadowed by env:APP_DB_HOST
+```
 
 A library without provenance can write your value to a file and report success, while the
 effective configuration does not move an inch. It has no way to know, and therefore no way
@@ -188,10 +192,10 @@ report.
 
 ## What provenance does not tell you
 
-Worth stating plainly, so you do not go looking for it:
+So that you do not go looking for them:
 
-- **No line numbers.** A `Source` identifies a layer — a file path, a document index
-  within that file, an environment variable name, a flag name — not a position within it.
+- **No line numbers.** A `Source` identifies a layer (a file path, a document index
+  within that file, an environment variable name, a flag name), not a position within it.
 - **A document is a layer.** A file holding several YAML documents contributes one source
   per document, rendered as `config.yaml#1` for the second. Later documents override
   earlier ones. That is *this module's* interpretation, chosen for consistency with how it
@@ -199,20 +203,20 @@ Worth stating plainly, so you do not go looking for it:
   sequence of independent documents and says nothing about overlay.
 - **No history.** Provenance describes one snapshot. It does not record what a value used
   to be or which write changed it.
-- **Values are not provenance.** `DefinedIn` names the layers that define a path; it does
+- **Values are not provenance.** `DefinedIn` names the layers that define a path. It does
   not tell you what each of them says. If you need the losing values, you have the layer
   identities and can read the files.
 
   `Shadows` holds the same line, and there it is a deliberate refusal rather than a
   consequence. The report exists to be printed, and the case that motivated it is a
-  credential doctor that is forbidden from putting secret values anywhere near a log —
-  a report carrying values would put them one `%+v` away. It would also buy nothing: a
+  credential doctor that is forbidden from putting secret values anywhere near a log.
+  A report carrying values would put them one `%+v` away. It would also buy nothing: a
   literal credential sitting under a working environment reference wants removing whether
   or not it matches the value in effect.
 
 ## Related
 
-- [The Store](the-store.md) — why one component owns config I/O, and what a snapshot is
-- [Write configuration](../how-to/write-config.md) — routing, shadowed writes, conflicts
-- [Precedence & merge model](precedence-and-merge.md) — how layers fold together
-- [Limitations](../reference/limitations.md#provenance-is-leaf-only) — why a populated mapping has no single origin
+- [The Store](the-store.md): why one component owns config I/O, and what a snapshot is
+- [Write configuration](../how-to/write-config.md): routing, shadowed writes, conflicts
+- [Precedence & merge model](precedence-and-merge.md): how layers fold together
+- [Limitations](../reference/limitations.md#provenance-is-leaf-only): why a populated mapping has no single origin

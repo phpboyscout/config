@@ -1,7 +1,13 @@
+---
+title: Who owns the connection
+description: The four ways an adapter gets its client, why injection stays the default, and why sharing one credential resolution is always deliberate.
+tags: [explanation, adapters, connection]
+---
+
 # Who owns the connection
 
-Every adapter that reads configuration from somewhere remote — Parameter Store,
-Key Vault, Consul, an S3 bucket — needs a client to talk to it. This page is
+Every adapter that reads configuration from somewhere remote (Parameter Store,
+Key Vault, Consul, an S3 bucket) needs a client to talk to it. This page is
 about who builds that client, and why the answer is "you, by default, but not
 necessarily".
 
@@ -12,22 +18,22 @@ rungs, not alternatives: each is a thinner layer over the one below.
 
 | Rung | What you supply | When you want it |
 |---|---|---|
-| **1 — narrow interface** | a value satisfying the adapter's own small interface | tests and fakes; this is the seam the unit suites use |
-| **2 — SDK client** | a built `*ssm.Client`, `*azsecrets.Client`, `*capi.Client` … | you already build clients for other reasons |
-| **3 — native config** | the provider's own config, credential or options | you want **one** credential resolution feeding several clients |
-| **4 — ambient** | nothing but the target | you just want it to work |
+| **1: narrow interface** | a value satisfying the adapter's own small interface | tests and fakes; this is the seam the unit suites use |
+| **2: SDK client** | a built `*ssm.Client`, `*azsecrets.Client`, `*capi.Client` … | you already build clients for other reasons |
+| **3: native config** | the provider's own config, credential or options | you want **one** credential resolution feeding several clients |
+| **4: ambient** | nothing but the target | you just want it to work |
 
 ```go
-// 1 — the testing seam
+// 1: the testing seam
 configawsssm.New(fakeParamStore{}, "/app")
 
-// 2 — you built the client
+// 2: you built the client
 configawsssm.FromClient(ssm.NewFromConfig(cfg), "/app")
 
-// 3 — you resolved the config; the adapter builds its own client
+// 3: you resolved the config; the adapter builds its own client
 b, err := configawsssm.FromConfig(cfg, "/app")
 
-// 4 — you supplied nothing but the prefix
+// 4: you supplied nothing but the prefix
 b, err := ssmambient.Default(ctx, "/app")
 ```
 
@@ -45,8 +51,8 @@ owning the client, and all three are worth keeping:
   differently and you have already decided how; the adapter has no business
   re-deciding it.
 - **The adapter is testable without the cloud.** A fake satisfying the narrow
-  interface drives the whole unit suite — no account, no network.
-- **The dependency is honest.** The adapter pulls only the service package it
+  interface drives the whole unit suite: no account, no network.
+- **The dependency is no larger than it needs to be.** The adapter pulls only the service package it
   needs. The credential-resolution graph, which is much larger, is yours only if
   you ask for it.
 
@@ -75,7 +81,7 @@ b, err := ssmambient.Default(ctx, "/app")
 
 One extra import, and in exchange the adapter's own dependency footprint is
 exactly what it always was. Each of those subpackages carries a test asserting
-its parent's graph has not grown — so if the split ever leaks, the build says so.
+its parent's graph has not grown, so if the split ever leaks, the build says so.
 
 The AWS chain costs less on `config-aws-s3` than on the other two, because S3's larger
 service graph already carries some of the credential modules. Each adapter's
@@ -88,7 +94,7 @@ Two adapters that each take their ambient default resolve the provider chain
 
 A hidden process-wide cache would be worse than the duplication it saves: it
 would silently share credentials between components that may deliberately differ
-— a different profile, an assumed role, a distinct tenant — and it would make one
+(a different profile, an assumed role, a distinct tenant), and it would make one
 component's transient failure everybody's, invisibly.
 
 If you want one resolution feeding several adapters, say so:
@@ -101,7 +107,7 @@ s3fs, err       := s3ambient.FSFromSource(ctx, src, "my-bucket")
 ```
 
 The same source can feed [`go/signing`](https://gitlab.com/phpboyscout/go/signing)
-and [`go/encryption`](https://gitlab.com/phpboyscout/go/encryption) too — it is an
+and [`go/encryption`](https://gitlab.com/phpboyscout/go/encryption) too, because it is an
 estate module, not a config one.
 
 ### The provider client modules
@@ -114,20 +120,20 @@ is built on, so each is imported only by consumers who want that provider.
 |---|---|---|
 | [`go/awsclient`](https://awsclient.go.phpboyscout.uk) | `aws.Config` | refuses to guess a region |
 | [`go/azureclient`](https://azureclient.go.phpboyscout.uk) | `azcore.TokenCredential` | guards the typed-nil interface case |
-| [`go/gcpclient`](https://gcpclient.go.phpboyscout.uk) | `[]option.ClientOption` | options, not a client — three GCP adapters need three client types |
+| [`go/gcpclient`](https://gcpclient.go.phpboyscout.uk) | `[]option.ClientOption` | options, not a client; three GCP adapters need three client types |
 | [`go/vaultclient`](https://vaultclient.go.phpboyscout.uk) | `*vaultapi.Client` | for Vault the client *is* the prerequisite |
 
-Each offers the same shape: inject what you have, or take the ambient default —
+Each offers the same shape: inject what you have, or take the ambient default,
 plus a non-memoising `PerCall` rung, because how long a component holds a
 credential is a security posture belonging to that component rather than to the
 module. All of them share one state machine,
 [`go/clientlifecycle`](https://clientlifecycle.go.phpboyscout.uk), which
 has no dependencies of its own and never caches a failure.
 
-Two of the five have no consumer in this family: the GCP adapters take
-`option.ClientOption` directly and `config-vault` uses `vaultapi.DefaultConfig()`.
-They exist for the estate — `go/vaultclient` in particular for the signing and
-encryption adapters that follow.
+Two of these modules, `go/gcpclient` and `go/vaultclient`, have no consumer in this
+family: the GCP adapters take `option.ClientOption` directly and `config-vault` uses
+`vaultapi.DefaultConfig()`. They exist for the estate, `go/vaultclient` in particular
+for the signing and encryption adapters that follow.
 
 ## An ambient rung supplies credentials, never the target
 
@@ -149,9 +155,10 @@ Every adapter refuses when the target is missing, rather than guessing:
 
 `config-etcd` is the one adapter whose ambient rung reads the target as well,
 because etcd's own tooling keeps it in the environment: `Default` reads
-`ETCDCTL_ENDPOINTS`, the variable `etcdctl` uses. That is still the caller
-answering, in the place an operator already answered it. With the variable
-unset it refuses, where `etcdctl` would assume `localhost:2379`.
+`ETCDCTL_ENDPOINTS`, the variable `etcdctl` uses, along with the other `ETCDCTL_*`
+variables for credentials and TLS. That is still the caller answering, in the place
+an operator already answered it. With the endpoints variable unset it refuses, where
+`etcdctl` would assume `localhost:2379`.
 
 There is one deliberate exception in the other direction. `config-vault`'s
 `Default` inherits Vault's own documented `127.0.0.1:8200`, because **adopting a
@@ -160,7 +167,7 @@ documents no default region, so `config-aws-ssm` refuses instead.
 
 ## Some rungs hand you something to close
 
-Where a rung **builds** the client, it owns it — and if that client holds a
+Where a rung **builds** the client, it owns it, and if that client holds a
 connection, the rung returns a concrete type carrying `Close` rather than the
 bare interface. Hand it to the store, and closing the store releases it:
 
@@ -190,11 +197,11 @@ anything to release**:
 
 | Adapter | Client | Returns |
 |---|---|---|
-| `config-gcp-secret`, `config-gcp-parameter` | gRPC — *"must be Closed"* | `*OwnedBackend` |
-| `config-gcp-gcs` | HTTP — *"need not be called at program exit"* | `*OwnedFS` |
-| `config-sftp` | a subsystem channel | `*OwnedFS` — closes the subsystem, **never your SSH connection** |
-| `config-etcd` | gRPC (`clientv3`) | `*OwnedBackend`, from `FromConfig` (since v0.3.0) |
-| `config-azure-blob` | HTTP — no `Close` at all | plain `config.FS` |
+| `config-gcp-secret`, `config-gcp-parameter` | gRPC, *"must be Closed"* | `*OwnedBackend` |
+| `config-gcp-gcs` | HTTP, *"need not be called at program exit"* | `*OwnedFS` |
+| `config-sftp` | a subsystem channel | `*OwnedFS`; closes the subsystem, **never your SSH connection** |
+| `config-etcd` | gRPC (`clientv3`) | `*OwnedBackend`, from `FromConfig` and `Default` |
+| `config-azure-blob` | HTTP, no `Close` at all | plain `config.FS` |
 | everything else | nothing to release | plain `config.Backend` |
 
 Rungs 1 and 2 never return an owned type: there, you built the client and still
@@ -210,19 +217,19 @@ checks it:
 - **It can say what it is before it connects.** `ID()` and `Capabilities()`
   answer without a network call, so building a `Store` never becomes a network
   operation.
-- **A connection failure is an ordinary error from `Load`** — not a panic, and
+- **A connection failure is an ordinary error from `Load`**, not a panic and
   not "source not found". Those are different answers: a missing source may be
   perfectly fine, an unreachable one is not, and conflating them leaves your
   configuration silently short of a layer.
 - **A failure is never remembered.** A credential chain that was not ready when
   your tool started is picked up by the next reload rather than needing a
-  restart. This is why none of these adapters use `sync.OnceValues` — it caches
+  restart. This is why none of these adapters use `sync.OnceValues`: it caches
   the first error for the life of the process.
 
 ## A credential, or a way to get one
 
 That last guarantee is about a failure the adapter can retry. There is one it
-cannot, and which rung 4 makes easier to meet — because rung 4 hands the adapter
+cannot, and which rung 4 makes easier to meet, because rung 4 hands the adapter
 a credential you never see.
 
 The property that decides it:
@@ -238,7 +245,7 @@ weeks:
 | AWS | a provider chain behind `aws.NewCredentialsCache` | yes, on expiry |
 | Azure | a `TokenCredential` the pipeline re-calls | yes, before expiry |
 | GCP | a cached token provider | yes, once stale |
-| etcd | a username and password | yes — it re-authenticates |
+| etcd | a username and password | yes, it re-authenticates |
 | keychain | nothing at all; every call re-resolves | not applicable |
 
 Where it is an already-minted **token**, nothing renews it:
@@ -255,7 +262,7 @@ a token file is precisely the mechanism you would rotate.
 
 The consequence only bites a **long-lived process reloading configuration**: once
 the token's lifetime passes, every `Load` fails and nothing recovers, because a
-backend cannot tell "my credential expired" from "I am not allowed" — and those
+backend cannot tell "my credential expired" from "I am not allowed", and those
 want opposite responses. A command that runs for a second and exits never notices.
 
 **The ladder did not cause this.** `FromClient` always behaved this way. What
@@ -264,11 +271,11 @@ hands; when the adapter builds it, nobody confronts it. So the two adapters wher
 it is true say so on `Default` itself.
 
 If your process outlives its token, build the client, renew or rebuild it, and
-hand it to `FromClient` — rung 2 doing exactly the job rung 2 exists for.
+hand it to `FromClient`, rung 2 doing exactly the job rung 2 exists for.
 
 For completeness: a connection string is a static secret, and Azure's may carry a
 SAS with an expiry. That rung is injected rather than ambient, so the credential
-is already in your hands — the same hazard, but not a hidden one.
+is already in your hands. It is the same hazard, but not a hidden one.
 
 ## Two adapters that stop short, and why
 
@@ -281,7 +288,7 @@ ship. Dial the `*ssh.Client` yourself and hand it to `FromSSH`.
 
 **`config-keychain` already has rung 4 under a different name.**
 `configkeychain.Registered()` resolves through the credentials registry, so what
-you get depends on whether you blank-imported the keychain backend — and if you
+you get depends on whether you blank-imported the keychain backend, and if you
 did not, it reports unavailable rather than pretending. That name says more than
 `Default()` would, so it keeps it.
 

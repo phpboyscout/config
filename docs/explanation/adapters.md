@@ -1,6 +1,6 @@
 ---
 title: The adapter ecosystem
-description: The config adapter family — file/format adapters and dynamic remote backends, each an ordinary layer.
+description: The config adapter family, file and format adapters and dynamic remote backends, each an ordinary layer.
 tags: [adapters, backends, ecosystem]
 ---
 
@@ -8,7 +8,7 @@ tags: [adapters, backends, ecosystem]
 
 **One store, many sources.** YAML files are the default `config` reads out of the box, but
 they are not the boundary. A file in another format, or configuration that lives in a remote
-system rather than a file at all, joins the store as an **ordinary layer** — with the same
+system rather than a file at all, joins the store as an **ordinary layer** with the same
 precedence, the same per-key provenance, the same coherent snapshots and the same fail-closed
 reload every other layer gets.
 
@@ -35,16 +35,16 @@ An adapter only teaches the store how to *read* (and, where it makes sense, *wri
 *watch*) one kind of source. Everything else is the core's job, so it is identical across the
 whole family:
 
-- **Precedence** — the adapter's layer sits wherever you place it in the source order.
-- **Provenance** — `Explain` and `Origin` name the adapter as the source of a value, and flag
+- **Precedence**: the adapter's layer sits wherever you place it in the source order.
+- **Provenance**: `Explain` and `Origin` name the adapter as the source of a value, and flag
   where it shadows or is shadowed.
-- **Coherent reads** — a `View` is pinned to one snapshot regardless of which adapters fed it.
-- **Write fidelity** — where an adapter supports writes, the change lands in the layer that
+- **Coherent reads**: a `View` is pinned to one snapshot regardless of which adapters fed it.
+- **Write fidelity**: where an adapter supports writes, the change lands in the layer that
   owns the key, and structure (comments, order, quoting) is preserved.
-- **Fail-closed reload** — a source that will not parse or fails your schema is rejected;
+- **Fail-closed reload**: a source that will not parse or fails your schema is rejected;
   last-known-good stays live.
 - **A ladder to its client**, for every adapter that has one. You can inject the narrow
-  interface, the built SDK client, or the provider's native config — and most also offer a
+  interface, the built SDK client, or the provider's native config, and most also offer a
   zero-conf rung that resolves the ambient credential chain for you. Injection stays the default;
   see [who owns the connection](connection-ownership.md).
 
@@ -56,34 +56,39 @@ Available now, each published and versioned. The adapter name links to its how-t
 |---|---|:---:|:---:|---|
 | [`config-json`](../how-to/json.md) | JSON &amp; JSON Lines | ✓ | ✓ *(structure-preserving)* | [repo](https://gitlab.com/phpboyscout/go/config-json) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-json) |
 | [`config-toml`](../how-to/toml.md) | TOML | ✓ | ✓ *(structure-preserving)* | [repo](https://gitlab.com/phpboyscout/go/config-toml) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-toml) |
-| [`config-hcl`](../how-to/hcl.md) | HCL *(as a config format, not Terraform)* | ✓ | ✓ | [repo](https://gitlab.com/phpboyscout/go/config-hcl) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-hcl) |
+| [`config-hcl`](../how-to/hcl.md) | HCL *(as a config format, not Terraform)* | ✓ | ✓ *(comment-preserving)* | [repo](https://gitlab.com/phpboyscout/go/config-hcl) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-hcl) |
 | [`config-xml`](../how-to/xml.md) | XML | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-xml) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-xml) |
 | [`config-dotenv`](../how-to/dotenv.md) | dotenv (`.env`) | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-dotenv) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-dotenv) |
 | [`config-ini`](../how-to/ini.md) | INI | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-ini) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-ini) |
 | [`config-properties`](../how-to/properties.md) | Java `.properties` | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-properties) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-properties) |
 
 The read-only format adapters (`dotenv`, `ini`, `properties`, `xml`) add **no third-party
-dependency** — they parse their format in-module. And if the format you need is not here,
+dependency**, because they parse their format in-module. And if the format you need is not here,
 [write a format adapter](../how-to/format-adapter.md): a codec is a `Decode`/`Encode` pair, and
 the store handles the rest.
+
+`config-json` is narrower than its name suggests. YAML 1.2 is a superset of JSON, so the core
+already reads a plain `.json` file with no module at all. The adapter exists for
+structure-preserving writes, which a core write to a `.json` file does not give you (it stays
+valid JSON but is reflowed onto one line), and for JSON Lines, which the core refuses.
 
 ## Filesystem adapters
 
 A format adapter decides *how* a config file is parsed; a **filesystem adapter** decides *where* it
-lives. The two compose — you can read TOML out of an S3 bucket — because `config` imposes no
+lives. The two compose (you can read TOML out of an S3 bucket) because `config` imposes no
 filesystem of its own: [`config.FS`](filesystem-adapters.md) is six methods you can satisfy over the
 real disk (`config.OS()`), a rooted directory (`config.Dir`), an embedded filesystem, a remote host
 or a cloud object store. A filesystem adapter reads a configuration *file* that happens to live
-somewhere other than local disk — which is what distinguishes it from a [dynamic backend](#dynamic-backends),
-that maps a remote key–value namespace instead.
+somewhere other than local disk, which is what distinguishes it from a [dynamic backend](#dynamic-backends),
+which maps a remote key–value namespace instead.
 
-Two implementations ship in the core — `config.OS()` and `config.Dir(path)` — so you only reach for
+Two implementations ship in the core, `config.OS()` and `config.Dir(path)`, so you only reach for
 an adapter when the file lives somewhere neither covers.
 
 | Adapter | Where the file lives | Reads | Writes | Source |
 |---|---|:---:|:---:|---|
 | [`config-afero`](../how-to/afero.md) | an existing [afero](https://github.com/spf13/afero) filesystem | ✓ | ✓ | [repo](https://gitlab.com/phpboyscout/go/config-afero) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-afero) |
-| [`config-iofs`](../how-to/iofs.md) | any [`io/fs.FS`](https://pkg.go.dev/io/fs#FS) — `embed.FS`, zip, tar | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-iofs) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-iofs) |
+| [`config-iofs`](../how-to/iofs.md) | any [`io/fs.FS`](https://pkg.go.dev/io/fs#FS), such as `embed.FS`, zip or tar | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-iofs) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-iofs) |
 | [`config-billy`](../how-to/billy.md) | a [go-billy](https://github.com/go-git/go-billy) filesystem (go-git) | ✓ | ✓ | [repo](https://gitlab.com/phpboyscout/go/config-billy) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-billy) |
 | [`config-sftp`](../how-to/sftp.md) | a remote host over SSH | ✓ | ✓ | [repo](https://gitlab.com/phpboyscout/go/config-sftp) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-sftp) |
 
@@ -95,8 +100,8 @@ that governs it.
 
 ### Cloud object stores
 
-The three cloud object stores share one model — a config file that lives in a bucket, watched by
-polling, committed with the store's best atomic primitive — and differ only where the services do
+The three cloud object stores share one model (a config file that lives in a bucket, watched by
+polling, committed with the store's best atomic primitive) and differ only where the services do
 (GCS has a native atomic move; S3 and Azure Blob copy-then-delete). Each is its own approved spec,
 built and released independently.
 
@@ -107,25 +112,25 @@ built and released independently.
 | [`config-azure-blob`](../how-to/azure-blob.md) | Azure Blob Storage | copy-then-delete | **Released** | [repo](https://gitlab.com/phpboyscout/go/config-azure-blob) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-azure-blob) |
 
 All three are read+write, poll at a 60-second default (a poll is a billed object read;
-`WithPollInterval` overrides), and are proven against a real emulator — LocalStack, fake-gcs-server
-and Azurite — in a Docker-in-Docker job.
+`WithPollInterval` overrides), and are proven against a real emulator (LocalStack, fake-gcs-server
+and Azurite) in a Docker-in-Docker job.
 
 ## Dynamic backends
 
 The next chapter, and the one that pulls furthest ahead of a file-only tool: configuration
 fetched **at runtime from a remote system**, given full precedence, provenance and hot-reload
-exactly as a file is. The seam already exists and is proven —
+exactly as a file is. The seam already exists and is proven:
 [`WithBackend`](../how-to/custom-backend.md) takes anything satisfying a three-method `Backend`,
 with writes and native watch as opt-in capabilities. The
 [dynamic backend adapters spec](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0005-dynamic-backend-adapters) is the
 umbrella that governs the whole family.
 
-### config-consul — the first
+### config-consul, the first
 
-[**`config-consul`**](https://gitlab.com/phpboyscout/go/config-consul) — released
-([API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-consul)) — reads and writes
+[**`config-consul`**](https://gitlab.com/phpboyscout/go/config-consul), released
+([API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-consul)), reads and writes
 configuration from [HashiCorp Consul](https://www.consul.io/) through `config`. You build and
-configure the Consul client — every address, token, TLS and datacenter decision stays yours —
+configure the Consul client (every address, token, TLS and datacenter decision stays yours)
 and hand it in with a prefix that scopes and is stripped from the keys:
 
 ```go
@@ -144,25 +149,25 @@ store, err := config.NewStore(ctx,
 ```
 
 A Consul layer takes part in precedence, per-key merge, provenance and hot-reload exactly as a
-file does — and `Explain` will tell you when a value came from Consul rather than the file
+file does, and `Explain` will tell you when a value came from Consul rather than the file
 beneath it. It is the reference implementation for everything that follows. Learn it by building
 one in the [Configure from Consul](../tutorials/consul.md) tutorial, reach for a specific operation in
 the [Read &amp; write Consul](../how-to/consul.md) how-to, or read [How the Consul backend
 works](consul-backend.md) for the data, conflict and watch models behind it.
 
-### Parameter stores — released
+### Parameter stores
 
-Consul's siblings, the cloud parameter stores, are all released too. They share Consul's shape —
-injected client, prefix-scoped nested tree, values decoded through an injected codec — and
+Consul's siblings, the cloud parameter stores, are all released too. They share Consul's shape
+(injected client, prefix-scoped nested tree, values decoded through an injected codec) and
 differ where the systems do, which is what [How dynamic backends work](dynamic-backends.md)
 explains. In short: they **poll** rather than watch natively, and they split on compare-and-swap.
 
-- [**`config-aws-ssm`**](../how-to/aws-ssm.md) — AWS SSM Parameter Store. Read-only (SSM has no
+- [**`config-aws-ssm`**](../how-to/aws-ssm.md): AWS SSM Parameter Store. Read-only (SSM has no
   compare-and-swap); `SecureString` values read decrypted and mark the layer sensitive so the leak
   guard protects them.
-- [**`config-azure-appconfig`**](../how-to/azure-appconfig.md) — Azure App Configuration. Read
+- [**`config-azure-appconfig`**](../how-to/azure-appconfig.md): Azure App Configuration. Read
   **and** write on per-key ETag compare-and-swap; scoped by a label.
-- [**`config-gcp-parameter`**](../how-to/gcp-parameter.md) — GCP Parameter Manager. Read-only, in
+- [**`config-gcp-parameter`**](../how-to/gcp-parameter.md): GCP Parameter Manager. Read-only, in
   two shapes: one parameter as a whole document, or a prefix of many parameters.
 
 ### Secrets managers
@@ -170,68 +175,69 @@ explains. In short: they **poll** rather than watch natively, and they split on 
 Phase B holds the secrets managers, and they differ from the parameter stores in one way that
 changes how they behave: they are **`Sensitive`**, so the core refuses to write a value they
 provide into a plainer layer beneath ([sensitive read-only
-backends](dynamic-backends.md#sensitive-read-only-backends)). The remote ones ship **read-only** —
-a config tool writing to an audited secrets store is a rarer and riskier act than reading from one.
+backends](dynamic-backends.md#sensitive-read-only-backends)). The remote ones ship **read-only**,
+because a config tool writing to an audited secrets store is a rarer and riskier act than reading from one.
 The local keychain is the exception, and the reason it is one is worth reading below.
 
-- [**`config-vault`**](../how-to/vault.md) — HashiCorp Vault KV v2. Read-only, statically
+- [**`config-vault`**](../how-to/vault.md): HashiCorp Vault KV v2. Read-only, statically
   sensitive, polled at 60 seconds. Reads **one secret** by default, or walks a whole prefix; a
   secret's field colliding with a child secret is [refused rather than
   guessed](dynamic-backends.md#ambiguous-structure-is-refused-not-guessed). Unlike the byte-valued
-  stores it needs no value codec — Vault returns already-structured JSON.
-- [**`config-filekv`**](../how-to/filekv.md) — a **directory of single-value files**, where
+  stores it needs no value codec, because Vault returns already-structured JSON.
+- [**`config-filekv`**](../how-to/filekv.md): a **directory of single-value files**, where
   each filename is a key. Not one system but a shape three of them share: a mounted
   Kubernetes ConfigMap or Secret, Docker and Podman secrets under `/run/secrets`, and
   systemd credentials. Read-only by default with opt-in writes, and **it adds no
-  module** — which is much of why it exists, since the alternative for a ConfigMap is the
+  module**, which is much of why it exists: the alternative for a ConfigMap is the
   whole Kubernetes client to read data the pod already has. Its integration suite
   proves the mount layout against a real cluster rather than against documentation.
-- [**`config-keychain`**](../how-to/keychain.md) — the local OS keychain, and the odd one out of
+- [**`config-keychain`**](../how-to/keychain.md): the local OS keychain, and the odd one out of
   this group in two ways. It is **writable**, because the token it holds is one the application
   just obtained on the user's own machine rather than something a separate audited process
-  provisioned — so a first token is written *into* it and one already there can never reach the
+  provisioned, so a first token is written *into* it and one already there can never reach the
   file beneath. And its key space is **declared** rather than discovered, because a keychain offers
   no way to enumerate itself. It exists to stop tokens landing in plaintext config files.
-- [**`config-gcp-secret`**](../how-to/gcp-secret.md) — GCP Secret Manager. Read-only, statically
+- [**`config-gcp-secret`**](../how-to/gcp-secret.md): GCP Secret Manager. Read-only, statically
   sensitive, polled on version *metadata* so a quiet poll stays out of the data-access audit
   stream. Flat IDs verbatim, or one secret as a document. Its distinctive behaviour is version
   states: `latest` means most recently *created*, so a disabled newest version makes it unreadable
-  and the adapter falls back to the newest enabled one — reporting that through a callback, because
-  provenance cannot carry a per-key resolution. **The heaviest of the secrets managers.**
-- [**`config-azure-keyvault`**](../how-to/azure-keyvault.md) — Azure Key Vault. Read-only,
+  and the adapter falls back to the newest enabled one, reporting that through a callback because
+  provenance cannot carry a per-key resolution. It carries the heaviest dependency graph of the
+  secrets managers.
+- [**`config-azure-keyvault`**](../how-to/azure-keyvault.md): Azure Key Vault. Read-only,
   statically sensitive, polled at five minutes. The one store here with **no hierarchy at all**:
   names allow only letters, digits and hyphens, so a name is a key verbatim and structure comes
   from a document in one secret. Reading a vault is one request per secret, because the listing
   carries no values.
-- [**`config-aws-secrets`**](../how-to/aws-secrets.md) — AWS Secrets Manager. Read-only, statically
-  sensitive, polled. Reads a **prefix by default** — the reversal of Vault's shape, because
-  `BatchGetSecretValue` returns a whole prefix in one request — or one secret as a whole document,
+- [**`config-aws-secrets`**](../how-to/aws-secrets.md): AWS Secrets Manager. Read-only, statically
+  sensitive, polled. Reads a **prefix by default**, the reversal of Vault's shape, because
+  `BatchGetSecretValue` returns a whole prefix in one request; or one secret as a whole document,
   the RDS-managed shape. A partial read is refused rather than served with keys missing; a staging
-  label can be selected, at the cost of the bulk read. Its SDK is the leanest of any
-  backend adapter in the toolkit.
+  label can be selected, at the cost of the bulk read. Its SDK carries the smallest dependency
+  graph of the secrets managers.
 
 ### Roadmap
 
 Each adapter below carries its own SDK, its own authentication and its own consistency and
-watch semantics, so — by the umbrella's headline rule — **each gets its own approved spec
+watch semantics, so, by the umbrella's headline rule, **each gets its own approved spec
 before it is built**. The grouping is a planned order, not a commitment date.
 
 | Adapter | System | Phase | Status |
 |---|---|---|---|
-| [`config-consul`](../how-to/consul.md) | HashiCorp Consul | A — reference &amp; parameter stores | **Released** |
+| [`config-consul`](../how-to/consul.md) | HashiCorp Consul | A: reference &amp; parameter stores | **Released** |
 | [`config-aws-ssm`](../how-to/aws-ssm.md) | AWS SSM Parameter Store | A | **Released** *(read-only)* |
 | [`config-azure-appconfig`](../how-to/azure-appconfig.md) | Azure App Configuration | A | **Released** |
 | [`config-gcp-parameter`](../how-to/gcp-parameter.md) | GCP Parameter Manager | A | **Released** *(read-only)* |
-| [`config-vault`](../how-to/vault.md) | HashiCorp Vault | B — secrets managers | **Released** *(read-only)* |
+| [`config-vault`](../how-to/vault.md) | HashiCorp Vault | B: secrets managers | **Released** *(read-only)* |
 | [`config-aws-secrets`](../how-to/aws-secrets.md) | AWS Secrets Manager | B | **Released** *(read-only)* |
-| [`config-azure-keyvault`](../how-to/azure-keyvault.md) | Azure Key Vault | B | **Released** *(read-only; [not yet exercised against a real vault](../how-to/azure-keyvault.md))* |
+| [`config-azure-keyvault`](../how-to/azure-keyvault.md) | Azure Key Vault | B | **Released** *(read-only; its real-vault suite is not run in CI)* |
 | [`config-gcp-secret`](../how-to/gcp-secret.md) | GCP Secret Manager | B | **Released** *(read-only; [not yet exercised against a real project](../how-to/gcp-secret.md))* |
-| [`config-keychain`](../how-to/keychain.md) | OS keychain | — not in the umbrella | **Released** *(read **and** write)* |
-| [`config-filekv`](../how-to/filekv.md) | a directory of single-value files | — not in the umbrella | **Released** *(read, opt-in write)* |
-| [`config-etcd`](../how-to/etcd.md) | etcd v3 | C — cloud-native key–value | **Released** *(read **and** write, native watch, atomic across keys)* |
-| ~~`config-k8s`~~ | Kubernetes ConfigMaps | C | **Rejected** — a ConfigMap already reaches a pod as a file or an environment variable ([umbrella R4](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0005-dynamic-backend-adapters)) |
+| [`config-keychain`](../how-to/keychain.md) | OS keychain | none; not in the umbrella | **Released** *(read **and** write)* |
+| [`config-filekv`](../how-to/filekv.md) | a directory of single-value files | none; not in the umbrella | **Released** *(read, opt-in write)* |
+| [`config-etcd`](../how-to/etcd.md) | etcd v3 | C: cloud-native key–value | **Released** *(read **and** write, native watch, atomic across keys)* |
+| ~~`config-k8s`~~ | Kubernetes ConfigMaps | C | **Rejected**: a ConfigMap already reaches a pod as a file or an environment variable ([umbrella R4](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/0005-dynamic-backend-adapters)) |
 
-Secrets managers ship **read-only by default** — a config tool writing a secret is a rarer and
+Secrets managers ship **read-only by default**. A config tool writing a secret is a rarer and
 riskier thing than reading one, so write support for those is opt-in and specified per adapter.
 Feature-flag systems are deliberately out of scope.
 
@@ -242,10 +248,10 @@ else entirely, and it is easy to miss when scanning the tables above for a syste
 
 | Module | Provides | Source |
 |---|---|---|
-| [`config-schema`](../how-to/compose-schemas.md) | JSON Schema validation — `FromJSON` for a schema document, `FromStruct` for one derived from `config:` tags | [gitlab](https://gitlab.com/phpboyscout/go/config-schema) |
+| [`config-schema`](../how-to/compose-schemas.md) | JSON Schema validation: `FromJSON` for a schema document, `FromStruct` for one derived from `config:` tags | [gitlab](https://gitlab.com/phpboyscout/go/config-schema) |
 
-The core defines what validating a configuration *means* — the `Schema` interface, mounting a
-contribution with `WithSchemaAt`, aggregating the results — and takes no position on how a
+The core defines what validating a configuration *means* (the `Schema` interface, mounting a
+contribution with `WithSchemaAt`, aggregating the results) and takes no position on how a
 schema is written. `config-schema` supplies the JSON Schema dialect, its library and its
 ingestion.
 
@@ -256,15 +262,15 @@ something most do not use. Behind an interface it costs them nothing, and a cons
 it adds `config-schema`.
 
 The tag-derived `config.NewSchema` stays in the core, so the common case needs no extra module
-at all. Reach for `config-schema` when the schema is a **document** — one you already publish,
+at all. Reach for `config-schema` when the schema is a **document**: one you already publish,
 share with a non-Go consumer, or generate.
 
 ## Build your own
 
 Nothing here is a closed set. The same two seams the family is built on are yours to use:
 
-- [**Write a custom backend**](../how-to/custom-backend.md) — make any remote system (a secrets
+- [**Write a custom backend**](../how-to/custom-backend.md): make any remote system (a secrets
   manager, an HTTP endpoint, an internal service) an ordinary layer, walked end to end against
   a Consul-shaped example.
-- [**Support a new file format**](../how-to/format-adapter.md) — a codec is a `Decode`/`Encode`
+- [**Support a new file format**](../how-to/format-adapter.md): a codec is a `Decode`/`Encode`
   pair; add one and every store feature comes with it for free.
