@@ -1,6 +1,6 @@
 ---
 title: Read and write etcd
-description: Make an etcd v3 prefix a config layer with config-etcd — real compare-and-swap writes, transactions that are atomic across keys, and a native watch that misses nothing on start.
+description: Make an etcd v3 prefix a config layer with config-etcd, with real compare-and-swap writes, transactions that are atomic across keys, and a native watch that misses nothing on start.
 tags: [how-to, adapters, backends, etcd]
 ---
 
@@ -9,14 +9,14 @@ tags: [how-to, adapters, backends, etcd]
 The core reads and writes files. An [etcd](https://etcd.io/) v3 cluster is a remote backend,
 provided by a sibling module,
 [`config-etcd`](https://gitlab.com/phpboyscout/go/config-etcd), so a consumer who needs etcd
-takes it — and its etcd client — and one who does not pays nothing.
+takes it and its etcd client, and one who does not pays nothing.
 
 ```bash
 go get gitlab.com/phpboyscout/go/config-etcd
 ```
 
-You build and configure the client — that is where every endpoint, credential, TLS and
-namespace decision lives — and hand it in. The adapter takes a **prefix** that scopes and is
+You build and configure the client, which is where every endpoint, credential, TLS and
+namespace decision lives, and hand it in. The adapter takes a **prefix** that scopes the read and is
 stripped from the keys:
 
 ```go
@@ -32,8 +32,8 @@ if err != nil {
 }
 
 store, err := config.NewStore(ctx,
-	config.WithFiles(fsys, "/etc/app.yaml"),                    // YAML defaults
-	config.WithBackend(configetcd.FromClient(client, "app/")),  // etcd outranks them
+	config.WithFiles(fsys, "/etc/app.yaml"),                   // YAML defaults
+	config.WithBackend(configetcd.FromClient(client, "app/")), // etcd outranks them
 )
 ```
 
@@ -62,10 +62,10 @@ system.
 ## Values are strings, or decoded documents
 
 etcd stores bytes, so by default every value is a scalar **string** and the View's typed
-accessors coerce it — `GetInt("server.port")` parses `"8080"`, the same as an environment
+accessors coerce it. `GetInt("server.port")` parses `"8080"`, the same as an environment
 variable.
 
-Where a key holds a whole JSON or YAML document, pass a value codec — any
+Where a key holds a whole JSON or YAML document, pass a value codec. It can be any
 [`config.Codec`](https://pkg.go.dev/gitlab.com/phpboyscout/go/config#Codec), the interface the
 sibling format adapters already implement:
 
@@ -89,7 +89,7 @@ _, err := store.Apply(ctx, config.Set("server.port", 9090))
 ```
 
 **The guard is the revision each key held when the store last loaded**, not when the write was
-staged. That is the protection worth understanding: if another client changed the key between
+staged. That is the protection worth understanding. If another client changed the key between
 your program reading the configuration and deciding to write, the write is refused with
 [`ErrConflict`](../reference/errors.md) rather than silently overwriting them.
 
@@ -104,7 +104,7 @@ if errors.Is(err, config.ErrConflict) {
 Every key in one `Apply` goes into a single etcd transaction, so it applies **completely or
 not at all**. If any key's guard fails, none of the writes land.
 
-That is stronger than most of this family can offer — `AtomicMultiKey` is true — and it means
+That is stronger than most of this family can offer (`AtomicMultiKey` is true), and it means
 the Store's partial-write rollback path is never needed here.
 
 ### There is no batch-size limit in the adapter
@@ -128,22 +128,24 @@ into a retry loop that can never succeed.
 
 ## Hot-reload is a real subscription
 
-etcd's watch is a genuine change feed, so a change reaches your observers by push.
+etcd's watch is a genuine change feed, so a change reaches your observers by push
+(`NativeWatch: true`). The store still passes a foreign change through its settle window and a
+value comparison before telling your observers.
 
 !!! info "An explicit poll interval does nothing here"
-    `WithPollInterval` is accepted and **ignored** by this backend. There is nothing to
-    pace — no poll, and no billed-request argument for slowing one down. If your store's
+    `config.WithPollInterval` is accepted and **ignored** by this backend. There is nothing to
+    pace: no poll, and no billed-request argument for slowing one down. If your store's
     only backend is etcd, setting an interval changes nothing at all.
 
     It still applies to any *other* backend in the same store that does poll.
 
-The watch starts from the revision captured at load, not from the head, so a change landing
+The watch starts from the revision just after the one captured at load, not from the head, so a change landing
 between reading the prefix and the watch attaching is **replayed rather than missed**. Without
 that the store could hold stale values with no pending notification and no way to discover it.
 
 The cost is that a revision old enough to have been compacted away cannot be replayed from.
 When that happens the adapter treats it as "reload and re-watch from the current revision",
-which is the honest recovery — the alternative would leave the layer silently unwatched.
+which is the honest recovery, because the alternative would leave the layer silently unwatched.
 
 ## It is not a secrets store
 
@@ -151,14 +153,14 @@ The layer is **not** marked sensitive, and there is deliberately no option to ma
 
 Kubernetes keeps Secret objects in etcd, so people demonstrably store secrets there. But an
 etcd prefix has no audit trail of who read a value, no leasing or rotation, and no separation
-between the credential that reads configuration and the one that reads secrets — which is
+between the credential that reads configuration and the one that reads secrets. Those are
 exactly what [Vault](vault.md), [AWS Secrets Manager](aws-secrets.md) and the other secrets
 backends provide. An option that made etcd *look* like a secrets store would make the weaker
 choice the easier one.
 
 If you have secrets in etcd and cannot move them, you are not stuck:
 
-- wrap the backend in [`config.Filtered`](filter-a-backend.md), which forwards capabilities, or
+- wrap the backend in [`config.Filtered`](filter-a-backend.md) to keep those keys out of the layer, or
 - contribute those keys through a backend that does declare itself sensitive.
 
 ## Leased keys can vanish under you
@@ -168,7 +170,7 @@ other key: the value contributes while it exists, and once the lease lapses the 
 absent at the next load.
 
 !!! warning "A leased prefix can lose keys with nobody writing anything"
-    That is not a bug, and it is not special-cased — it is what a layer losing a key already
+    That is not a bug, and it is not special-cased. It is what a layer losing a key already
     means, and merge, provenance and shadowing all handle it the same way they handle a file
     being deleted underneath a running store.
 
@@ -190,10 +192,11 @@ store, err := config.NewStore(ctx, config.WithBackend(b), config.WithCloser(b))
 defer store.Close()
 ```
 
-**Both return `*OwnedBackend`, which must be closed.** The adapter built the etcd
+Both return `*OwnedBackend`, which **must be closed**. The adapter built the etcd
 client, so it owns the client's connections and goroutines. Hand it to the store
 with `WithCloser`, as above, and closing the store releases it. `FromConfig` has
-done this since config-etcd v0.3.0; before that, nothing could close it.
+done this since config-etcd v0.3.0; before that, nothing could close it. A backend from
+`FromClient` is not owned, and the client you built stays yours to close.
 
 ### `Default` reads what etcdctl reads
 
@@ -202,13 +205,13 @@ documents one: every global flag can be set as `ETCDCTL_` plus its name. So a
 machine that can run `etcdctl get` against a cluster already has what `Default`
 needs, and a tool built on `config` reaches the same cluster from the same shell.
 
-It reads seven variables and no others:
+`Default` reads seven variables, once, at construction, and no others:
 
 | Variable | Sets |
 |---|---|
 | `ETCDCTL_ENDPOINTS` | the endpoints, comma-separated |
 | `ETCDCTL_CACERT`, `ETCDCTL_CERT`, `ETCDCTL_KEY` | TLS, which is on when any of the three is set |
-| `ETCDCTL_USER`, `ETCDCTL_PASSWORD` | the credentials; `ETCDCTL_USER` may be `user:password` when `ETCDCTL_PASSWORD` is unset |
+| `ETCDCTL_USER`, `ETCDCTL_PASSWORD` | the credentials; `ETCDCTL_USER` may be `user:password` when `ETCDCTL_PASSWORD` is unset, and a password with no user is an error |
 | `ETCDCTL_DIAL_TIMEOUT` | the dial timeout, as a duration such as `3s` |
 
 It departs from `etcdctl` in three places, each on purpose:
@@ -225,7 +228,9 @@ A variable it cannot use, such as a dial timeout of `3` with no unit or a
 certificate without its key, fails at `Default` with `ErrMalformedEnv`, naming the
 variable. With `ETCDCTL_DIAL_TIMEOUT` unset there is no dial timeout at all:
 nothing dials until `Load`, and `Load`'s context bounds it. Neither rung contacts
-etcd, so an unreachable cluster is a `Load` error.
+etcd, so an unreachable cluster is a `Load` error. `FromConfig` also returns
+`ErrNoEndpoints` when the config names none, because it does not fall back to
+`localhost` either.
 
 The reasoning, including why this convention was adopted when `clientv3` has
 none, is in [who owns the connection](../explanation/connection-ownership.md).
@@ -235,17 +240,17 @@ none, is in [who owns the connection](../explanation/connection-ownership.md).
 | | |
 |---|---|
 | Adds | the etcd client, on top of the `config` graph |
-| Requires | the `config` version named in this module's `go.mod` — `go get` brings it — and etcd **v3** |
+| Requires | the `config` version named in this module's `go.mod` (`go get` brings it), and etcd **v3** |
 
-The etcd client weighs the same as Consul's and less than half of the Kubernetes `client-go` —
-the measurement that decided this adapter was worth building while a ConfigMap adapter was not,
+The etcd client weighs the same as Consul's and less than half of the Kubernetes `client-go`.
+That measurement decided this adapter was worth building while a ConfigMap adapter was not,
 since [a mounted ConfigMap is already a directory of files](filekv.md). An allowlist test in
 the module pins the footprint, so a transitive upgrade cannot widen it quietly.
 
 ## Related
 
-- [How dynamic backends work](../explanation/dynamic-backends.md) — what every remote backend
+- [How dynamic backends work](../explanation/dynamic-backends.md): what every remote backend
   shares, and where they legitimately differ
-- [Read & write Consul](consul.md) — the closest sibling, and the reference this follows
-- [A directory of files](filekv.md) — the Kubernetes ConfigMap case, which needs no cluster client
-- [Filter a backend](filter-a-backend.md) — bounding which keys a backend contributes
+- [Read & write Consul](consul.md): the closest sibling, and the reference this follows
+- [A directory of files](filekv.md): the Kubernetes ConfigMap case, which needs no cluster client
+- [Filter a backend](filter-a-backend.md): bounding which keys a backend contributes

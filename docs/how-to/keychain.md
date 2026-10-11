@@ -7,12 +7,12 @@ tags: [how-to, backends, keychain, secrets]
 # Keep tokens in the OS keychain
 
 A tool that obtains an OAuth token has to put it somewhere. Without a layer that can hold one, the
-somewhere is the config file — which is how a refresh token ends up on disk in the clear, next to
+somewhere is the config file, which is how a refresh token ends up on disk in the clear, next to
 the port number.
 
 [`config-keychain`](https://gitlab.com/phpboyscout/go/config-keychain) makes the operating system's
-keychain — macOS Keychain, Windows Credential Manager, or a Secret Service implementation on Linux
-— a layer, so tokens have somewhere better to go and the core's own rules keep them there.
+keychain (macOS Keychain, Windows Credential Manager, or a Secret Service implementation on Linux)
+a layer, so tokens have somewhere better to go and the core's own rules keep them there.
 
 ```bash
 go get gitlab.com/phpboyscout/go/config-keychain
@@ -26,9 +26,9 @@ import (
 )
 
 store, err := config.NewStore(ctx,
-	config.WithEnv("MYAPP"),                                // overrides
-	config.WithFiles(fsys, "config.yaml"),                  // ordinary settings
-	config.WithBackend(configkeychain.New(                  // secrets, on top
+	config.WithEnv("MYAPP"),                               // overrides
+	config.WithFiles(fsys, "config.yaml"),                 // ordinary settings
+	config.WithBackend(configkeychain.New(                 // secrets, on top
 		configkeychain.Registered(), "myapp", map[string]string{
 			"platforms.instagram.access_token": "instagram-access-token",
 			"platforms.tiktok.refresh_token":   "tiktok-refresh-token",
@@ -40,7 +40,7 @@ store, err := config.NewStore(ctx,
 
 The OS keychain needs a **logged-in desktop session**. On a headless server, in a
 container or in CI there is nothing to unlock, and this adapter is the wrong tool
-however convenient it looks on a laptop — use the environment, a mounted file or a
+however convenient it looks on a laptop. Use the environment, a mounted file or a
 secrets manager there.
 
 Reach for `config-keychain` in a CLI a human runs on their own machine, where the
@@ -49,7 +49,7 @@ alternative is a token sitting in a dotfile.
 ## What the layer ordering buys you
 
 Two behaviours fall out of routing the core already does. Neither needs a special case, and both
-are worth understanding because they are the whole point:
+are the whole point:
 
 ```go
 store.Apply(ctx, config.Set("platforms.instagram.access_token", token))
@@ -67,18 +67,18 @@ mapping bounds what this backend owns.
 
 ## The mapping is declared, because a keychain cannot be listed
 
-Every platform keychain offers get, set and delete — and nothing that enumerates. So unlike every
+Every platform keychain offers get, set and delete, and nothing that enumerates. So unlike every
 other backend in this toolkit, this one cannot discover its own key space:
 
 ```
-config path                        →  keychain account
-platforms.instagram.access_token   →  instagram-access-token
+config path                        ->  keychain account
+platforms.instagram.access_token   ->  instagram-access-token
 ```
 
 Both sides are explicit rather than derived. A naming convention would compute account names your
 existing entries do not have, quietly orphaning every credential already stored.
 
-A declared key the keychain does not hold contributes nothing, and that is not an error — it is the
+A declared key the keychain does not hold contributes nothing, and that is not an error. It is the
 state before a token has been obtained.
 
 ## It will not hang your application
@@ -86,7 +86,7 @@ state before a token has been obtained.
 A locked keychain blocks on an unlock prompt. On a headless host nobody can answer it, and a
 configuration layer that waits forever is worse than one that fails.
 
-Each call is therefore bounded — `DefaultTimeout` is 10 seconds, `WithTimeout` to change it — and
+Each call is therefore bounded. `DefaultTimeout` is 10 seconds and `WithTimeout` changes it, and
 the adapter imposes that bound **itself** rather than trusting the injected backend to honour a
 context. That distinction is not theoretical: `credentials` discarded its context until v0.2.2, and
 a context bounds a call only if the callee consults it.
@@ -101,10 +101,10 @@ configkeychain.New(backend, "myapp", keys,
     `Load` returns `ErrKeychainUnavailable` rather than quietly contributing nothing.
 
     That is deliberate. Contributing nothing is indistinguishable from "no tokens stored yet",
-    which is an ordinary state — and degrading in silence is exactly what put tokens in plaintext
+    which is an ordinary state, and degrading in silence is exactly what put tokens in plaintext
     files to begin with.
 
-    If you would rather carry on without one, check `Available()` and omit the layer: a decision
+    If you would rather carry on without one, check `Available()` and omit the layer. That is a decision
     written in your code, rather than one nobody made.
 
 ## Writable, unlike every other secrets backend here
@@ -122,15 +122,15 @@ Two consequences follow:
 - **Writes are not atomic.** Setting three tokens is three keychain operations; a failure part-way
   leaves the earlier ones stored, and rollback undoes them best-effort.
 - **Conflict detection compares values, not versions**, because a keychain has neither a version
-  nor a modification time. It catches another process having changed an entry — the case worth
-  catching — but cannot tell "changed and changed back", and there is a small window between the
+  nor a modification time. It catches another process having changed an entry, which is the case
+  worth catching, but cannot tell "changed and changed back", and there is a small window between the
   check and the write.
 
 ## `go-keyring` stays out of your binary
 
 The keychain is reached through `credentials.Backend`, the *interface*. The adapter never imports
 the `go-keyring` implementation, so it does not pull `go-keyring` or `godbus` into your dependency
-graph — a test asserts they are absent and fails if that changes.
+graph. A test asserts they are absent and fails if that changes.
 
 You activate a real keychain by blank-importing `credentials/keychain` yourself. A build that must
 not carry session-bus or keychain IPC code simply does not, and the linker drops it.
@@ -138,9 +138,9 @@ not carry session-bus or keychain IPC code simply does not, and the linker drops
 
 ## Replacing a hand-rolled resolver
 
-If you already walk *environment → keychain → config file* per credential — as
-[keryx](https://gitlab.com/phpboyscout/keryx) does with `oauth.Store`, and
-[go/forge](https://gitlab.com/phpboyscout/go/forge) does in `ResolveToken` — that chain is a
+If you already walk *environment, then keychain, then config file* per credential, as
+[keryx](https://gitlab.com/phpboyscout/keryx) does with `oauth.Store` and
+[go/forge](https://gitlab.com/phpboyscout/go/forge) does in `ResolveToken`, that chain is a
 per-credential reimplementation of what a layer already is.
 
 The equivalent is a layer order rather than a struct:
@@ -157,11 +157,11 @@ Reads resolve in the same order, and `Explain` can now say which layer answered.
 The write is where the two ladders differ, and it is worth checking which one you have. keryx's
 `Save` falls back to writing the token into the config file when no keychain is available; that
 fallback disappears, because the core refuses it. A ladder that already treats a failed keychain
-write as an error — as go-tool-base's setup wizard does — loses nothing here.
+write as an error, as go-tool-base's setup wizard does, loses nothing here.
 
 One thing a layer does not reproduce for free: a ladder can be **lazy**, resolving a credential
 only when something asks for it, whereas a layer loads with the store. If a code path deliberately
-avoids touching the keychain — SSH-authenticated Git being the usual case — check that before
+avoids touching the keychain (SSH-authenticated Git is the usual case), check that before
 replacing it.
 
 ## What it costs
@@ -169,7 +169,7 @@ replacing it.
 | | |
 |---|---|
 | Adds | `credentials`, on top of the `config` graph |
-| Requires | the `config` version named in this module's `go.mod` — `go get` brings it |
+| Requires | the `config` version named in this module's `go.mod`; `go get` brings it |
 | Capability since | `config` **v0.10.0**, the release adding `BoundedKeySpace`, which a declared-key backend needs; and `credentials` **v0.2.2**, the release in which the keychain backend began honouring its context |
 
 Both floors are hard rather than preferences. Against an earlier `credentials` a locked keyring
@@ -178,6 +178,6 @@ demands an invented account name this backend has no way to honour.
 
 ## Related
 
-- [How dynamic backends work](../explanation/dynamic-backends.md) — the mechanics every remote backend shares
-- [Read secrets from Vault](vault.md) — the read-only secrets managers, for contrast
-- [The adapter ecosystem](../explanation/adapters.md) — every adapter, status and roadmap
+- [How dynamic backends work](../explanation/dynamic-backends.md): the mechanics every remote backend shares
+- [Read secrets from Vault](vault.md): the read-only secrets managers, for contrast
+- [The adapter ecosystem](../explanation/adapters.md): every adapter, status and roadmap

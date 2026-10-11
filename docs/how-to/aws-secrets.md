@@ -9,14 +9,14 @@ tags: [how-to, backends, aws, secrets]
 The core reads and writes files. [AWS Secrets
 Manager](https://aws.amazon.com/secrets-manager/) is a remote **secrets** backend, provided by a
 sibling module, [`config-aws-secrets`](https://gitlab.com/phpboyscout/go/config-aws-secrets), so a
-consumer who reads secrets from AWS takes it — and its SDK — and one who does not pays nothing.
+consumer who reads secrets from AWS takes it and its SDK, and one who does not pays nothing.
 
 ```bash
 go get gitlab.com/phpboyscout/go/config-aws-secrets
 ```
 
-You build and configure the AWS client — that is where every credential, region and endpoint
-decision lives — and hand it in with a **prefix** that scopes and is stripped from the names:
+You build and configure the AWS client, which is where every credential, region and endpoint
+decision lives, and hand it in with a **prefix** that scopes the read and is stripped from the names:
 
 ```go
 import (
@@ -30,8 +30,8 @@ loaded, _ := awscfg.LoadDefaultConfig(ctx)
 client := secretsmanager.NewFromConfig(loaded)
 
 store, err := config.NewStore(ctx,
-	config.WithFiles(fsys, "/etc/app.yaml"),                          // YAML defaults
-	config.WithBackend(configawssecrets.FromClient(client, "app/")),  // secrets outrank them
+	config.WithFiles(fsys, "/etc/app.yaml"),                         // YAML defaults
+	config.WithBackend(configawssecrets.FromClient(client, "app/")), // secrets outrank them
 )
 ```
 
@@ -46,13 +46,13 @@ app/region       = "eu-west-2"        store.View().GetString("region")       // 
 
 ## When you do *not* need this
 
-If the secret already arrives as an environment variable or a mounted file — which is
-what most task and pod definitions do — `WithEnv` or `WithFiles` read it with no SDK.
+If the secret already arrives as an environment variable or a mounted file, which is
+what most task and pod definitions do, `WithEnv` or `WithFiles` read it with no SDK.
 
 Reach for Secrets Manager when your process should fetch for itself: rotation a running
 process must pick up, or a per-caller audit trail.
 
-## Prefix mode is the default here — unlike Vault
+## Prefix mode is the default here, unlike Vault
 
 If you have read [the Vault how-to](vault.md), note the reversal. There a prefix walk is opt-in,
 because Vault has no recursive list: a walk costs a request per directory plus one per secret, and
@@ -65,23 +65,24 @@ because the same abstraction costs different amounts in each system.
 
 ## One secret holding a whole document
 
-The other idiomatic AWS shape is a single secret whose value is a JSON object — an RDS-managed
+The other idiomatic AWS shape is a single secret whose value is a JSON object. An RDS-managed
 secret is exactly that. `FromClientSecret` reads one, decoding it through a codec:
 
 ```go
 import configjson "gitlab.com/phpboyscout/go/config-json"
 
 config.WithBackend(configawssecrets.FromClientSecret(client, "app/rds", configjson.Codec{}))
-// {"username":"admin","port":5432}  →  GetString("username"), GetInt("port")
+// {"username":"admin","port":5432}  becomes  GetString("username"), GetInt("port")
 ```
 
 The codec is a **parameter here, not an option**, because a single secret's value is one opaque
-string: without something to decode it there is no tree to contribute, so requiring it at compile
-time is better than failing at startup.
+string. Without something to decode it there is no tree to contribute, so requiring it at compile
+time beats failing at startup. A value the codec cannot decode fails the load with
+`config.ErrBackendParse`.
 
 In prefix mode the codec stays optional, since the names already supply the structure. Add
-`WithValueCodec` when secrets under the prefix hold JSON, and a mixed prefix still works — a value
-the codec rejects stays a plain string rather than failing the load:
+`WithValueCodec` when secrets under the prefix hold JSON. A mixed prefix still works, because a
+value the codec rejects stays a plain string rather than failing the load:
 
 ```go
 config.WithBackend(configawssecrets.FromClient(client, "app/",
@@ -90,16 +91,19 @@ config.WithBackend(configawssecrets.FromClient(client, "app/",
 
 ## Credentials are yours
 
-The adapter **never** resolves credentials, reads the environment, or picks a region or endpoint.
-It uses the client you give it, which is what lets every AWS mechanism — instance roles, IRSA, SSO,
-static keys, `AWS_PROFILE` — work without the adapter knowing any of them.
+`FromClient` never resolves credentials, reads the environment, or picks a region or endpoint.
+It uses the client you give it, which is what lets every AWS mechanism (instance roles, IRSA, SSO,
+static keys, `AWS_PROFILE`) work without the adapter knowing any of them. The two other rungs, in
+[Getting a client](#getting-a-client), resolve the config for you.
 
 The IAM policy needs `secretsmanager:BatchGetSecretValue` and `secretsmanager:GetSecretValue` on
 the secrets under your prefix, plus `kms:Decrypt` on their key if it is not the AWS-managed one.
+Reading a [staging label](#reading-a-staging-label) lists names first, so it also needs
+`secretsmanager:ListSecrets`.
 
 ## A partial read is refused
 
-`BatchGetSecretValue` does not fail when it cannot read one of the secrets it matched — it returns
+`BatchGetSecretValue` does not fail when it cannot read one of the secrets it matched. It returns
 the successes and reports the rest separately, typically for a secret your policy excludes or whose
 KMS key you cannot use. **The adapter refuses the load in that case**, naming what it could not
 read:
@@ -109,7 +113,7 @@ read:
 // configawssecrets: some secrets could not be read under "app/": app/locked (AccessDeniedException)
 ```
 
-Serving the layer anyway would mean a configuration silently missing keys it should have — and here
+Serving the layer anyway would mean a configuration silently missing keys it should have, and here
 a missing key is a password. An application that starts without one fails later, further from the
 cause, or falls back to a default worse than not starting. This is the same
 [refuse-ambiguity stance](../explanation/dynamic-backends.md#ambiguous-structure-is-refused-not-guessed)
@@ -118,7 +122,7 @@ the family takes elsewhere.
 If a secret genuinely is not for this application, scope the prefix so it is not matched.
 
 **Binary secrets are different**: a certificate or keystore is skipped, contributing no key, and
-the rest of the prefix loads normally. That is not ambiguity — it is data a `View` cannot serve —
+the rest of the prefix loads normally. That is not ambiguity. It is data a `View` cannot serve,
 and one certificate in a shared prefix should not stop an unrelated application starting.
 
 ## Reading a staging label
@@ -133,35 +137,36 @@ config.WithBackend(configawssecrets.FromClient(client, "app/",
 
 !!! warning "A staged read costs the bulk read"
 
-    `BatchGetSecretValue` has **no staging parameter** — only the per-secret API does. So selecting
+    `BatchGetSecretValue` has **no staging parameter**; only the per-secret API does. So selecting
     any label other than the default turns a prefix read from **one request** into one listing plus
     **one request per secret**, and every watch poll pays it too. Worth knowing before you reach for
     it on a large prefix.
 
 ## Watching for change
 
-No change feed, so watching is **polling**, at **60 seconds** by default — slower than the file
-watcher because these are billed API calls:
+There is no change feed, so watching is **polling**, at **60 seconds** by default. That is slower than
+the file watcher because these are billed API calls, and the interval you pass to `Store.Watch` does
+not apply to this layer:
 
 ```go
 config.WithBackend(configawssecrets.FromClient(client, "app/",
 	configawssecrets.WithPollInterval(5*time.Minute)))
 ```
 
-A poll compares every secret's `VersionId`, so a rotation, an out-of-band write, or a secret
-appearing or disappearing under the prefix all reach your observers. At the default label that is
-one request; with `WithVersionStage` it is one per secret.
+A poll compares every secret's `VersionId` with the ones recorded at load, so a rotation, an
+out-of-band write, or a secret appearing or disappearing under the prefix all reach your observers.
+At the default label that is one request; with `WithVersionStage` it is one per secret. A failed poll
+is not treated as a change: the watch backs off for a second and tries again.
 
 ## Writing a secrets-provided key is refused
 
-Every value here is a secret, so this backend declares itself `Sensitive`, and it is **read-only**.
-Because the layer is read-only, a write to a key it provides cannot land in Secrets Manager — so it
-would otherwise fall through to the next writable layer, typically a plain YAML file. The core
-**refuses that write**:
+Every value here is a secret, so this backend declares itself `Sensitive`, and it is **read-only**
+by policy. A write to a key it provides cannot land in Secrets Manager, so it would otherwise fall
+through to the next writable layer, typically a plain YAML file. The core **refuses that write**:
 
 ```go
 _, err := store.Apply(ctx, config.Set("db.password", "rotated"))
-// errors.Is(err, config.ErrSensitiveLeak) — refused, and app.yaml is untouched
+// errors.Is(err, config.ErrSensitiveLeak): refused, and app.yaml is untouched
 ```
 
 See [sensitive read-only backends](../explanation/dynamic-backends.md#sensitive-read-only-backends)
@@ -170,43 +175,43 @@ for the reasoning. If a key needs to be writable, do not source it from Secrets 
 ## Getting a client
 
 Building the client yourself is the default. Two further rungs exist, each in
-both shapes, and the ambient one lives in a **subpackage**:
+both shapes, and the ambient one lives in a subpackage:
 
 ```go
 // You resolved the config; the adapter builds the client.
 b, err := configawssecrets.FromConfig(cfg, "app/")
 b, err := configawssecrets.FromConfigSecret(cfg, "app/config", codec)
 
-// Nothing at all — note the separate import.
+// Nothing at all. Note the separate import.
 import secretsambient "gitlab.com/phpboyscout/go/config-aws-secrets/ambient"
 
 b, err := secretsambient.Default(ctx, "app/")
 b, err := secretsambient.DefaultSecret(ctx, "app/config", codec)
 ```
 
-**The subpackage is not decoration.** Resolving the ambient AWS credential chain
-pulls in `sso`, `sts`, `imds` and the rest, so it is kept out of the adapter's own graph — with a
-test asserting the parent's footprint has not grown.
+Resolving the ambient AWS credential chain pulls in `sso`, `sts`, `imds` and the rest, so it is
+kept out of the adapter's own graph, with a test asserting the parent's footprint has not grown.
 
-**There is no default region.** AWS documents none, so an empty one is
-`ErrNoRegion` rather than a guess.
+There is no default region. AWS documents none, so a config without one returns `ErrNoRegion`
+rather than a guess. For the ambient rung, set `AWS_REGION`. Nothing here needs closing: the
+Secrets Manager client holds no connection of its own. The why behind the ladder is in
+[who owns the connection](../explanation/connection-ownership.md).
 
 ## What it costs
 
 | | |
 |---|---|
 | Adds | the AWS SDK, on top of the `config` graph |
-| Requires | the `config` version named in this module's `go.mod` — `go get` brings it |
+| Requires | the `config` version named in this module's `go.mod`; `go get` brings it |
 | Capability since | `config` **v0.7.0**, the release whose `backendconformance` requires a sensitive read-only backend to refuse the routed-beneath write |
 
-Its SDK is the **leanest of any backend adapter in this toolkit**: the AWS SDK for
-Go v2 ships per service, so reading secrets does not drag in the rest of AWS. Note what is absent —
+The AWS SDK for Go v2 ships per service, so reading secrets does not drag in the rest of AWS.
 `aws-sdk-go-v2/config` and `credentials` are how *you* build a client, so they are yours, not the
 module's.
 
 ## Related
 
-- [How dynamic backends work](../explanation/dynamic-backends.md) — the mechanics every remote backend shares
-- [Read secrets from Vault](vault.md) — the other secrets manager, with the opposite default mode
-- [Read AWS SSM Parameter Store](aws-ssm.md) — its sibling for ordinary parameters
-- [The adapter ecosystem](../explanation/adapters.md) — every adapter, status and roadmap
+- [How dynamic backends work](../explanation/dynamic-backends.md): the mechanics every remote backend shares
+- [Read secrets from Vault](vault.md): the other secrets manager, with the opposite default mode
+- [Read AWS SSM Parameter Store](aws-ssm.md): its sibling for ordinary parameters
+- [The adapter ecosystem](../explanation/adapters.md): every adapter, status and roadmap
