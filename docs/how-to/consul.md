@@ -55,7 +55,7 @@ no runtime dependency on anything being reachable.
 
 Reach for Consul when a value has to change **without a redeploy**, or when several
 services must agree on one source of truth. Its watch is a blocking query, so a change
-reaches the store without polling.
+reaches the store as soon as Consul answers it, with no poll delay.
 
 ## Values are strings, or decoded documents
 

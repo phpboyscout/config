@@ -57,10 +57,10 @@ Available now, each published and versioned. The adapter name links to its how-t
 | [`config-json`](../how-to/json.md) | JSON &amp; JSON Lines | ✓ | ✓ *(structure-preserving)* | [repo](https://gitlab.com/phpboyscout/go/config-json) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-json) |
 | [`config-toml`](../how-to/toml.md) | TOML | ✓ | ✓ *(structure-preserving)* | [repo](https://gitlab.com/phpboyscout/go/config-toml) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-toml) |
 | [`config-hcl`](../how-to/hcl.md) | HCL *(as a config format, not Terraform)* | ✓ | ✓ *(comment-preserving)* | [repo](https://gitlab.com/phpboyscout/go/config-hcl) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-hcl) |
-| [`config-xml`](../how-to/xml.md) | XML | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-xml) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-xml) |
-| [`config-dotenv`](../how-to/dotenv.md) | dotenv (`.env`) | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-dotenv) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-dotenv) |
-| [`config-ini`](../how-to/ini.md) | INI | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-ini) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-ini) |
-| [`config-properties`](../how-to/properties.md) | Java `.properties` | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-properties) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-properties) |
+| [`config-xml`](../how-to/xml.md) | XML | ✓ | no | [repo](https://gitlab.com/phpboyscout/go/config-xml) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-xml) |
+| [`config-dotenv`](../how-to/dotenv.md) | dotenv (`.env`) | ✓ | no | [repo](https://gitlab.com/phpboyscout/go/config-dotenv) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-dotenv) |
+| [`config-ini`](../how-to/ini.md) | INI | ✓ | no | [repo](https://gitlab.com/phpboyscout/go/config-ini) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-ini) |
+| [`config-properties`](../how-to/properties.md) | Java `.properties` | ✓ | no | [repo](https://gitlab.com/phpboyscout/go/config-properties) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-properties) |
 
 The read-only format adapters (`dotenv`, `ini`, `properties`, `xml`) add **no third-party
 dependency**, because they parse their format in-module. And if the format you need is not here,
@@ -68,9 +68,12 @@ dependency**, because they parse their format in-module. And if the format you n
 the store handles the rest.
 
 `config-json` is narrower than its name suggests. YAML 1.2 is a superset of JSON, so the core
-already reads a plain `.json` file with no module at all. The adapter exists for
-structure-preserving writes, which a core write to a `.json` file does not give you (it stays
-valid JSON but is reflowed onto one line), and for JSON Lines, which the core refuses.
+already reads a plain `.json` file with no module at all. It also edits one: changing or removing
+an existing key keeps the layout and stays valid JSON. What the core cannot do is add a new key and
+keep the file JSON, because it writes the key in YAML flow style (`, host: x}`), which a JSON parser
+rejects. This is tracked as [yamldoc#25](https://gitlab.com/phpboyscout/go/yamldoc/-/work_items/25).
+`config-json` is the route for writes that add keys to JSON files, and for JSON Lines, which the
+core refuses.
 
 ## Filesystem adapters
 
@@ -88,7 +91,7 @@ an adapter when the file lives somewhere neither covers.
 | Adapter | Where the file lives | Reads | Writes | Source |
 |---|---|:---:|:---:|---|
 | [`config-afero`](../how-to/afero.md) | an existing [afero](https://github.com/spf13/afero) filesystem | ✓ | ✓ | [repo](https://gitlab.com/phpboyscout/go/config-afero) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-afero) |
-| [`config-iofs`](../how-to/iofs.md) | any [`io/fs.FS`](https://pkg.go.dev/io/fs#FS), such as `embed.FS`, zip or tar | ✓ | — | [repo](https://gitlab.com/phpboyscout/go/config-iofs) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-iofs) |
+| [`config-iofs`](../how-to/iofs.md) | any [`io/fs.FS`](https://pkg.go.dev/io/fs#FS), such as `embed.FS`, zip or tar | ✓ | no | [repo](https://gitlab.com/phpboyscout/go/config-iofs) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-iofs) |
 | [`config-billy`](../how-to/billy.md) | a [go-billy](https://github.com/go-git/go-billy) filesystem (go-git) | ✓ | ✓ | [repo](https://gitlab.com/phpboyscout/go/config-billy) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-billy) |
 | [`config-sftp`](../how-to/sftp.md) | a remote host over SSH | ✓ | ✓ | [repo](https://gitlab.com/phpboyscout/go/config-sftp) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-sftp) |
 
@@ -112,7 +115,7 @@ built and released independently.
 | [`config-azure-blob`](../how-to/azure-blob.md) | Azure Blob Storage | copy-then-delete | **Released** | [repo](https://gitlab.com/phpboyscout/go/config-azure-blob) · [API](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-azure-blob) |
 
 All three are read+write, poll at a 60-second default (a poll is a billed object read;
-`WithPollInterval` overrides), and are proven against a real emulator (LocalStack, fake-gcs-server
+`config.WithPollInterval` on `Store.Watch` overrides it), and are proven against a real emulator (LocalStack, fake-gcs-server
 and Azurite) in a Docker-in-Docker job.
 
 ## Dynamic backends
@@ -135,7 +138,7 @@ and hand it in with a prefix that scopes and is stripped from the keys:
 
 ```go
 import (
-	capi "github.com/hashicorp/consul/api"
+	capi "github.com/hashicorp/consul/api/v2"
 	"gitlab.com/phpboyscout/go/config"
 	configconsul "gitlab.com/phpboyscout/go/config-consul"
 )
@@ -230,7 +233,7 @@ before it is built**. The grouping is a planned order, not a commitment date.
 | [`config-gcp-parameter`](../how-to/gcp-parameter.md) | GCP Parameter Manager | A | **Released** *(read-only)* |
 | [`config-vault`](../how-to/vault.md) | HashiCorp Vault | B: secrets managers | **Released** *(read-only)* |
 | [`config-aws-secrets`](../how-to/aws-secrets.md) | AWS Secrets Manager | B | **Released** *(read-only)* |
-| [`config-azure-keyvault`](../how-to/azure-keyvault.md) | Azure Key Vault | B | **Released** *(read-only; its real-vault suite is not run in CI)* |
+| [`config-azure-keyvault`](../how-to/azure-keyvault.md) | Azure Key Vault | B | **Released** *(read-only; its real-vault suite is not run in CI, but it ran successfully against a real vault on 2026-08-17, config-azure-keyvault commit `456362b`)* |
 | [`config-gcp-secret`](../how-to/gcp-secret.md) | GCP Secret Manager | B | **Released** *(read-only; [not yet exercised against a real project](../how-to/gcp-secret.md))* |
 | [`config-keychain`](../how-to/keychain.md) | OS keychain | none; not in the umbrella | **Released** *(read **and** write)* |
 | [`config-filekv`](../how-to/filekv.md) | a directory of single-value files | none; not in the umbrella | **Released** *(read, opt-in write)* |

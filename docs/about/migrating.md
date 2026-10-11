@@ -13,7 +13,8 @@ and watch, and **`github.com/spf13/viper` is no longer a dependency**. It is abs
 Be realistic about the size of this. Most of the surface renames mechanically, but a
 handful of call sites are genuine ports rather than substitutions, and every one of them
 is a place where the old behaviour was doing something you probably did not intend.
-Measured against the main consumer, `gitlab.com/phpboyscout/go-tool-base`: of 160
+Measured on 2026-07-20 against the main consumer, `gitlab.com/phpboyscout/go-tool-base`, at
+commit `de7969bc` (before it migrated): of 160
 `config.Containable` references, about 89 are bare parameter declarations that become
 `config.Reader` by renaming the type, and only 12 call a method `Reader` does not have.
 Those 12 are the work.
@@ -210,14 +211,14 @@ In tests, `mocks.MockContainable` becomes `mocks.NewMockReader`, with
 | `NewFilesContainer`, `NewReaderContainer` | `NewStore` with `WithFiles` / `WithReaders` | |
 | `LoadFilesContainer`, `LoadFilesContainerWithSchema` | `NewStore` with `WithSchema` | |
 | `Load`, `LoadEmbed` | `NewStore` with `WithFiles` / `WithReaders` | Embedded assets become `NamedSource` values |
-| `LoadEnv` | — | Load `.env` yourself before constructing |
-| `NewContainerFromViper` | — | There is no Viper to construct from |
+| `LoadEnv` | none | Load `.env` yourself before constructing |
+| `NewContainerFromViper` | none | There is no Viper to construct from |
 | `WithConfigFiles(files...)` | `WithFiles(fs, paths...)` | Filesystem and paths are now one option |
 | `WithConfigReaders(readers...)` | `WithReaders(NamedSource...)` | Each source now carries a name, which appears in provenance |
 | `WithEnvPrefix(prefix)` | `WithEnv(prefix)` | Still a security control; still no trailing underscore |
-| `WithConfigFormat(format)` | — | YAML only |
+| `WithConfigFormat(format)` | none | The core's codec is YAML, which also reads JSON; other formats are adapter modules |
 | `WithLogger(l)` | `Store.OnReloadError`, `Store.OnObserverError` | The Store reports; it does not log on your behalf |
-| `WithReloadDebounce(d)` | `Watch(ctx, WithPollInterval(d))` | `DefaultPollInterval` is 2s |
+| `WithReloadDebounce(d)` | `Watch(ctx, WithSettleInterval(d))` | `DefaultSettleInterval` is 250ms |
 | `Observable.Run(Containable)` | `Observable.Run(Observed)` | |
 | `AddObserverFunc(func(Containable) error)` | `AddObserverFunc(func(Observed) error)` | |
 | `Observer` struct | `ObserverFunc` | |
@@ -538,9 +539,10 @@ instead of being silently deleted.
 
 ## Limits worth knowing before you port
 
-- A **multi-line flow collection with interior comments** cannot be round-tripped safely
-  and is refused at load with `ErrBackendUnsafe`, naming the location. Reformat it to block
-  style.
+- A document that **means nothing under its schema** cannot be edited safely and is refused
+  at load with `ErrBackendUnsafe`, naming each problem with its line and column. That covers
+  an alias with no anchor and a mapping with two keys that are the same value spelt
+  differently. Fix the alias or the duplicate key.
 - A **map-valued `Set` replaces the whole subtree**; comments and anchors inside it may not
   survive. Set leaves where you can.
 - Individual reads are always coherent, but a *sequence* of them can straddle a reload. Use

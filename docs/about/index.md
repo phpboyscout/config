@@ -44,7 +44,7 @@ a second:
 A mismatched pair here means `host` from before a reload and `port` from after: a host
 and port that were never configured together, about to be dialled. The test that produces
 the second row is
-[in the suite](https://gitlab.com/phpboyscout/go/config/-/blob/main/coherence_test.go) and
+[in the suite](https://gitlab.com/phpboyscout/go/config/-/blob/4d6b3ee44d20fd38bea77c29bf03a6f12a71b603/coherence_test.go) and
 fails the build if it ever stops being true.
 
 **"What happens when the new config is broken?"** Reloading is fail-closed. A candidate
@@ -145,7 +145,7 @@ told. A watcher that has silently gone quiet is the one failure mode this design
     time it is told something changed, will do that work for a change that did not happen.
 
 All the guarantees above are asserted in
-[`observer_contract_test.go`](https://gitlab.com/phpboyscout/go/config/-/blob/main/observer_contract_test.go).
+[`observer_contract_test.go`](https://gitlab.com/phpboyscout/go/config/-/blob/4d6b3ee44d20fd38bea77c29bf03a6f12a71b603/observer_contract_test.go).
 
 ## Writing: where it gets genuinely hard
 

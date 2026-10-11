@@ -31,7 +31,7 @@ The rules, in full:
 
 An invalid path passed to `Store.Apply` or `Store.Plan` returns
 [`ErrInvalidPath`](errors.md#errinvalidpath). An invalid path passed to a *read* accessor
-is not an error — reads return the zero value for anything they cannot resolve, including a
+is not an error. Reads return the zero value for anything they cannot resolve, including a
 path that is malformed.
 
 ## Keys are lower-cased, everywhere
@@ -66,7 +66,7 @@ weird.key: 7
 
 ```go
 view.Keys()            // includes "weird.key"
-view.Get("weird.key")  // nil — it looks for key "key" inside mapping "weird"
+view.Get("weird.key")  // nil: it looks for key "key" inside mapping "weird"
 ```
 
 `Keys()` will list such a key, which makes the situation visible but not fixable. If you
@@ -99,11 +99,11 @@ that is not a populated mapping:
 | Value in the file | Leaf? | Appears in `Keys()` |
 |---|---|---|
 | `port: 8080` | yes | `server.port` |
-| `hosts: [a, b]` | yes — a sequence is a leaf value | `hosts` |
-| `empty: {}` | yes — an empty mapping is a value, just not entries | `empty` |
-| `server: {host: …, port: …}` | no — it is assembled from its children | its children, not `server` |
+| `hosts: [a, b]` | yes, a sequence is a leaf value | `hosts` |
+| `empty: {}` | yes, an empty mapping is a value with no entries | `empty` |
+| `server: {host: …, port: …}` | no, it is assembled from its children | its children, not `server` |
 
-`View.Has("server")` is still true for a populated mapping — presence and leafness are
+`View.Has("server")` is still true for a populated mapping, because presence and leafness are
 different questions. What a populated mapping does *not* have is a single origin, so
 `Origin` returns false for it and `Explain` says it is "a subtree assembled from" the
 sources that contributed.
@@ -117,9 +117,9 @@ holds at that path:
 |---|---|
 | A mapping, over a mapping | Merged key by key, recursively. Siblings the higher layer does not mention survive. |
 | A mapping, over a scalar | The scalar is replaced. Its provenance is dropped. |
-| A scalar, over a mapping | The whole subtree is replaced, and the provenance of every key beneath it is dropped — those keys are no longer reachable. |
+| A scalar, over a mapping | The whole subtree is replaced, and the provenance of every key beneath it is dropped. Those keys are no longer reachable. |
 | A sequence, over anything | Replaced wholesale. Sequences are **never** appended, merged or de-duplicated. |
-| An empty mapping, over a mapping | Replaced — an empty container is a value, so it wins as any scalar would. |
+| An empty mapping, over a mapping | Replaced. An empty container is a value, so it wins as any scalar would. |
 
 The sequence rule is the one that surprises people. There is no way to add one item to a
 list from an overlay: an overlay that mentions the list at all replaces it entirely.
@@ -130,14 +130,14 @@ this way.
 ## Filter patterns for `Allow` and `Deny`
 
 `config.Filtered` bounds what a backend contributes. Its patterns are dotted paths with two
-wildcards — deliberately not regular expressions, because a mistake in a regexp silently
+wildcards. They are deliberately not regular expressions, because a mistake in a regexp silently
 *widens* a filter, which is the wrong direction when what it holds back is a secret.
 
 | Token | Matches |
 |---|---|
 | `name` | Exactly that segment. |
 | `*` | Exactly one segment, whatever it is. |
-| `**` | One or more remaining segments. Only meaningful as the last segment; anything written after it can never match. |
+| `**` | One or more remaining segments. Only meaningful as the last segment; anything written after it is ignored, so `db.**.host` means `db.**`. |
 
 A pattern with no `**` must have exactly as many segments as the path it matches.
 
@@ -186,10 +186,10 @@ itself.
 
 ## Related
 
-- [Precedence & merge model](../explanation/precedence-and-merge.md) — why merging is
+- [Precedence & merge model](../explanation/precedence-and-merge.md): why merging is
   per-leaf and deep, and why sequences replace
-- [Bound what a backend contributes](../how-to/filter-a-backend.md) — the task guide for
+- [Bound what a backend contributes](../how-to/filter-a-backend.md): the task guide for
   `Allow` and `Deny`
-- [Environment variables](environment-variables.md) — how a variable name becomes one of
+- [Environment variables](environment-variables.md): how a variable name becomes one of
   these paths
-- [Errors](errors.md#errinvalidpath) — what a malformed path returns
+- [Errors](errors.md#errinvalidpath): what a malformed path returns

@@ -1,6 +1,6 @@
 ---
 title: Struct tags
-description: Every struct tag config reads — for validation and for decoding — which are honoured, and which are silently ignored.
+description: Every struct tag config reads, for validation and for decoding, which are honoured, and which are silently ignored.
 tags: [reference, tags, validation, decoding]
 ---
 
@@ -33,8 +33,8 @@ type AppConfig struct {
 
 | Tag | Effect |
 |---|---|
-| `config:"a.b"` | Maps the field to a dotted configuration key. **A field without this tag contributes nothing to the schema** — unless it is a struct, which is walked (see below). |
-| `config:"-"` | Treated **identically to an absent tag**. On a scalar that means skipped; on a struct field it means walked — see below. |
+| `config:"a.b"` | Maps the field to a dotted configuration key. **A field without this tag contributes nothing to the schema**, unless it is a struct, which is walked (see below). |
+| `config:"-"` | Treated **identically to an absent tag**. On a scalar that means skipped; on a struct field it means walked (see below). |
 | `validate:"required"` | Fails when the key is absent, or is a present-but-empty string. |
 | `enum:"a,b,c"` | Fails when the value is not one of the listed values. |
 | `default:"x"` | Recorded on the field schema. **Never injected into the configuration.** |
@@ -44,13 +44,13 @@ type AppConfig struct {
 
 The tag is split on commas and every token compared against the literal string `required`.
 **Nothing else is honoured, and nothing else is reported.** A tag written for another
-library —
+library, such as:
 
 ```go
 Port int `config:"port" validate:"required,min=1,oneof=8080 9090"`
 ```
 
-— applies `required` and silently discards `min=1` and `oneof=8080 9090`. There is no
+applies `required` and silently discards `min=1` and `oneof=8080 9090`. There is no
 warning and no error; the constraint simply does not exist.
 
 Anything relational, conditional, or needing a non-zero rather than merely present number
@@ -108,13 +108,14 @@ Server struct {
 }
 ```
 
-Pick one spelling and stay with it. Nesting compounds — an untagged struct inside an untagged
+Pick one spelling and stay with it. Nesting compounds: an untagged struct inside an untagged
 struct inside the root yields `server.deep.a`.
 
 ### What the type check actually compares
 
-A field's schema `Type` is derived from its Go kind, and then compared against the **actual
-Go type** of the resolved value:
+A schema describes five types: `string`, `int`, `float64`, `bool` and `duration`. A field's
+schema `Type` is derived from its Go kind, and everything the schema cannot describe more
+precisely is treated as `string`:
 
 | Go kind | Schema `Type` |
 |---|---|
@@ -124,6 +125,18 @@ Go type** of the resolved value:
 | `float32`, `float64` | `float64` |
 | `bool` | `bool` |
 | **everything else** | `string` |
+
+The resolved value is then checked against that type. `string` is strict: only a Go string
+passes. The other four use the same conversions the typed accessors use, so a value that
+`GetInt` would read is an `int` to the schema:
+
+| Schema `Type` | Accepts |
+|---|---|
+| `string` | A string, and nothing else. |
+| `int` | A number, or text that reads as an integer (`"8080"`). |
+| `float64` | A number, or text that reads as one. |
+| `bool` | A bool, or text that reads as one (`"true"`, `"1"`). A bare number is refused. |
+| `duration` | A duration, a number of nanoseconds, or text such as `"5s"`. |
 
 "Everything else" is broad, and it bites. `uint`, `uint16`, `[]string`, `map[string]string`,
 `time.Time` and any struct all become `string`, so a field declared:
@@ -142,23 +155,26 @@ config validation failed:
 ```
 
 Use `int` rather than an unsigned type for a validated numeric field, and leave slices and
-maps out of the validated struct. Reading is unaffected — `GetUint16` and `Value[[]string]`
-both work; it is validation that has the narrower type model.
+maps out of the validated struct. Reading is unaffected. `GetUint16` and `Value[[]string]`
+both work; only validation has the narrower type model.
 
-The same asymmetry catches values arriving as text. Environment variables and flags hold
-strings, so an `int` field routinely supplied by `MYTOOL_SERVER_PORT` or `--port` fails with
-`expected type int but got string`. Either leave such a key out of the typed schema or
-declare it as a `string`.
+Values that arrive as text are not a problem for the numeric, bool and duration types.
+`MYTOOL_SERVER_PORT=8080` satisfies an `int` field, because `"8080"` reads as an integer. Text
+that does not read as the declared type fails: `MYTOOL_SERVER_PORT=abc` produces
+`expected type int but got string`. The reverse trips the strict `string` type: a `string`
+field whose YAML value is the bare number `1` fails with `expected type string but got int`.
+Quote the value in the file, or declare the field with the type the value really has.
 
 ### Unknown keys
 
 A configured key the schema does not describe produces a **warning**, not an error, unless
-`WithStrictMode()` is set. A key that is a parent of a known field is never reported —
+`WithStrictMode()` is set. A key that is a parent of a known field is never reported:
 `server` is fine when `server.port` is in the schema.
 
 Only keys from *authored* sources are policed: files and compiled-in defaults. Environment
 variables, flags and layers added at runtime are ambient, so a deployment platform exporting
-an unrelated prefixed variable cannot stop the application starting.
+an unrelated prefixed variable cannot stop the application starting. A source of any other
+kind, such as a remote backend declaring its own, is not policed either.
 
 ### A schema with no fields is refused
 
@@ -170,15 +186,15 @@ is worse than having none: you would believe your configuration was checked when
 
 Section decoding reads a different set, in this order of specificity:
 
-1. `mapstructure:"name"` — wins outright. `mapstructure:"-"` skips the field.
-2. `yaml:"name"` — honoured as an alias when it differs from the above.
-3. `json:"name"` — honoured as an alias when it differs from the above.
+1. `mapstructure:"name"` wins outright. `mapstructure:"-"` skips the field.
+2. `yaml:"name"` is honoured as an alias when it differs from the above.
+3. `json:"name"` is honoured as an alias when it differs from the above.
 4. The **lower-cased field name**, when no tag names it.
 
 Honouring all three is deliberate. A type shared with an API carries `json`, one shared with
 a YAML document carries `yaml`, and one written for this library carries `mapstructure`.
 Honouring only the last would leave a field tagged either of the other two at its zero value
-— silently, with no error.
+silently, with no error.
 
 ### Embedding
 
@@ -199,7 +215,7 @@ type the field declares. On top of that, these decode from their ordinary writte
 | Target type | Written as |
 |---|---|
 | `time.Duration` | `"30s"`, `"1h30m"` |
-| Any slice, from a single string | `"a,b,c"` — split on commas |
+| Any slice, from a single string | `"a,b,c"`, split on commas |
 | `netip.Addr`, `netip.AddrPort`, `netip.Prefix` | `"192.0.2.1"`, `"192.0.2.1:80"`, `"192.0.2.0/24"` |
 | `net.IP`, `*net.IPNet` | `"192.0.2.1"`, `"192.0.2.0/24"` |
 | `url.URL` | `"https://example.com/x"` |
@@ -215,14 +231,14 @@ The last row is the one that matters for your own code: a domain type or an enum
 `Value[T]` does the same, yielding the zero value and no error. A caller distinguishing
 "absent" from "set to zero" asks `View.Has` first.
 
-A target that cannot receive values — a nil pointer, a non-pointer — returns
+A target that cannot receive values, such as a nil pointer or a non-pointer, returns
 [`ErrInvalidTarget`](errors.md#errinvalidtarget).
 
 ## Related
 
-- [Validate configuration](../how-to/validate-config.md) — the task guide, with strict mode,
+- [Validate configuration](../how-to/validate-config.md): the task guide, with strict mode,
   attaching a schema to the store, and repairing an invalid configuration
-- [Use typed sections](../how-to/typed-sections.md) — decoding a subtree and keeping it
+- [Use typed sections](../how-to/typed-sections.md): decoding a subtree and keeping it
   current across reloads
-- [Read configuration values](../how-to/read-values.md) — the accessor surface
-- [Errors](errors.md) — `ErrInvalidConfig`, `ErrEmptySchema`, `ErrInvalidTarget`
+- [Read configuration values](../how-to/read-values.md): the accessor surface
+- [Errors](errors.md): `ErrInvalidConfig`, `ErrEmptySchema`, `ErrInvalidTarget`

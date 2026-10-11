@@ -1,6 +1,6 @@
 ---
 title: Errors
-description: Every error value config exports — what returns it, what caused it, and what to do about it.
+description: Every error value config exports, what returns it, what caused it, and what to do about it.
 tags: [reference, errors]
 ---
 
@@ -11,7 +11,7 @@ works on all of them:
 
 ```go
 if errors.Is(err, config.ErrConflict) {
-	// the file changed under us — re-read and retry
+	// the file changed under us: re-read and retry
 }
 ```
 
@@ -26,8 +26,8 @@ Most callers need these four:
 |---|---|---|
 | Building a store | [`ErrInvalidConfig`](#errinvalidconfig) | The store is still usable. Fail fast in a service; carry on in a repair tool. |
 | Writing | [`ErrConflict`](#errconflict) | Something else changed the file. Reload and re-plan. |
-| Writing | [`ErrSensitiveLeak`](#errsensitiveleak) | You are about to write a secret into a plain file. Do not retry — fix the target. |
-| Writing | [`ErrForbiddenKey`](#errforbiddenkey) | The source is not permitted to hold this key. Do not retry — write it somewhere else. |
+| Writing | [`ErrSensitiveLeak`](#errsensitiveleak) | You are about to write a secret into a plain file. Do not retry; fix the target. |
+| Writing | [`ErrForbiddenKey`](#errforbiddenkey) | The source is not permitted to hold this key. Do not retry; write it somewhere else. |
 
 Everything else is either a programming mistake caught early, or an environment failure you
 would report rather than recover from.
@@ -49,8 +49,8 @@ nothing to serve, so it is refused rather than returned empty. Add at least one 
 Returned when a candidate configuration fails schema validation. It comes from four places:
 
 - `NewStore`, when the first load parses but violates the schema. **The store is returned
-  alongside the error and is usable** — a tool whose job is to repair configuration needs
-  something to repair it through.
+  alongside the error and is usable**, because a tool whose job is to repair configuration
+  needs something to repair it through.
 - `Store.Reload`, when a reload fails validation. The previous configuration stays live.
 - `Store.Apply`, when a change would *introduce* a violation. Violations that were already
   there do not block the write and are reported separately as pre-existing.
@@ -69,7 +69,7 @@ if err != nil && !errors.Is(err, config.ErrInvalidConfig) {
 
 `config: schema has no fields defined`
 
-Returned by `NewSchema` and `SchemaOf[T]` when tag parsing produced no fields — usually
+Returned by `NewSchema` and `SchemaOf[T]` when tag parsing produced no fields, usually
 because the struct's fields carry no `config` tag, or carry `config:"-"`. A schema that
 constrains nothing would validate everything, so it is refused rather than accepted as a
 no-op. See [Struct tags](struct-tags.md#validation-tags).
@@ -90,8 +90,8 @@ the other would drop half the settings without saying so. Pass a merge function 
 `config: environment variable is ambiguous`
 
 Returned during load when a set environment variable could designate more than one existing
-configuration key — `MYTOOL_A_B_C` where both `a.b_c` and `a_b.c` exist. The message names
-both candidates and the variable.
+configuration key, such as `MYTOOL_A_B_C` where both `a.b_c` and `a_b.c` exist. The message
+names both candidates and the variable.
 
 Honouring it would mean guessing, and the guess would vary between runs of the same program.
 Rename one of the keys, or set the value in a file instead. See
@@ -101,7 +101,7 @@ Rename one of the keys, or set the value in a file instead. See
 
 `config: invalid target`
 
-One error value covering four "you cannot ask that of this" cases:
+One error value covering several "you cannot ask that of this" cases:
 
 | Where | Cause |
 |---|---|
@@ -109,6 +109,8 @@ One error value covering four "you cannot ask that of this" cases:
 | `Store.AddLayer` | The layer was given no name; a layer needs one to appear in provenance. |
 | `Store.Apply`, `Store.Plan` with `To(…)` | The pinned name matches no writable source. |
 | A nested store's write path | The edit named a layer the aggregate does not carry. |
+| `NewStore`, `Store.AddLayer` | Two sources share an ID, so provenance could not tell them apart. |
+| A write to a file | The edit's path is empty, or it addresses a later document of a file that does not exist yet. |
 
 `Store.WritableTargets()` lists exactly the names `To` accepts.
 
@@ -128,7 +130,7 @@ rather than treating it as a failure.
 Returned when a change names a malformed dotted path: blank, or with an empty segment
 (`a..b`, `.a`, `a.`). See [Keys and paths](keys-and-paths.md#what-a-valid-dotted-path-looks-like).
 
-Reads do not return this — an unresolvable path reads as the zero value.
+Reads do not return this. An unresolvable path reads as the zero value.
 
 ### `ErrNoWritableLayer`
 
@@ -143,7 +145,7 @@ Add a file backend, or a backend that implements `WritableBackend`.
 `config: backend is not writable`
 
 Returned during `Apply` when a change was routed at a backend that cannot persist. Where
-`ErrNoWritableLayer` means "nowhere at all", this means "the chosen place refused" — most
+`ErrNoWritableLayer` means "nowhere at all", this means "the chosen place refused". It is most
 often a pinned target inside a nested store that was not promoted with `NestedPromotable`.
 
 ### `ErrSensitiveLeak`
@@ -151,7 +153,7 @@ often a pinned target inside a nested store that was not promoted with `NestedPr
 `config: refusing to write a sensitive key into a non-sensitive layer`
 
 Returned when a write would land a key that a `Sensitive` backend defines into a layer that
-is not itself sensitive — writing secret-category material into a plain file.
+is not itself sensitive, which would write secret-category material into a plain file.
 
 Secrets backends are read-only, so a write to a key one of them owns routes *down* to the
 next writable layer. Refusing it is what keeps that safe. It also fires for a key a
@@ -166,11 +168,11 @@ preference. A removal is exempt, because a removal writes no value and so cannot
 `config: forbidden key`
 
 Returned when a write targets a key the source's [`Constrained`](../how-to/compose-schemas.md#writes-to-a-forbidden-key-are-refused)
-policy forbids — a credential aimed at a project config file, say. The full message names
+policy forbids, such as a credential aimed at a project config file. The full message names
 both the key and the source that refused it.
 
 It is its own sentinel rather than an `ErrInvalidConfig`, because the configuration is not
-invalid: the write was refused. A caller acts on the two differently — one is repaired by
+invalid: the write was refused. A caller acts on the two differently: one is repaired by
 fixing a value, the other by writing somewhere else. That is the same distinction
 [`ErrSensitiveLeak`](#errsensitiveleak) draws.
 
@@ -186,7 +188,7 @@ Returned when a source changed between being read and being written, so committi
 silently discard someone else's work. Detection is by content hash rather than modification
 time, because timestamp granularity varies and is coarse on some filesystems.
 
-This is detection, not prevention — the most that is portably achievable without lock files.
+This is detection, not prevention, which is the most that is portably achievable without lock files.
 Reload, re-plan against the new state, and retry.
 
 ### `ErrPartialCommit`
@@ -206,10 +208,10 @@ by hand.
 
 Returned by `Store.Apply`, `Store.AddLayer` and `Store.Reload` when called from inside an
 observer callback. Each such write is itself a change, which notifies, which runs the
-observer again — a cascade with no natural end.
+observer again, in a cascade with no natural end.
 
 Take the change *out* of the observation: record what is needed, return, and write from
-somewhere else — a worker goroutine, a queue, the next tick. Serialising and de-duplicating
+somewhere else, such as a worker goroutine, a queue or the next tick. Serialising and de-duplicating
 those deferred writes belongs to you, because you are the only party that knows which of
 them still matter.
 
@@ -243,7 +245,7 @@ the duplicate. See
 
 `config: filesystem is read-only`
 
-Returned by the write methods — `WriteFile`, `Rename`, `Remove`, `MkdirAll` — of a
+Returned by the write methods (`WriteFile`, `Rename`, `Remove` and `MkdirAll`) of a
 filesystem adapter over an inherently read-only source, such as an `io/fs.FS` or an HTTP
 URL. Nothing in this module returns it; the adapter modules do.
 
@@ -254,7 +256,7 @@ a genuine permission failure is indistinguishable from.
 
 `config: cannot watch sources`
 
-Returned by `Store.Watch` when watching cannot work for the sources given — no watchable
+Returned by `Store.Watch` when watching cannot work for the sources given: no watchable
 backend, or a polling watcher handed nothing to watch.
 
 It is deliberately loud. A watcher that silently does nothing is worse than none: the
@@ -302,14 +304,40 @@ else.
 `config: internal invariant violated`
 
 An invariant of this module does not hold. It is never the caller's fault and is always worth
-reporting — [open an issue](https://gitlab.com/phpboyscout/go/config/-/issues) with the
+reporting. [Open an issue](https://gitlab.com/phpboyscout/go/config/-/issues) with the
 message and, if you can, the configuration that produced it.
+
+## Errors the adapters return
+
+Adapter modules define their own sentinels, in the adapter's package rather than this one.
+They answer the question "what did you not tell me", and they come back from the
+constructor, before any network call. Each is matched with `errors.Is` against the
+adapter's own value, for example `errors.Is(err, configvault.ErrNoAddress)`. The
+[ambient rung](../explanation/connection-ownership.md#an-ambient-rung-supplies-credentials-never-the-target)
+refuses a missing target rather than guessing one.
+
+| Error | Module | Returned when |
+|---|---|---|
+| `ErrNoConfig` | `config-consul`, `config-vault` | `FromConfig` is given a nil config. |
+| `ErrNoAddress` | `config-vault` | `FromConfig` is given a config that names no address. Set `Address`, or `VAULT_ADDR`. |
+| `ErrNoEndpoints` | `config-etcd` | `FromConfig` is given no endpoints, or `Default` finds none in `ETCDCTL_ENDPOINTS`. Unlike `etcdctl`, it does not fall back to `localhost:2379`. |
+| `ErrMalformedEnv` | `config-etcd` | `Default` reads an `ETCDCTL_*` variable it cannot use: a bad dial timeout, TLS files that will not load, a certificate without its key, or a user without a password. The message names the variable. |
+| `ErrNoVaultURL` | `config-azure-keyvault` | A rung is called with no vault URL. |
+| `ErrNoServiceURL` | `config-azure-blob` | A rung is called with no storage-account URL. |
+| `ErrNoContainer` | `config-azure-blob` | A rung is called with no container name. |
+| `ErrNoLocation` | `config-gcp-parameter` | A rung is called with no location. Pass `"global"` unless the parameters are regionalised. |
+
+Other refusals follow the same pattern: `ErrNoRegion` (`config-aws-ssm`, `config-aws-secrets`,
+`config-aws-s3`), `ErrNoProject` (`config-gcp-secret`, `config-gcp-parameter`), `ErrNoBucket`
+(`config-aws-s3`, `config-gcp-gcs`), `ErrNoEndpoint` (`config-azure-appconfig`), `ErrNoConn`
+(`config-sftp`), `ErrNoCredential` (all three Azure adapters) and `ErrNoConnectionString`
+(`config-azure-appconfig`, `config-azure-blob`).
 
 ## Related
 
-- [Write configuration](../how-to/write-config.md#errors-worth-branching-on) — the write
+- [Write configuration](../how-to/write-config.md#errors-worth-branching-on): the write
   errors in the context of a task
-- [Hot-reload safety](../explanation/hot-reload-safety.md) — why a rejected reload changes
+- [Hot-reload safety](../explanation/hot-reload-safety.md): why a rejected reload changes
   nothing, and why writing from an observer is refused
-- [Limitations](limitations.md) — what the module will not do, of which several of these
+- [Limitations](limitations.md): what the module will not do, of which several of these
   errors are the enforcement

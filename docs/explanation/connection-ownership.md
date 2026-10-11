@@ -143,15 +143,24 @@ it explains a lot of `error` returns.
 The ambient rung answers **who am I**. It never answers **what am I talking to**.
 Every adapter refuses when the target is missing, rather than guessing:
 
-| Refused | Adapters |
-|---|---|
-| region | `aws-ssm`, `aws-secrets`, `aws-s3` |
-| project | `gcp-secret`, `gcp-parameter` |
-| location | `gcp-parameter` |
-| bucket, container | `gcp-gcs`, `aws-s3`, `azure-blob` |
-| vault URL, endpoint, service URL | `azure-keyvault`, `azure-appconfig`, `azure-blob` |
-| address | `vault` |
-| endpoint | `etcd` |
+| Refused | Adapters | Error |
+|---|---|---|
+| region | `aws-ssm`, `aws-secrets`, `aws-s3` | `ErrNoRegion` |
+| project | `gcp-secret`, `gcp-parameter` | `ErrNoProject` |
+| location | `gcp-parameter` | `ErrNoLocation` |
+| bucket | `aws-s3`, `gcp-gcs` | `ErrNoBucket` |
+| container | `azure-blob` | `ErrNoContainer` |
+| vault URL | `azure-keyvault` | `ErrNoVaultURL` |
+| service URL | `azure-blob` | `ErrNoServiceURL` |
+| endpoint | `azure-appconfig` | `ErrNoEndpoint` |
+| address | `vault` | `ErrNoAddress` |
+| endpoints | `etcd` | `ErrNoEndpoints` |
+
+Each is a sentinel defined by its own adapter, so match it with `errors.Is` against that
+package's value. Two more are not about a target. `config-consul` and `config-vault` return
+`ErrNoConfig` when `FromConfig` is given a nil config, and `config-etcd` returns
+`ErrMalformedEnv` when `Default` finds an `ETCDCTL_*` variable it cannot use. The
+[Errors reference](../reference/errors.md#errors-the-adapters-return) lists them all.
 
 `config-etcd` is the one adapter whose ambient rung reads the target as well,
 because etcd's own tooling keeps it in the environment: `Default` reads

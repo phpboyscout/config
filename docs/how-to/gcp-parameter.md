@@ -60,7 +60,7 @@ under the parameter's own id.
 ## Prefix (many parameters)
 
 For a store organised as many small parameters, `FromClientPrefix` scans a name prefix and nests
-each parameter as a leaf, Consul-style:
+each parameter as a leaf of the key tree:
 
 ```go
 config.WithBackend(configgcpparameter.FromClientPrefix(client, "my-project", "global", "app-"))

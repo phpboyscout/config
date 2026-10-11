@@ -106,7 +106,9 @@ system owns is a surprising capability. Such a write lands as a sibling flat key
 Consul offers a real change feed, so the adapter implements `WatchableBackend` over a blocking
 query: it asks Consul to hold the connection open until anything under the prefix changes past the
 last-seen index, then reports the change. Latency is push, not poll, which is what `NativeWatch:
-true` promises. `WithPollInterval` bounds each query; unset, Consul's own default applies. The
+true` promises. The wait of each query is the interval the store was given by `config.WithPollInterval` on
+`Store.Watch`, 2 seconds if you pass none; it sets how long an idle query stays open, not how
+long a change waits. The
 store does the rest: it settles a burst of reports, re-reads, re-merges, and stays quiet if the
 resolved configuration did not actually change.
 

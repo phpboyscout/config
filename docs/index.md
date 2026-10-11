@@ -195,9 +195,10 @@ cloud **parameter stores** are released:
 - **Secrets managers**: [Vault](how-to/vault.md), [AWS Secrets
   Manager](how-to/aws-secrets.md), [Azure Key Vault](how-to/azure-keyvault.md) and [GCP Secret
   Manager](how-to/gcp-secret.md), all released and read-only; a value any of them provides can
-  never be written into a plainer layer beneath, because the core refuses that. The last two are
-  released but **not yet exercised against the real service**. Neither has an emulator, so their
-  client wiring is the one part a fake cannot prove.
+  never be written into a plainer layer beneath, because the core refuses that. GCP Secret
+  Manager is released but **not yet exercised against the real service**. It has no emulator, so
+  its client wiring is the one part a fake cannot prove. Azure Key Vault's real-vault suite does
+  not run in CI, but it passed against a real vault on 2026-08-17.
 - **The OS keychain**: [config-keychain](how-to/keychain.md) makes macOS Keychain, Windows
   Credential Manager or Secret Service a layer, and is the one secrets backend that *writes*: a
   token this application just obtained belongs there rather than in the config file.

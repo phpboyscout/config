@@ -25,7 +25,7 @@ watching, then writing. Each stage works on its own, so stop wherever your sourc
 
 !!! tip "The code here is compiled"
     Every snippet is taken from
-    [`custombackend_test.go`](https://gitlab.com/phpboyscout/go/config/-/blob/main/custombackend_test.go)
+    [`custombackend_test.go`](https://gitlab.com/phpboyscout/go/config/-/blob/4d6b3ee44d20fd38bea77c29bf03a6f12a71b603/custombackend_test.go)
     in this module's own suite, where it is exercised against a fake remote, including the
     write path and the conflict case. It cannot drift from an API that still works.
 

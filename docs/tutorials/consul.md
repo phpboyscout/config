@@ -8,7 +8,7 @@ tags: [tutorial, backends, consul]
 
 By the end of this tutorial you will have a program that loads its configuration from a
 running HashiCorp Consul, reads typed values from it, reacts when a value changes in Consul
-without restarting, and writes a value back — all through the same `config` store a file uses.
+without restarting, and writes a value back, all through the same `config` store a file uses.
 
 Unlike [Getting started](getting-started.md), this one needs one external service: a Consul
 agent, which you will run locally in development mode. Work through it top to bottom; you run the
@@ -16,7 +16,7 @@ program after each step.
 
 ## Prerequisites
 
-- Go 1.26.5 or newer.
+- Go 1.27.1 or newer.
 - The [Consul binary](https://developer.hashicorp.com/consul/install) on your `PATH`.
 
 ## 1. Start Consul
@@ -27,7 +27,7 @@ In its own terminal, run a throwaway single-node agent that keeps its data in me
 consul agent -dev
 ```
 
-Leave it running. Its HTTP API is now on `127.0.0.1:8500` — the default the SDK uses, so you
+Leave it running. Its HTTP API is now on `127.0.0.1:8500`, which is the default the SDK uses, so you
 will not have to configure an address.
 
 ## 2. Seed some configuration
@@ -48,11 +48,11 @@ mkdir consuldemo && cd consuldemo
 go mod init consuldemo
 go get gitlab.com/phpboyscout/go/config
 go get gitlab.com/phpboyscout/go/config-consul
-go get github.com/hashicorp/consul/api
+go get github.com/hashicorp/consul/api/v2
 ```
 
 You build the Consul client yourself and hand it to the adapter, so every address, token and TLS
-decision stays yours — the adapter never reaches for credentials.
+decision stays yours. The adapter never reaches for credentials.
 
 ## 4. Read from Consul
 
@@ -66,7 +66,7 @@ import (
 	"fmt"
 	"log"
 
-	capi "github.com/hashicorp/consul/api"
+	capi "github.com/hashicorp/consul/api/v2"
 	"gitlab.com/phpboyscout/go/config"
 	configconsul "gitlab.com/phpboyscout/go/config-consul"
 )
@@ -108,7 +108,7 @@ port came from: consul:app/
 ```
 
 The prefix `app/` was stripped and the remaining path split into a tree, so `app/server/port`
-reads as `server.port`. Consul stores bytes, so `"8080"` is a string — `GetInt` coerces it, the
+reads as `server.port`. Consul stores bytes, so `"8080"` is a string. `GetInt` coerces it, the
 same as it would for an environment variable.
 
 ## 5. Merge Consul over defaults
@@ -126,18 +126,18 @@ store, err := config.NewStore(context.Background(),
 )
 ```
 
-Run again: `server.port` is still `8080` (Consul wins), but `server.scheme` is `http` — the
+Run again: `server.port` is still `8080` (Consul wins), but `server.scheme` is `http`. The
 default survives, because merging is per-key, not layer-replace.
 
 ## 6. React to a change, without restarting
 
-Ask the store to watch. The adapter turns this into a Consul blocking query, so a change reaches
-you the moment it happens rather than on a timer. Add, before the program would exit, a watch and
-a block:
+Ask the store to watch. The adapter turns this into a Consul blocking query, so a change in
+Consul returns the query at once instead of waiting for a timer. Before the program would
+exit, add a watch and a block:
 
 ```go
 	store.AddObserverFunc(func(cfg config.Observed) error {
-		fmt.Println("reloaded — port is now", cfg.GetInt("server.port"))
+		fmt.Println("reloaded: port is now", cfg.GetInt("server.port"))
 
 		return nil
 	})
@@ -161,7 +161,7 @@ consul kv put app/server/port 9090
 The program prints, within moments and without a restart:
 
 ```
-reloaded — port is now 9090
+reloaded: port is now 9090
 ```
 
 ## 7. Write a value back
@@ -198,7 +198,7 @@ consul kv put app/db '{"host":"db.internal","port":5432}'
 ```
 
 By default that value is a single string. To decode it into a subtree, give the backend a value
-codec — any `config.Codec`, such as the one from `config-json`:
+codec: any `config.Codec`, such as the one from `config-json`:
 
 ```bash
 go get gitlab.com/phpboyscout/go/config-json
@@ -217,8 +217,8 @@ both styles works.
 
 ## Where to go next
 
-- [Read and write Consul](../how-to/consul.md) — the task-focused reference for each of these
+- [Read and write Consul](../how-to/consul.md): the task-focused reference for each of these
   operations
-- [How the Consul backend works](../explanation/consul-backend.md) — the data model, the conflict
+- [How the Consul backend works](../explanation/consul-backend.md): the data model, the conflict
   model and the watch mechanism, and why they are the way they are
-- [React to changes with hot-reload](../how-to/hot-reload.md) — the observer contract in depth
+- [React to changes with hot-reload](../how-to/hot-reload.md): the observer contract in depth

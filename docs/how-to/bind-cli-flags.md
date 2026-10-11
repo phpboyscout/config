@@ -118,16 +118,16 @@ form, and storing that would give one garbage value rather than the two the user
 Slice flags therefore contribute a list, and `--tag a --tag b` reads back through
 `GetStringSlice` as `["a", "b"]`.
 
-**Schema validation** does see it, because it checks the resolved value's actual type. A
-field declared `int` in a schema struct fails its type check when the winning value came
-from a scalar flag or an environment variable, because both hold strings:
+**Schema validation** accepts it for the same reason. A field declared `int`, `float64`, `bool`
+or `duration` passes when the winning value is text that reads as that type, so `--port 9090`
+satisfies an `int` field. Text that does not, such as `--port abc`, fails:
 
 ```
 server.port: expected type int but got string (hint: ensure server.port has a value of type int)
 ```
 
-If a key is routinely supplied by flag or environment, either leave it out of the typed
-schema or declare it as a string. See [Validate configuration](validate-config.md).
+A field declared `string` accepts only a string. See
+[Validate configuration](validate-config.md#the-type-check-reads-text-the-way-the-accessors-do).
 
 ## Flags are never a write target
 

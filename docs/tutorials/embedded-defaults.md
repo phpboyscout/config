@@ -8,20 +8,20 @@ tags: [tutorials, layers, embed, filesystem, adapters, iofs, writes]
 
 A tool that needs a config file before it will start is a tool that fails on a fresh
 machine. This tutorial ships a **real YAML file compiled into the binary**, layers an
-operator's file over it, and — the part worth staying for — shows what happens when you try
-to write to a layer that physically cannot accept a write.
+operator's file over it, and shows what happens when you try
+to write to a layer that physically cannot accept a write. That last part is worth staying for.
 
 By the end you'll have a program that runs correctly with no configuration on disk at all,
 and that knows where a change is allowed to land.
 
-**Time:** about fifteen minutes. **You need:** Go 1.26.5 or newer. Nothing else.
+**Time:** about fifteen minutes. **You need:** Go 1.27.1 or newer. Nothing else.
 
-This assumes you've built a layered store before — [Layer defaults, a file, the environment
+This assumes you've built a layered store before. [Layer defaults, a file, the environment
 and flags](layering.md) is the one to do first.
 
 ## Why not just use `WithReaders`?
 
-You can, and for a handful of keys you should — that's what the [layering
+You can, and for a handful of keys you should, which is what the [layering
 tutorial](layering.md) does. `WithReaders` takes bytes you already have in a variable.
 
 Reach for an embedded *filesystem* when the defaults have outgrown a string literal: when
@@ -37,8 +37,8 @@ go mod init cfgembed
 go get gitlab.com/phpboyscout/go/config gitlab.com/phpboyscout/go/config-iofs
 ```
 
-`config-iofs` bridges any [`io/fs.FS`](https://pkg.go.dev/io/fs#FS) — an `embed.FS`, a zip,
-a tar, an `os.DirFS`, an `fstest.MapFS` — into the `config.FS` the store reads through. It
+`config-iofs` bridges any [`io/fs.FS`](https://pkg.go.dev/io/fs#FS) into the `config.FS` the
+store reads through. That includes an `embed.FS`, a zip, a tar, an `os.DirFS` and an `fstest.MapFS`. It
 adds **no third-party dependency**; it is a wrapper over the standard library.
 
 ## 2. Write the defaults as a real file
@@ -105,7 +105,7 @@ func main() {
 Two filesystems, two layers, one store. `configiofs.Wrap` returns a `config.FS`, and
 `WithFiles` neither knows nor cares that one of them lives inside the binary.
 
-`//go:embed defaults` must sit at package scope, immediately above the variable it fills —
+`//go:embed defaults` must sit at package scope, immediately above the variable it fills,
 not inside a function. The path in `WithFiles` is the path *within* the embedded
 filesystem, so it keeps the `defaults/` prefix.
 
@@ -222,26 +222,26 @@ shadows the embedded default. `effective: true` confirms that reading it back gi
 value you just wrote.
 
 An unmatched name is [`ErrInvalidTarget`](../reference/errors.md) rather than a silent
-fallback to routing — a pin that quietly stopped pinning would be worse than one that
+fallback to routing. A pin that quietly stopped pinning would be worse than one that
 failed.
 
 ## What you built
 
 | Layer | Lives in | Writable |
 |---|---|:---:|
-| `defaults/app.yaml` | the binary, via `embed.FS` + `config-iofs` | — (`ErrReadOnlyFS`) |
-| `config.yaml` | the working directory | ✓ |
+| `defaults/app.yaml` | the binary, via `embed.FS` + `config-iofs` | no (`ErrReadOnlyFS`) |
+| `config.yaml` | the working directory | yes |
 
 The same shape works for a zip, a tar, an `os.DirFS` or a test's `fstest.MapFS`, because all
 of them are an `io/fs.FS` and `config-iofs` takes any of them.
 
 ## Where to go next
 
-- **[Compose two stores](composing-stores.md)** — a project config and a global one, with
+- **[Compose two stores](composing-stores.md)**: a project config and a global one, with
   promotion between them.
-- **[Read configuration from an io/fs filesystem](../how-to/iofs.md)** — the adapter's own
+- **[Read configuration from an io/fs filesystem](../how-to/iofs.md)**: the adapter's own
   guide, including what it does with names and why it is read-only.
-- **[Write configuration](../how-to/write-config.md)** — routing, targets and the full write
+- **[Write configuration](../how-to/write-config.md)**: routing, targets and the full write
   surface.
-- **[How filesystem adapters work](../explanation/filesystem-adapters.md)** — the `config.FS`
+- **[How filesystem adapters work](../explanation/filesystem-adapters.md)**: the `config.FS`
   contract every adapter implements.

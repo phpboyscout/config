@@ -105,7 +105,7 @@ nav = [
 
   { About = [
     "about/index.md",
-    { "Migrating from viper" = "about/migrating.md" },
+    { "Migrating from v0.2.x" = "about/migrating.md" },
     { History = "about/history.md" },
     { Branding = "about/branding.md" },
   ] },

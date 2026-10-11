@@ -19,7 +19,7 @@ read-only codec is a first-class outcome, not a half-finished one.
 !!! tip "The code here is compiled"
     The codec below is the trivial `key=value` format the conformance suite tests itself with,
     in
-    [`conformance/conformance_test.go`](https://gitlab.com/phpboyscout/go/config/-/blob/main/conformance/conformance_test.go).
+    [`conformance/conformance_test.go`](https://gitlab.com/phpboyscout/go/config/-/blob/4d6b3ee44d20fd38bea77c29bf03a6f12a71b603/conformance/conformance_test.go).
     It is deliberately not a real format. It is the smallest thing that exercises every part of
     the seam, so it is the clearest thing to learn from. The full `Codec` and `EditingCodec`
     definitions are on

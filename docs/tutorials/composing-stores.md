@@ -11,14 +11,14 @@ shared by every project, and this project's settings, checked into the repo. Pas
 around together and remembering which wins is the kind of job that quietly grows bugs.
 
 Instead, make one store a **layer of the other**. By the end of this tutorial you'll have a
-project store that carries a global store's layers as its own — with provenance intact
-across the join — and you'll have promoted a setting up into the shared config, bounded what
+project store that carries a global store's layers as its own, with provenance intact
+across the join. You'll also have promoted a setting up into the shared config, bounded what
 the shared config is allowed to contribute, and pushed a runtime override above the lot.
 
-**Time:** about twenty minutes. **You need:** Go 1.26.5 or newer. Nothing else.
+**Time:** about twenty minutes. **You need:** Go 1.27.1 or newer. Nothing else.
 
-Do [Layer defaults, a file, the environment and flags](layering.md) first if you have not —
-this builds directly on precedence and routed writes.
+Do [Layer defaults, a file, the environment and flags](layering.md) first if you have not.
+This builds directly on precedence and routed writes.
 
 ## 1. Create a module and two config files
 
@@ -28,7 +28,7 @@ go mod init cfgcompose
 go get gitlab.com/phpboyscout/go/config
 ```
 
-`global.yaml` — stand-in for `~/.config/demo/config.yaml`:
+`global.yaml` is a stand-in for `~/.config/demo/config.yaml`:
 
 ```yaml
 # The user's settings, shared by every project.
@@ -38,7 +38,7 @@ telemetry:
   enabled: false
 ```
 
-`project.yaml` — stand-in for a `.demo.yaml` in the repo:
+`project.yaml` is a stand-in for a `.demo.yaml` in the repo:
 
 ```yaml
 # This project's settings, checked into the repo.
@@ -102,8 +102,8 @@ telemetry.enabled  = false    telemetry.enabled = false (from global.yaml)
 build.target       = wasm     build.target = wasm (from project.yaml)
 ```
 
-**Provenance survives the join.** `editor` is reported as coming from `global.yaml` — the
-actual file — not from "the aggregate" or "the nested store". The inner store's layers pass
+**Provenance survives the join.** `editor` is reported as coming from `global.yaml`, the
+actual file, not from "the aggregate" or "the nested store". The inner store's layers pass
 through as a contiguous block at the position the backend was declared, each keeping its own
 source, so nothing is interleaved and nothing is anonymised.
 
@@ -113,7 +113,7 @@ aggregate contributes no layer of its own.
 ## 3. Watch an ordinary write stay local
 
 `editor` is defined only in the global file. Routing's usual rule is *edit the key where it
-already lives* — so does a write to it reach into the global config?
+already lives*, so does a write to it reach into the global config?
 
 ```go
 	p, _ := project.Plan(config.Set("editor", "helix"))
@@ -131,11 +131,11 @@ An ordinary project-scoped edit lands in the project's own file, and creates the
 
 That asymmetry is the whole design. If routing could reach inside, a mundane "set my editor
 for this project" would walk past the project's file and rewrite the shared config every
-other project inherits — the destructive version of a helpful default.
+other project inherits. It would be the destructive version of a helpful default.
 
 ## 4. Promote a setting deliberately
 
-Promotion — moving a setting *up* into the shared config — has to be asked for by name:
+Promotion, which means moving a setting *up* into the shared config, has to be asked for by name:
 
 ```go
 	promote := config.Set("theme", "solarized", config.To("global.yaml"))
@@ -172,13 +172,13 @@ telemetry:
 ```
 
 But `effective: false` is the honest part. The project file still sets `theme: light`, so
-reading `theme` back in *this* project still gives you `light` — the promotion will show up
+reading `theme` back in *this* project still gives you `light`. The promotion will show up
 in every other project, and not in this one until the local override is removed. Tell the
 user that, rather than letting them wonder why the setting they just saved did nothing.
 
 **`NestedPromotable` is what made this possible at all.** Without it a nested store is
 strictly read-only and even a named write cannot reach in. That is the safe default and the
-usual case — a shared organisational base, a team standard nobody should edit by accident.
+usual case: a shared organisational base, or a team standard nobody should edit by accident.
 
 ## 5. Bound what the inner store may contribute
 
@@ -199,18 +199,19 @@ telemetry.enabled  = <nil>    telemetry.enabled is not set
 build.target       = wasm     build.target = wasm (from project.yaml)
 ```
 
-`telemetry.enabled` is not merely hidden from reads — it **is not set**, as far as this store
+`telemetry.enabled` is not merely hidden from reads. It **is not set**, as far as this store
 is concerned, so `Has` is false and a write would not be accepted for it either.
 
 `Allow` is the other half: with no `Allow`, every key is permitted unless a `Deny` excludes
 it; with one, only matching keys get through. **`Deny` beats `Allow`** where they overlap,
 so an `Allow` can never re-expose something explicitly denied. `Filtered` wraps any backend,
-not just a nested store — the same call bounds a Consul prefix a broad token can read.
+not just a nested store, and the same call bounds a Consul prefix a broad token can read.
 
 ## 6. Push a runtime override above everything
 
-Some values are decided while the program is running — a `--set` flag, a value fetched at
-startup, a test fixture. `AddLayer` adds one above every layer declared at construction:
+Some values are decided while the program is running: a `--set` flag, a value fetched at
+startup, a test fixture. `AddLayer` adds one above every layer declared at construction.
+Add `"strings"` to the imports, then:
 
 ```go
 	if err := project.AddLayer(ctx, "cli-override", strings.NewReader("theme: high-contrast\n")); err != nil {
@@ -222,7 +223,7 @@ startup, a test fixture. `AddLayer` adds one above every layer declared at const
 theme  = high-contrast  theme = high-contrast (from override:cli-override); also defined in global.yaml, project.yaml
 ```
 
-An override layer is read-only — there is nowhere to persist it — and it **survives
+An override layer is read-only, because there is nowhere to persist it, and it **survives
 reloads**, because it is re-read each time rather than merged in once. If its content will
 not parse it is refused and withdrawn, leaving the last-known-good configuration live.
 
@@ -240,7 +241,7 @@ global.yaml             ← via Nested + Filtered, promotable by name only
 
 | Call | What it does |
 |---|---|
-| `config.Nested(s, id)` | inner store's layers become layers of the outer one, read-only |
+| `config.Nested(s, id, opts...)` | inner store's layers become layers of the outer one, read-only |
 | `config.NestedPromotable` | a **named** write may reach in; routing still may not |
 | `config.Filtered(b, ...)` | bounds which keys a backend contributes, and accepts writes for |
 | `config.To("name")` | pins one change to a named layer |
@@ -248,10 +249,10 @@ global.yaml             ← via Nested + Filtered, promotable by name only
 
 ## Where to go next
 
-- **[Compose stores](../how-to/compose-stores.md)** — the same mechanics as a task guide,
+- **[Compose stores](../how-to/compose-stores.md)**: the same mechanics as a task guide,
   including cycles and reload semantics.
-- **[Filter a backend](../how-to/filter-a-backend.md)** — pattern syntax and what filtering
+- **[Filter a backend](../how-to/filter-a-backend.md)**: pattern syntax and what filtering
   does to writes.
-- **[Write configuration](../how-to/write-config.md)** — routing and targets in full.
-- **[The Store](../explanation/the-store.md)** — why one component owns all configuration
+- **[Write configuration](../how-to/write-config.md)**: routing and targets in full.
+- **[The Store](../explanation/the-store.md)**: why one component owns all configuration
   I/O, which is what makes composition safe.

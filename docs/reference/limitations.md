@@ -1,6 +1,6 @@
 ---
 title: Limitations
-description: What config does not do — the unsupported combinations, the deliberate omissions, and the guarantees that stop short of where people expect.
+description: What config does not do, covering the unsupported combinations, the deliberate omissions, and the guarantees that stop short of where people expect.
 tags: [reference, limitations, unsupported]
 ---
 
@@ -18,8 +18,8 @@ bug you have not hit yet.
 
 A write spanning several sources is prepared everywhere, verified everywhere, then committed
 everywhere. That narrows the window in which a half-applied set can be observed to the
-duration of the renames, and everything likely to fail has already happened by then — but it
-is **not** a transaction. A commit that fails partway and cannot be rolled back returns
+duration of the renames, and everything likely to fail has already happened by then. It
+is still **not** a transaction. A commit that fails partway and cannot be rolled back returns
 [`ErrPartialCommit`](errors.md#errpartialcommit) naming what is in which state.
 
 Real transactionality needs a journal, which is not built. *Deliberate, for now.*
@@ -47,7 +47,7 @@ Routing skips all of them. A store built only from these returns
 ### Setting a whole map replaces the subtree
 
 Comments, anchors and block styles *within* the replaced subtree may not survive. That is
-what supplying a whole map asserts — deep-merging it instead would make "this subtree is now
+what supplying a whole map asserts, and deep-merging it instead would make "this subtree is now
 exactly this" inexpressible. If you know what changed, issue targeted `Set` and `Remove`
 calls instead. *Deliberate;* see [What survives a write](../explanation/write-fidelity.md#why-replacing-a-map-is-different).
 
@@ -70,10 +70,12 @@ separately.*
 
 ### Some documents are refused before you can write to them
 
-A multi-line flow collection with interior comments cannot be round-tripped safely, so
-`NewStore` refuses the source with [`ErrBackendUnsafe`](errors.md#errbackendunsafe) rather
-than letting you discover it at commit time. *Deliberate* — failing at load is the kinder
-failure.
+A source that parses as YAML but means nothing under its schema cannot be edited safely: an
+alias that names no anchor, or a mapping with two keys that are the same value spelt
+differently. `NewStore` refuses the source with
+[`ErrBackendUnsafe`](errors.md#errbackendunsafe), listing each problem with its line and
+column, rather than letting you discover it at commit time. *Deliberate.* Failing at load is
+the kinder failure.
 
 ## Reading
 
@@ -100,7 +102,7 @@ key; nothing else can reach it. *A known gap;* see
 ### List elements cannot be addressed by index
 
 There is no `servers.0.host`. Read the sequence and index it in Go, or decode it into a
-struct. *Deliberate* — paths address mappings.
+struct. *Deliberate.* Paths address mappings.
 
 ### Sequences replace; they never merge
 
@@ -112,7 +114,7 @@ de-duplicate, and no per-index override. *Deliberate;* see
 
 A `View` is pinned to one snapshot, so a sequence of reads through it cannot straddle a
 reload. Two *separate* `store.View()` calls can. Use `Store.With` for a block of reads that
-must agree with each other. *Deliberate* — a handle held indefinitely would serve values
+must agree with each other. *Deliberate.* A handle held indefinitely would serve values
 that quietly grew arbitrarily old.
 
 ## Validation
@@ -126,7 +128,7 @@ parsed and discarded without warning. `enum` and `required` are the whole vocabu
 ### `required` cannot mean non-zero
 
 A `bool` set to `false` and an `int` set to `0` are configured values and satisfy `required`.
-Only an absent key — or a present-but-empty string — fails. *Deliberate;* judging by
+Only an absent key, or a present-but-empty string, fails. *Deliberate;* judging by
 zero-ness would reject an operator deliberately turning something off.
 
 ### The type model is coarse
@@ -136,17 +138,18 @@ Unsigned integers, slices, maps, `time.Time` and structs all map to the schema t
 check. Use `int` and leave collections out of the validated struct. *A known gap;* see
 [Struct tags](struct-tags.md#what-the-type-check-actually-compares).
 
-### Values from the environment or a flag are strings, and validation says so
+### A `string` field is strict about its type
 
-An `int` field routinely supplied by `MYTOOL_SERVER_PORT` fails with `expected type int but
-got string`. Reading is unaffected; validation is not a reading path. Either leave the key
-out of the typed schema or declare it a `string`. *Deliberate* — the alternative is a schema
-that cannot tell `8080` from `"8080"` when it matters.
+The `int`, `float64`, `bool` and `duration` types accept text that reads as the declared type,
+so `MYTOOL_SERVER_PORT=8080` satisfies an `int` field. A `string` field accepts only a string,
+so a YAML value written as the bare number `1` fails with `expected type string but got int`.
+Quote the value, or declare the field with the type the value really has. *Deliberate.* A
+schema declaring `string` means the value is textual, not that it could be rendered as text.
 
 ### `default:` never sets anything
 
 The tag is recorded on the field schema and used for nothing but documentation. Defaults
-belong in exactly one place — a `WithReaders` layer — because a second source of defaults
+belong in exactly one place, a `WithReaders` layer, because a second source of defaults
 will drift from the first. *Deliberate.*
 
 ### `description:` is recorded and unused
@@ -163,23 +166,24 @@ such a field out of the validated struct instead. *A known gap;* see
 
 ## Hot-reload
 
-### Only file-backed and watchable backends are covered
+### Only watchable backends are covered
 
+`Store.Watch` covers every `WatchableBackend`: files and the remote adapters alike.
 Environment variables and flags do not change under a running process, and an in-memory
-source is changed by the code that owns it. `Store.Reload` re-reads everything; `Store.Watch`
-covers what can report its own changes. *Deliberate.*
+source is changed by the code that owns it, so none of those is watched. `Store.Reload`
+re-reads everything. *Deliberate.*
 
 ### Settling does not make a multi-file change atomic
 
 Writes spaced further apart than the settle window are seen as separate changes. The
-guarantee belongs to whoever writes the files. *Deliberate* — timing is the last resort,
+guarantee belongs to whoever writes the files. *Deliberate.* Timing is the last resort,
 used only where the filesystem genuinely offers no other information.
 
 ### You cannot write configuration from inside an observer
 
 `Apply`, `AddLayer` and `Reload` all return
 [`ErrWriteFromObserver`](errors.md#errwritefromobserver) when called from an observer
-callback. Record what is needed, return, and write from elsewhere. *Deliberate* — the
+callback. Record what is needed, return, and write from elsewhere. *Deliberate.* The
 cascade has no natural end, and the store cannot break it without either dropping
 notifications or silently reordering what changed when.
 
@@ -192,13 +196,13 @@ delivery. *Deliberate.*
 
 ### A store appears at most once in a graph
 
-Not just "no cycles" — two copies of one store would contribute their layers at two
+Not just "no cycles": two copies of one store would contribute their layers at two
 precedences, so every value would be shadowed by a copy of itself.
 [`ErrCyclicStore`](errors.md#errcyclicstore) at construction. *Deliberate.*
 
 ### An outer store does not see writes made directly to the inner one
 
-Not until it next reloads — on the next tick when watching, or on an explicit
+Not until it next reloads, which is the next change report when watching or an explicit
 `Store.Reload`. *Deliberate.*
 
 ### A backend cannot be removed after construction
@@ -220,19 +224,22 @@ visibility and write routing.
 put a comment. Do not assume a round-trip through a parameter store keeps anything but the
 value. *Inherent.*
 
-### Only YAML is built in
+### The core's only codec is YAML
 
-Every other format — JSON, TOML, HCL, XML, dotenv, INI, Java properties — is a separate
-adapter module, and so is every filesystem beyond local disk and every remote backend. That
-is what keeps a consumer reading TOML from compiling an XML parser. *Deliberate;* see
+The core parses and edits YAML. Because YAML 1.2 is a superset of JSON, it also reads a JSON
+document unaided and edits or removes an existing key in place. Adding a new key to a JSON
+file writes YAML flow style, which is no longer valid JSON, and JSON Lines is refused (see
+[JSON](../how-to/json.md)). `config-json` is the route for both. Every other format is a
+separate adapter module: TOML, HCL, XML, dotenv, INI and Java properties. So is every filesystem beyond local disk and every remote backend. That is what keeps a consumer
+reading TOML from compiling an XML parser. *Deliberate;* see
 [the adapter ecosystem](../explanation/adapters.md).
 
 ## Related
 
-- [Errors](errors.md) — several of these limits are enforced by a named error
-- [The Store](../explanation/the-store.md#what-this-design-does-not-give-you) — the
+- [Errors](errors.md): several of these limits are enforced by a named error
+- [The Store](../explanation/the-store.md#what-this-design-does-not-give-you): the
   architectural version of this list
-- [Hot-reload safety](../explanation/hot-reload-safety.md#what-this-does-not-give-you) — the
+- [Hot-reload safety](../explanation/hot-reload-safety.md#what-this-does-not-give-you): the
   reload-specific version
-- [Precedence & merge model](../explanation/precedence-and-merge.md#what-the-model-deliberately-does-not-do)
-  — the merge-specific version
+- [Precedence & merge model](../explanation/precedence-and-merge.md#what-the-model-deliberately-does-not-do):
+  the merge-specific version

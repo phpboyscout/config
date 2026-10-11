@@ -1,6 +1,6 @@
 ---
 title: Layer defaults, a file, the environment and flags
-description: Build the full precedence chain a real service uses — compiled-in defaults under a config file, under environment variables, under command-line flags — and see which layer won every value.
+description: Build the full precedence chain a real service uses, from compiled-in defaults through a config file and environment variables to command-line flags, and see which layer won every value.
 tags: [tutorials, layers, precedence, provenance, flags, environment]
 ---
 
@@ -9,12 +9,12 @@ tags: [tutorials, layers, precedence, provenance, flags, environment]
 Most services resolve configuration from four places at once: defaults compiled into the
 binary, a file an operator edits, environment variables the platform injects, and flags
 someone typed. By the end of this tutorial you'll have a program with all four, and you'll
-be able to ask it which one supplied any given value — and why.
+be able to ask it which one supplied any given value, and why.
 
 You'll also write a value back, and watch the store refuse to put it somewhere useless.
 
-**Time:** about twenty minutes. **You need:** Go 1.26.5 or newer. Nothing else — no
-services, no network after the first `go get`.
+**Time:** about twenty minutes. **You need:** Go 1.27.1 or newer. Nothing else: no
+services, and no network after the first `go get`.
 
 If you have not built a store before, do [Getting started](getting-started.md) first. This
 tutorial assumes you have seen `NewStore`, `View` and `Explain` once.
@@ -33,7 +33,7 @@ beyond the module itself.
 ## 2. Compile the defaults into the binary
 
 A default is not a config file. It ships inside the binary, so the program starts correctly
-on a machine with no configuration at all — and it can never be written to, because there is
+on a machine with no configuration at all, and it can never be written to, because there is
 nowhere to persist it.
 
 Create `main.go`:
@@ -92,7 +92,7 @@ you where to look; `reader1` does not, and provenance is most of what this modul
 
 ## 3. Put a config file over the top
 
-Create `config.yaml` next to `main.go`. Note the comments — step 7 comes back to them.
+Create `config.yaml` next to `main.go`. Note the comments, because step 7 comes back to them.
 
 ```yaml
 # Deployment settings for the demo service.
@@ -132,7 +132,7 @@ server.timeout   = 30         server.timeout = 30 (from default:embedded:default
 log.level        = debug      log.level = debug (from config.yaml); also defined in default:embedded:defaults.yaml
 ```
 
-**Precedence is the order you added the sources — later wins.** There is no ranking table to
+**Precedence is the order you added the sources, and the later one wins.** There is no ranking table to
 learn and no priority number to set. The file outranks the defaults because
 `WithFiles` came after `WithReaders`.
 
@@ -160,8 +160,8 @@ log.level        = debug      log.level = debug (from config.yaml); also defined
 underscores become dots.
 
 **The prefix is required, and it is a security control rather than a nicety.** Without one,
-any variable in the process environment — `PATH`, `HOME`, a secret injected for something
-else entirely — would be a candidate configuration key. The full rules, including what
+any variable in the process environment, such as `PATH`, `HOME` or a secret injected for
+something else entirely, would be a candidate configuration key. The full rules, including what
 happens when an underscore is ambiguous, are in
 [Environment variables](../reference/environment-variables.md).
 
@@ -198,7 +198,7 @@ log.level        = debug      log.level = debug (from config.yaml); also defined
 ```
 
 One value, four layers that could have supplied it, and the highest one won. `--server-port`
-became `server.port` — dashes become dots, the same way underscores do for the environment.
+became `server.port`: dashes become dots, the same way underscores do for the environment.
 Use `BindFlag` when a flag's name and its key genuinely differ; see
 [Bind CLI flags](../how-to/bind-cli-flags.md).
 
@@ -218,7 +218,7 @@ log.level        = warn       log.level = warn (from flag:--log-level); also def
 ```
 
 `server.port` is 9090, not 0. **Only flags actually set on the command line join the
-layer** — the store asks pflag which flags were visited, not what every flag's value is.
+layer.** The store asks pflag which flags were visited, not what every flag's value is.
 Without that, every unset flag's zero value would sit at the top of the stack and bury every
 layer beneath it, which would make the flags layer useless.
 
@@ -251,7 +251,7 @@ is the field the next step turns on.
 
 ## 7. Write a value back, and watch routing skip what it cannot write
 
-`server.timeout` exists **only** in the compiled-in defaults — a layer with nowhere to
+`server.timeout` exists **only** in the compiled-in defaults, a layer with nowhere to
 persist to. Ask where a change to it would go, before making it:
 
 ```go
@@ -294,8 +294,20 @@ it belongs to. The file was edited, not regenerated from a parsed tree.
 
 ## 8. Write a value that a higher layer still shadows
 
-Reset `config.yaml`'s `timeout` if you like, then write `server.port` while the environment
-is setting it too:
+Now plan a write to `server.port`, and run the program with the environment setting it too:
+
+```go
+	plan, err = store.Plan(config.Set("server.port", 5555))
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, op := range plan.Operations {
+		fmt.Printf("plan: %s -> %s (effective: %v)\n", op.Change.Path, op.Target, op.Effective())
+		if !op.Effective() {
+			fmt.Printf("      shadowed by %s\n", op.ShadowedBy)
+		}
+	}
+```
 
 ```bash
 CFGDEMO_SERVER_PORT=7000 go run .
@@ -306,15 +318,9 @@ plan: server.port -> config.yaml (effective: false)
       shadowed by [env:CFGDEMO_SERVER_PORT]
 ```
 
-The write is **not** refused — `config.yaml` really does get `port: 5555` — but the plan
-tells you, before you commit to it, that reading the key back will still give you 7000. That
-is `op.Effective()` returning false and `op.ShadowedBy` naming who is winning:
-
-```go
-	if !op.Effective() {
-		fmt.Printf("      shadowed by %s\n", op.ShadowedBy)
-	}
-```
+The write would **not** be refused (`config.yaml` would get `port: 5555`), but the plan
+tells you, before you commit to it, that reading the key back will still give you 7000.
+That is `op.Effective()` returning false and `op.ShadowedBy` naming who is winning.
 
 This is the case that silently confuses people in other configuration libraries: the setting
 was saved, the file is correct, and the running process ignores it. Here you can check
@@ -326,19 +332,19 @@ Four layers, one merge, and a value you can trace to the layer that supplied it:
 
 | Layer | Added with | Writable | Typical source |
 |---|---|:---:|---|
-| Defaults | `WithReaders` | — | compiled into the binary |
-| File | `WithFiles` | ✓ | an operator edits it |
-| Environment | `WithEnv` | — | the platform injects it |
-| Flags | `WithFlags` | — | someone typed it |
+| Defaults | `WithReaders` | no | compiled into the binary |
+| File | `WithFiles` | yes | an operator edits it |
+| Environment | `WithEnv` | no | the platform injects it |
+| Flags | `WithFlags` | no | someone typed it |
 
 Only one of the four is writable, which is why routing has anything to decide.
 
 ## Where to go next
 
-- **[Configure a service from Consul](consul.md)** — the same store with a remote layer,
+- **[Configure a service from Consul](consul.md)**: the same store with a remote layer,
   which behaves exactly like the four above.
-- **[Ship defaults inside the binary](embedded-defaults.md)** — the defaults layer as a real
+- **[Ship defaults inside the binary](embedded-defaults.md)**: the defaults layer as a real
   embedded file, parsed by the same code path as a file on disk.
-- **[Load and merge](../how-to/load-and-merge.md)** — every source option, as a reference.
-- **[Precedence and merge](../explanation/precedence-and-merge.md)** — why per-key merging
+- **[Load and merge](../how-to/load-and-merge.md)**: every source option, as a reference.
+- **[Precedence and merge](../explanation/precedence-and-merge.md)**: why per-key merging
   works the way it does, and what happens to lists and maps.

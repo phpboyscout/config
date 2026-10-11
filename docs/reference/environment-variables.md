@@ -1,6 +1,6 @@
 ---
 title: Environment variables
-description: How a variable name becomes a configuration key — the prefix rule, the underscore-to-dot mapping, ambiguity, and what type the value arrives as.
+description: How a variable name becomes a configuration key, covering the prefix rule, the underscore-to-dot mapping, ambiguity, and what type the value arrives as.
 tags: [reference, environment, env]
 ---
 
@@ -13,7 +13,7 @@ once it arrives.
 ## What the prefix does, and why it is required
 
 The prefix is a security control, not tidiness. Without one, any environment variable
-matching a configuration key could silently change behaviour — on a shared CI runner, a
+matching a configuration key could silently change behaviour. On a shared CI runner, a
 container host or a multi-tenant box, an unrelated process exporting `LOG_LEVEL` would
 reconfigure every tool running there. With a prefix, unprefixed variables cannot reach
 configuration at all.
@@ -26,7 +26,7 @@ The prefix you pass is normalised before use:
 | `"MYTOOL"` | `MYTOOL_` | Unchanged. |
 | `"mytool_"` | `MYTOOL_` | **One** trailing underscore is trimmed. |
 | `"mytool__"` | `MYTOOL__` | Only one underscore is trimmed, so this scans a double underscore. Almost certainly a typo. |
-| `""` | *(none)* | The layer contributes **nothing at all** — it does not fall back to scanning the whole environment. |
+| `""` | *(none)* | The layer contributes **nothing at all**. It does not fall back to scanning the whole environment. |
 
 Pass the prefix without a trailing underscore. A variable named exactly `MYTOOL_`, with
 nothing after the separator, is skipped.
@@ -34,15 +34,15 @@ nothing after the separator, is skipped.
 ## How a variable name becomes a key
 
 For each variable whose name starts with `PREFIX_`, the prefix and separator are stripped
-and the remainder — the *suffix* — is resolved against the keys the layers **below** this one
+and the remainder (the *suffix*) is resolved against the keys the layers **below** this one
 already define:
 
-1. **Exactly one known key spells itself as this suffix** — that key is used. A key spells
+1. **Exactly one known key spells itself as this suffix.** That key is used. A key spells
    itself by upper-casing it and replacing every `.` with `_`, so `server.port` spells
    itself `SERVER_PORT`.
-2. **No known key matches** — the suffix is lower-cased and *every* underscore becomes a
+2. **No known key matches.** The suffix is lower-cased and *every* underscore becomes a
    dot. `MYTOOL_LOG_LEVEL` becomes `log.level`.
-3. **More than one known key matches** — the variable cannot say which was meant, and the
+3. **More than one known key matches.** The variable cannot say which was meant, and the
    load fails with [`ErrAmbiguousEnvKey`](errors.md#errambiguousenvkey) naming the
    candidates.
 
@@ -67,8 +67,8 @@ With no such file, the same variable becomes `a.b.c`.
 ### Ordering matters, because "below" is literal
 
 "Known keys" means the leaf keys of the layers added **before** the environment layer. Add
-`WithEnv` after your files, which is what you want anyway — environment variables are
-expected to override what is on disk, and precedence follows the order backends are added.
+`WithEnv` after your files, which is what you want anyway, because environment variables are
+expected to override what is on disk and precedence follows the order backends are added.
 
 Add it first and there is nothing below it, so every variable falls through to rule 2 and
 every underscore becomes a dot.
@@ -103,7 +103,7 @@ a file.
 |---|---|
 | Layer per variable | One. Ten matching variables contribute ten layers, all at the environment backend's position in the precedence order. |
 | `Source.Kind` | `SourceEnv` |
-| `Source.Name` | The full variable name, including the prefix — `MYTOOL_SERVER_PORT`. |
+| `Source.Name` | The full variable name, including the prefix, such as `MYTOOL_SERVER_PORT`. |
 | Rendered in provenance as | `env:MYTOOL_SERVER_PORT` |
 | `Source.Writable` | `false` |
 | Value type | **Always a string.** The environment holds text and nothing else. |
@@ -114,9 +114,10 @@ winner is the same on every run. The process environment block itself has no def
 
 ## Consequences of the value always being a string
 
-**Reads coerce; validation does not.** `GetInt("server.port")` reads `"9090"` as `9090`. A
-schema field declared `int` and supplied by an environment variable fails its type check
-with `expected type int but got string` — see
+**Reads coerce, and so does most of validation.** `GetInt("server.port")` reads `"9090"` as
+`9090`, and a schema field declared `int` accepts the same text. Text that does not read as the
+declared type, such as `abc` for an `int`, fails with `expected type int but got string`. A
+field declared `string` accepts only a string. See
 [Struct tags](struct-tags.md#what-the-type-check-actually-compares).
 
 **Booleans follow the reader's rules.** `GetBool` accepts `1`, `t`, `T`, `TRUE`, `true`,
@@ -124,7 +125,7 @@ with `expected type int but got string` — see
 
 **An empty variable is an empty string, not an absent key.** `MYTOOL_LOG_LEVEL=` makes
 `log.level` present with the value `""`. `View.Has` reports it as set, and a
-`validate:"required"` string rejects it — an empty string is the one case `required` treats
+`validate:"required"` string rejects it. An empty string is the one case `required` treats
 as missing, because YAML writes an absent value the same way.
 
 ## What the environment layer cannot do
@@ -145,7 +146,7 @@ as missing, because YAML writes an absent value the same way.
 ## Testing without touching the process environment
 
 Process environment is global state, so mutating it makes parallel tests interfere.
-`WithEnviron` supplies the variables instead — it takes a function returning entries in
+`WithEnviron` supplies the variables instead. It takes a function returning entries in
 `NAME=value` form, exactly as `os.Environ` does:
 
 ```go
@@ -159,9 +160,9 @@ store, err := config.NewStore(ctx,
 
 ## Related
 
-- [Load & merge configuration](../how-to/load-and-merge.md#read-the-environment) — the task
+- [Load & merge configuration](../how-to/load-and-merge.md#read-the-environment): the task
   guide
-- [Precedence & merge model](../explanation/precedence-and-merge.md#the-environment-layer-resolves-names-against-the-keys-beneath-it)
-  — why resolution against lower layers exists
-- [Keys and paths](keys-and-paths.md) — the dotted-path grammar a variable maps onto
-- [Errors](errors.md#errambiguousenvkey) — the ambiguity failure
+- [Precedence & merge model](../explanation/precedence-and-merge.md#the-environment-layer-resolves-names-against-the-keys-beneath-it):
+  why resolution against lower layers exists
+- [Keys and paths](keys-and-paths.md): the dotted-path grammar a variable maps onto
+- [Errors](errors.md#errambiguousenvkey): the ambiguity failure

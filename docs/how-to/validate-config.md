@@ -298,21 +298,23 @@ A rejected write modifies nothing. Violations are matched on key plus message, s
 that swaps one failure for a different one on the same key counts as introducing something
 new, which it has.
 
-## The type check sees the layer's own type
+## The type check reads text the way the accessors do
 
-A schema field's `Type` is compared against the resolved value's actual Go type. Values
-that come from a file are typed by the YAML parser; values that come from an environment
-variable or a changed flag are **strings**, because that is all those layers hold.
+Values that come from a file are typed by the YAML parser; values that come from an
+environment variable or a changed flag are **strings**, because that is all those layers hold.
 
-So an `int` field supplied by `MYTOOL_SERVER_PORT` or `--port` fails its type check:
+For `int`, `float64`, `bool` and `duration` fields the check uses the same conversions as the
+typed accessors, so an `int` field supplied by `MYTOOL_SERVER_PORT=8080` or `--port 8080`
+passes: `"8080"` reads as an integer. Text that does not read as the declared type fails:
 
 ```
 server.port: expected type int but got string
 ```
 
-The reading path is unaffected, since `GetInt` coerces, but validation is not a reading path.
-If a key is routinely supplied by the environment or a flag, either leave it out of the
-typed schema or declare it as a string.
+A `string` field is the strict one. It accepts only a string, so a YAML value written as the
+bare number `1` fails with `expected type string but got int`. Quote the value in the file, or
+declare the field with the type the value really has. See
+[Struct tags](../reference/struct-tags.md#what-the-type-check-actually-compares) for the full table.
 
 The schema's type model is also coarser than Go's. It knows `string`, `int`, `float64`,
 `bool` and `duration`, and maps **everything else to `string`**, including unsigned
