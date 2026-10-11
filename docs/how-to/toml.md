@@ -6,7 +6,7 @@ tags: [how-to, formats, toml]
 
 # Read and write TOML
 
-The core reads and writes only YAML. TOML comes from a sibling module,
+The core's own codec is YAML. TOML comes from a sibling module,
 [`config-toml`](https://gitlab.com/phpboyscout/go/config-toml), so a consumer who needs TOML
 takes it and one who does not pays nothing for it.
 
@@ -42,17 +42,18 @@ port := store.View().GetInt("server.port")    // 8080
 
 ## When you do *not* need this
 
-The core reads YAML, and YAML is the cheaper answer when **you** choose the format —
-no module, no extra dependency.
+The core reads YAML, and YAML is the cheaper answer when **you** choose the format: no module,
+no extra dependency.
 
-Reach for TOML when the file is not yours to choose: a format your users already
-write, or one a neighbouring tool in the same repo already emits.
+Reach for TOML when the file is not yours to choose, such as a format your users already write
+or one a neighbouring tool in the same repo already emits.
 
 ## Writing preserves the file
 
-Re-serialising a decoded TOML document destroys it — comments gone, sections alphabetised,
-indentation injected — the merged-view write [structure-preserving writes](../explanation/write-fidelity.md)
-exist to avoid. So a write edits the document in place. `Set("server.port", 9090)` on
+Re-serialising a decoded TOML document destroys it: comments gone, sections alphabetised,
+indentation injected. That is the merged-view write that
+[structure-preserving writes](../explanation/write-fidelity.md) exist to avoid. So a write edits
+the document in place. `Set("server.port", 9090)` on
 
 ```toml
 # app config
@@ -61,15 +62,18 @@ host = "localhost"  # dev
 port = 8080
 ```
 
-changes `port` to `9090` and leaves the comments, the `[server]` header and the key order exactly
-as they were. It works by locating the value's bytes through `go-toml/v2`'s own source ranges and
-replacing just those — the same targeted-edit approach JSON uses through `sjson` and HCL through
-`hclwrite`.
+changes `port` to `9090` and leaves the comments, the `[server]` header and the key order
+exactly as they were. It works by locating the value's bytes through `go-toml/v2`'s own source
+ranges and replacing just those, the same targeted-edit approach JSON uses through `sjson` and
+HCL through `hclwrite`. The backend reports this through `PreservesComments` in its
+`Capabilities`.
 
 Setting or removing a key, and adding a key to an existing section, the top level, or as a
-top-level dotted key, are supported. Writing into a sub-path of an inline-table value (`x = {a=1}`
-then `x.a`), or into an empty section, is refused with `config.ErrInvalidTarget` rather than
-guessed.
+top-level dotted key, are supported. Removing a key deletes its whole line, including any
+inline comment, and leaves a comment on the line above in place. Two writes are refused with
+`config.ErrInvalidTarget` rather than guessed: into a sub-path of an inline-table value (the
+key `x.a` when the file says `x = {a=1}`), and into an empty section. A `Set` can carry a string, bool, integer,
+float or `[]string`; any other value type fails with `config.ErrBackendUnsafe`.
 
 ## What it costs
 
@@ -77,11 +81,12 @@ guessed.
 |---|---|
 | Adds | [go-toml](https://github.com/pelletier/go-toml), on top of the `config` graph |
 
-The config graph plus one TOML parser (`pelletier/go-toml/v2`, with no dependencies of its own),
-asserted by an allowlist test in the module. No filesystem library: you supply the `config.FS`.
+That is the config graph plus one TOML parser (`pelletier/go-toml/v2`, with no dependencies of
+its own), asserted by an allowlist test in the module. There is no filesystem library, because
+you supply the `config.FS`.
 
 ## Related
 
-- [Support a new file format](format-adapter.md) — how an adapter like this is built and tested
-- [What survives a write](../explanation/write-fidelity.md) — the preservation contract TOML is
+- [Support a new file format](format-adapter.md): how an adapter like this is built and tested
+- [What survives a write](../explanation/write-fidelity.md): the preservation contract TOML is
   held to, the same as YAML

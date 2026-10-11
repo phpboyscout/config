@@ -41,23 +41,30 @@ if err != nil {
 }
 
 store, err := config.NewStore(ctx,
-	config.WithBackend(backend),        // the mount, lowest
-	config.WithFiles(fsys, "app.yaml"), // ordinary settings
-	config.WithEnv("MYAPP"),            // overrides
+	config.WithBackend(backend),                   // the mount, lowest
+	config.WithFiles(config.OS(), "app.yaml"),     // ordinary settings
+	config.WithEnv("MYAPP"),                       // overrides
 )
 ```
+
+`New` takes any `config.FS` that also satisfies `config.DirLister`, the optional interface
+for listing a directory. `config.OS()`, `config.Dir`, and the
+[afero](afero.md) and [billy](billy.md) wrappers all do, and [io/fs](iofs.md) does where the
+underlying filesystem can list. A filesystem that cannot returns `configfilekv.ErrNotListable`
+from `New`, rather than a layer that silently contributes nothing. A directory that does not
+exist yet contributes nothing and is not an error.
 
 ## When you do *not* need this
 
 A ConfigMap holding **one key with a whole YAML or JSON document** mounts as a single
-file, and [`WithFiles`](load-and-merge.md) already reads it — including hot reload,
+file, and [`WithFiles`](load-and-merge.md) already reads it, including hot reload,
 because the kubelet rewrites the mount in place. Consumed with `envFrom`, a ConfigMap
 is environment variables, and `WithEnv` already reads those.
 
 A ConfigMap holding **several documents**, such as `base.yaml` and `site.yaml`,
 mounts as several files, and each should be its own layer rather than one layer of
-keys. `WithFiles` takes them in precedence order, first as the base and last as the
-winner:
+keys. `WithFiles` takes any number of paths in precedence order, with the first as the
+base and the last as the winner:
 
 ```go
 store, err := config.NewStore(ctx,
@@ -72,7 +79,8 @@ store, err := config.NewStore(ctx,
 Name the files rather than listing the directory. Their order is a precedence
 decision, and taking it from whatever the directory holds would make a file added
 to the ConfigMap later change which value wins without anyone choosing that. Each
-file keeps its own provenance, so `Explain` names the one that supplied a value.
+file is its own layer with its own provenance, so `Explain` names the one that
+supplied a value.
 
 Reach for this adapter when the ConfigMap holds **many scalar keys**, which mounts as
 many files, or when you are reading a secrets directory that never had a document in
@@ -94,26 +102,26 @@ one operation**, which is what makes a ConfigMap update impossible to observe
 half-applied.
 
 List that naively and you get `..data` and a timestamped directory **alongside** the
-real keys — two configuration keys invented out of the update mechanism. This adapter
-skips dot-prefixed entries, and skips them *before* recursing, so the whole staging
-tree stays invisible rather than being read twice.
+real keys, which invents two configuration keys out of the update mechanism. This
+adapter skips dot-prefixed entries, and skips them *before* recursing, so the whole
+staging tree stays invisible rather than being read twice.
 
 !!! info "Verified, not assumed"
 
-    That layout, and the three behaviours below, are asserted against a real
-    Kubernetes cluster in the adapter's integration suite — currently k3s
-    **v1.34.9** — rather than taken from documentation. The version is recorded so
+    That layout, and the behaviours described below, are asserted against a real
+    Kubernetes cluster in the adapter's integration suite, currently k3s
+    **v1.34.9**, rather than taken from documentation. The version is recorded so
     the claim can be re-checked when it changes.
 
 ## How names become keys
 
-- **Filenames split on `.`** — `database.host` nests as `database` → `host`. A name
+- **Filenames split on `.`.** `database.host` nests as `database` then `host`. A name
   with no dot is a single top-level key.
 - **Subdirectories nest too.** A [projected
   volume](https://kubernetes.io/docs/concepts/storage/projected-volumes/) with an
   `items[].path` of `sub/key` produces a real subdirectory, so `sub/database.host`
-  becomes `sub.database.host`.
-- **An empty file is an empty value**, not an absent key — otherwise "set to empty"
+  becomes `sub.database.host`. A symlink to a directory is followed.
+- **An empty file is an empty value**, not an absent key. Otherwise "set to empty"
   and "not set" would be indistinguishable.
 
 ### Values are byte-exact
@@ -124,11 +132,26 @@ No trailing newline is trimmed unless you ask:
 configfilekv.New(config.OS(), "/etc/config", configfilekv.WithTrimTrailingNewline())
 ```
 
-All three systems write values exactly — a three-byte value stays three bytes — so a
+All three systems write values exactly, so a three-byte value stays three bytes and a
 stray newline only appears when a human created the file with `echo`. Trimming by
 default would silently alter a value that legitimately ends in whitespace, and when
 that value is a credential the result is an authentication failure with nothing to
 point at. A visible stray newline is diagnosable; a mangled secret is not.
+`WithTrimTrailingNewline` strips exactly one trailing newline, and the carriage return
+before it if there is one.
+
+### Files that hold documents
+
+By default every file is a string. If some files hold JSON or YAML, pass a codec and a
+file that decodes to a mapping becomes a subtree:
+
+```go
+configfilekv.New(config.OS(), "/etc/config", configfilekv.WithValueCodec(config.YAMLCodec{}))
+```
+
+A file that does not decode, or decodes to something other than a mapping, falls back
+to its string, so a directory that mixes documents and scalars works. Only the first
+document of a multi-document file is taken.
 
 ## Secrets directories
 
@@ -142,9 +165,10 @@ configfilekv.New(config.OS(), "/run/secrets",
 `secrets.db_password` rather than sitting at the root beside your ordinary settings.
 
 `WithSensitive` marks the layer, so the core refuses to write one of these values into
-a layer that is not itself sensitive — the same
+a layer that is not itself sensitive. It is the same
 [`ErrSensitiveLeak`](../explanation/backends.md) protection a secrets manager gets,
-over a local directory.
+over a local directory. Leave it off for an ordinary ConfigMap, where it would refuse
+legitimate writes to the file beneath it.
 
 ## Writing
 
@@ -158,26 +182,38 @@ configfilekv.New(config.OS(), "/var/lib/myapp/config", configfilekv.WithWritable
 
 !!! warning "What writing cannot promise"
 
-    - **Not atomic across keys.** Three keys is three file writes. Each is atomic in
-      itself via write-then-rename, and rollback undoes a partial batch best-effort —
-      but there is no `..data` trick available to a general directory. That is the
-      kubelet's mechanism, not a filesystem primitive.
+    - **Not atomic across keys, or within one.** Three keys is three file writes, and
+      each goes straight to the filesystem's `WriteFile` with no staging rename. Rollback
+      undoes a partial batch best-effort, restoring the old value or removing a file
+      that did not exist before. There is no `..data` trick available to a general
+      directory. That is the kubelet's mechanism, not a filesystem primitive.
     - **Conflict detection compares content**, because a file has no version. It
-      catches another writer, which is the case worth catching, but cannot tell
-      "changed and changed back".
-    - **A value a single file cannot hold is refused.** A map has no one-file
+      compares the whole directory against what the last load saw, so a change to a
+      sibling key counts as a conflict, as does a key gained or lost. It catches
+      another writer, which is the case worth catching, but cannot tell "changed and
+      changed back".
+    - **A value a single file cannot hold is refused** with
+      `configfilekv.ErrUnwritableValue`. A map or a slice has no one-file
       representation, and inventing one would invent a format nothing else in the
       directory agrees on.
 
 New files are `0600`, because a writable directory of single-value files may well hold
 credentials and the looser default fails silently. `WithFileMode` widens it. The
-directory itself is created on the first write, not at construction.
+directory itself is created on the first write, not at construction. With `WithPrefix`
+set, a write to a path outside the prefix is refused with `config.ErrInvalidTarget`.
 
 ## Hot reload
 
-The adapter polls the directory — one `Stat` per entry, no file reads — and reports a
-possible change when a name, size or modification time moves. `WithPollInterval`
-overrides the 30-second default.
+The adapter polls the directory, recursing into subdirectories. It makes one `Stat` per
+entry and reads no files, and it reports a possible change when a name, size or
+modification time moves. `configfilekv.WithPollInterval` overrides the 30-second default,
+and an interval you pass to `Watch` with `config.WithPollInterval` overrides both.
+
+The adapter only reports that something may have changed. The Store then waits for a
+settle window (250ms by default, bounded at four windows) so a burst of writes becomes
+one reload, and compares the values before it notifies anyone. A spurious wake costs one
+reload that tells nobody. [React to changes with hot-reload](hot-reload.md) covers the
+options.
 
 Two things worth knowing:
 
@@ -195,15 +231,15 @@ Two things worth knowing:
 | | |
 |---|---|
 | Adds | **nothing** beyond the `config` graph, and a test fails if that changes |
-| Requires | the `config` version named in this module's `go.mod` — `go get` brings it |
-| Capability since | `config` **v0.12.0**, the release adding `config.DirLister` — the optional interface needed to enumerate a directory at all |
+| Requires | the `config` version named in this module's `go.mod`, which `go get` brings |
+| Capability since | `config` **v0.12.0**, the release adding `config.DirLister`, the optional interface needed to enumerate a directory at all |
 
-That zero is the point. The alternative — a Kubernetes API client to read a ConfigMap
-the pod has already mounted — costs the whole Kubernetes client, plus RBAC on configmaps and a service
-account, and only works in-cluster.
+That zero is the point. The alternative is a Kubernetes API client to read a ConfigMap
+the pod has already mounted. That costs the whole Kubernetes client, plus RBAC on
+configmaps and a service account, and only works in-cluster.
 
 ## Related
 
-- [Bound what a backend contributes](filter-a-backend.md) — expose only part of a directory
-- [Keep tokens in the OS keychain](keychain.md) — the other local, sensitive backend
-- [The adapter ecosystem](../explanation/adapters.md) — every adapter, status and roadmap
+- [Bound what a backend contributes](filter-a-backend.md): expose only part of a directory
+- [Keep tokens in the OS keychain](keychain.md): the other local, sensitive backend
+- [The adapter ecosystem](../explanation/adapters.md): every adapter, status and roadmap

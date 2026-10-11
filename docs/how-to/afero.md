@@ -28,9 +28,9 @@ store, err := config.NewStore(ctx,
 )
 ```
 
-`Wrap` is the whole API.
+`Wrap` is the whole API. The layer reads and writes through the wrapped filesystem.
 
-## You probably do not need it
+## When you do *not* need this
 
 Two implementations ship with `config`, and between them they cover most cases:
 
@@ -40,32 +40,28 @@ Two implementations ship with `config`, and between them they cover most cases:
 | a directory nothing can escape | `config.Dir(path)` |
 | a throwaway directory in a test | `config.Dir(t.TempDir())` |
 
-## When you do *not* need this
-
-That last row is worth stating plainly, because reaching for an in-memory filesystem in a test
-is the habit it replaces. `config.Dir(t.TempDir())` needs no dependency, gives real file
-semantics including watching, and exercises the same code path production does.
+The last row replaces the habit of reaching for an in-memory filesystem in a test.
+`config.Dir(t.TempDir())` needs no dependency, gives real file semantics including watching,
+and exercises the same code path production does.
 
 Reach for `config-afero` when something upstream produced an `afero.Fs` and you have to pass it
-through — a tool built on afero, a copy-on-write overlay, a base-path root over a virtual
+through: a tool built on afero, a copy-on-write overlay, a base-path root over a virtual
 worktree.
 
-## Why it is a module rather than twenty lines
+## Which capabilities the wrapper claims
 
-It very nearly *is* twenty lines: six methods map onto afero almost directly. The part worth not
-rediscovering is which **optional** interfaces the adapter may claim.
+Six methods map onto afero almost directly. The part worth not rediscovering is which
+**optional** interfaces the adapter may claim.
 
 `config` decides whether native filesystem notification can work by asking whether the
-filesystem satisfies `config.RealPather`. An adapter implementing that method unconditionally —
-returning `false` for an in-memory filesystem rather than not having the method — satisfies the
-interface for *every* filesystem, so `fsnotify` is selected and the absence of anything to watch
-is discovered one path at a time instead of up front. It compiles, it looks right, and it
-quietly costs native notification with nothing to report it.
+filesystem satisfies `config.RealPather`. An adapter that implements that method for every
+filesystem, returning `false` for an in-memory one, still satisfies the interface. `config` then
+selects `fsnotify` and finds out that there is nothing to watch one path at a time instead of up
+front. It compiles, it looks right, and it quietly costs native notification with nothing to
+report it.
 
 So `Wrap` returns one of four concrete types, claiming `RealPather` and `LinkReader`
-independently and only where the filesystem can honour each. All four satisfy
-`config.DirLister`, since every afero filesystem can list a directory, so
-[`config-filekv`](filekv.md) can read a mount over an `afero.MemMapFs` in a test:
+independently and only where the filesystem can honour each:
 
 | Filesystem | Real paths | Symlinks | Result |
 |---|---|---|---|
@@ -74,11 +70,18 @@ independently and only where the filesystem can honour each. All four satisfy
 | `afero.CopyOnWriteFs` | no | yes | polling, writes follow links |
 | `afero.MemMapFs` | no | no | polling, paths used as given |
 
-The copy-on-write row shows why the two capabilities are claimed separately rather than
-together: it can read links through its base layer but has no path the operating system can
-watch. A `BasePathFs` is taken at face value, because afero exposes no way to ask what it wraps —
-which is safe, because `config` treats a real path as a claim rather than proof and confirms with
-`os.SameFile` before watching, falling back to polling per path where the claim does not hold.
+The copy-on-write row shows why the two capabilities are claimed separately. It can read links
+through its base layer but has no path the operating system can watch. A `BasePathFs` is taken
+at face value, because afero offers no way to ask what it wraps. That is safe because `config`
+treats a real path as a claim rather than proof: it confirms with `os.SameFile` before watching,
+and falls back to polling for any path where the claim does not hold.
+
+## Listing a directory
+
+All four types satisfy `config.DirLister`, because `Readdir` is mandatory on every afero file.
+That lets [`config-filekv`](filekv.md) read a directory of single-value files through any afero
+filesystem, so a mounted secrets directory can be tested over an `afero.MemMapFs`. Entries come
+back sorted by name, and a symlink is reported as a symlink rather than followed.
 
 ## What it costs
 
@@ -86,10 +89,13 @@ which is safe, because `config` treats a real path as a claim rather than proof 
 |---|---|
 | Adds | [afero](https://github.com/spf13/afero), on top of the `config` graph |
 
-afero, `config`, and what those two already bring — asserted by an allowlist test in the module,
-so an unforeseen transitive addition fails its build rather than arriving quietly.
+That is afero, `config`, and what those two already bring. An allowlist test in the module
+asserts it, so an unforeseen transitive addition fails the build rather than arriving quietly.
 
 ## Related
 
-- [Backends & capabilities](../explanation/backends.md) — the `config.FS` interface and its
-  optional `RealPather` / `LinkReader` companions
+- [Backends & capabilities](../explanation/backends.md): the `config.FS` interface and its
+  optional `RealPather`, `LinkReader` and `DirLister` companions
+- [How filesystem adapters work](../explanation/filesystem-adapters.md): real-path against
+  polled reload
+- [Use a go-billy filesystem](billy.md): the equivalent bridge for a `billy.Filesystem`

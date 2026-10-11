@@ -6,9 +6,9 @@ tags: [how-to, formats, xml]
 
 # Read XML
 
-The core reads and writes only YAML. XML comes from a sibling module,
+The core's own codec is YAML. XML comes from a sibling module,
 [`config-xml`](https://gitlab.com/phpboyscout/go/config-xml), which adds **nothing** to your
-dependency graph — it reads XML with the standard library.
+dependency graph: it reads XML with the standard library.
 
 ```bash
 go get gitlab.com/phpboyscout/go/config-xml
@@ -28,16 +28,16 @@ store, err := config.NewStore(ctx,
 
 ## When you do *not* need this
 
-XML here is **read-only**, so it cannot be the layer your application writes back to.
-If you own the format, YAML or JSON will serve you better in every respect.
+XML here is **read-only**, so it cannot be the layer your application writes back to. If you
+own the format, YAML or JSON will serve you better in every respect.
 
-Reach for XML when the file is not yours — an existing enterprise or legacy document
-you have to consume where it is, rather than convert and keep in step.
+Reach for XML when the file is not yours: an existing enterprise or legacy document you have to
+consume where it is, rather than convert and keep in step.
 
 ## Attributes and elements share one namespace
 
-Real configuration XML is attribute-heavy — log4j and .NET `appSettings` are almost entirely
-attributes — so an attribute reads by the same dotted path a child element would:
+Real configuration XML is attribute-heavy (log4j and .NET `appSettings` are almost entirely
+attributes), so an attribute reads by the same dotted path a child element would:
 
 ```xml
 <server port="8080"><host>localhost</host></server>
@@ -48,8 +48,11 @@ port := store.View().GetInt("server.port")     // 8080  (an attribute)
 host := store.View().GetString("server.host")   // "localhost"  (a child element)
 ```
 
+The root element is the container, so it does not appear in the path. Namespace declarations
+(`xmlns`, `xmlns:*`) are dropped as XML machinery rather than configuration.
+
 A repeated element becomes a slice, and a single one a scalar that the read path promotes to a
-one-element slice when asked — so declaring a repeatable element as a slice reads correctly
+one-element slice when asked. Declare a repeatable element as a slice and it reads correctly
 whether the file has one entry or many:
 
 ```go
@@ -61,10 +64,13 @@ aliases := store.View().GetStringSlice("alias") // one <alias> or several, both 
 Two shapes cannot be a value tree, and are refused with `config.ErrBackendUnsafe` naming the
 element rather than silently dropping half of it:
 
-- an **attribute and a child element that share a name** — two candidates for one key, and no
-  basis to choose between them;
-- an element with **both text content and attributes or children** — it is at once a scalar and
-  a map, and a key cannot be both.
+- an **attribute and a child element that share a name**, which are two candidates for one key
+  with no basis to choose between them;
+- an element with **both text content and attributes or children**, which is at once a scalar
+  and a map, and a key cannot be both.
+
+A root element with neither attributes nor children is refused the same way, because it carries
+no configuration. A document that is not well-formed XML fails with `config.ErrBackendParse`.
 
 This is the same treatment an ambiguous environment variable name gets: two candidates, no basis
 to choose, so it says so rather than picking one.
@@ -81,11 +87,11 @@ shadowed rather than failing.
 |---|---|
 | Adds | **nothing** beyond the `config` graph, and an allowlist test in the module fails if that changes |
 
-`encoding/xml` is standard library, so there is no parser module — and no filesystem library
-either, because you supply the `config.FS`.
+`encoding/xml` is standard library, so there is no parser module, and no filesystem library
+either because you supply the `config.FS`.
 
 ## Related
 
-- [Support a new file format](format-adapter.md) — how an adapter like this is built and tested
-- [Backends & capabilities](../explanation/backends.md) — why a read-only layer is skipped by
+- [Support a new file format](format-adapter.md): how an adapter like this is built and tested
+- [Backends & capabilities](../explanation/backends.md): why a read-only layer is skipped by
   write routing
