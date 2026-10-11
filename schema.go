@@ -29,12 +29,13 @@ type StructSchema struct {
 type FieldSchema struct {
 	// Type is the expected Go type: "string", "int", "float64", "bool", "duration".
 	Type string
-	// Required indicates the field must be present and non-zero.
+	// Required means the key must be present; a blank string counts as absent.
 	Required bool
-	// Description is used in validation error messages.
+	// Description is the field's description tag. Validation does not read it;
+	// it is there for tools that render the schema through [StructSchema.Fields].
 	Description string
-	// Default is the default value for documentation and error hints only.
-	// The validation layer does not inject defaults — use embedded assets for that.
+	// Default is the field's default tag, for documentation only. Nothing
+	// injects it; supply defaults as an embedded layer instead.
 	Default any
 	// Enum restricts the field to a set of allowed values.
 	Enum []any

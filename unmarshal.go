@@ -10,7 +10,8 @@ type Section[T any] struct {
 	Exists bool
 }
 
-// Unmarshal decodes the full resolved configuration into target.
+// UnmarshalSection decodes the section at key into a T. Exists is false, with
+// no error, when neither the section nor any of T's fields resolve under key.
 func UnmarshalSection[T any](cfg Reader, key string) (Section[T], error) {
 	var out T
 
