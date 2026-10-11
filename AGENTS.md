@@ -45,7 +45,7 @@ Two consequences worth holding on to:
 
 ## Where it has got to
 
-Pre-1.0, on the v0.17.x line. Nothing is stable in the 1.0 sense, but the shape
+Pre-1.0, on the v0.20.x line. Nothing is stable in the 1.0 sense, but the shape
 has stopped moving: `Store`, `View`, `Plan`/`Apply`, `Watch`, the
 `Backend`/`Codec`/`FS` seams and both conformance suites came through the
 family-wide connection-ladder work without a constructor changing. What still
