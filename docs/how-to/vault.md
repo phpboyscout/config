@@ -6,17 +6,14 @@ tags: [how-to, backends, vault, secrets]
 
 # Read secrets from Vault
 
-The core reads and writes files. [HashiCorp Vault](https://www.vaultproject.io/) is a remote
-**secrets** backend, provided by a sibling module,
-[`config-vault`](https://gitlab.com/phpboyscout/go/config-vault), so a consumer who reads secrets
-from Vault takes it and its Vault SDK, and one who does not pays nothing.
+[HashiCorp Vault](https://www.vaultproject.io/) KV v2 secrets become an ordinary config layer
+through [`config-vault`](https://gitlab.com/phpboyscout/go/config-vault), a sibling module: you take
+it and its Vault SDK only if you read from Vault. You authenticate the Vault client and hand it in
+with the KV v2 mount and the secret path.
 
 ```bash
 go get gitlab.com/phpboyscout/go/config-vault
 ```
-
-You build and **authenticate** the Vault client, which is where every auth method, address,
-namespace and TLS decision lives, and hand it in with the KV v2 mount and the secret path:
 
 ```go
 import (
@@ -25,46 +22,54 @@ import (
 	configvault "gitlab.com/phpboyscout/go/config-vault"
 )
 
-client, _ := vaultapi.NewClient(vaultapi.DefaultConfig())
+client, err := vaultapi.NewClient(vaultapi.DefaultConfig())
+if err != nil {
+	return err
+}
 client.SetToken(token)
 
 store, err := config.NewStore(ctx,
-	config.WithFiles(fsys, "/etc/app.yaml"),                             // YAML defaults
+	config.WithFiles(config.OS(), "/etc/app.yaml"),                      // YAML defaults
 	config.WithBackend(configvault.FromClient(client, "secret", "app")), // Vault outranks them
 )
+if err != nil {
+	return err
+}
+
+host := store.View().GetString("db.host") // from secret/app
 ```
 
 A Vault layer takes part in precedence, per-key merge, provenance and hot-reload exactly as a file
-does. The secret's fields become the layer, keeping the structure Vault stores them with:
+does.
 
-```
-secret/app = {                          store.View().GetString("db.host") // "db.internal"
-  "db": { "host": "db.internal",   →    store.View().GetInt("db.port")    // 5432
-          "port": 5432 } }
-```
+## Connect to Vault
 
-Unlike the byte-valued stores (Consul, the parameter stores), Vault returns **already-structured**
-JSON, so nested maps, slices, booleans and nulls all survive the round trip. There is no value
-codec here and none is needed.
+`FromClient` is the default: you build and **authenticate** the client, and the adapter uses it. It
+has no auth method, address or credential anywhere in its API, which is what lets every Vault auth
+method work without the adapter knowing any of them.
 
-## When you do *not* need this
+| Use | When |
+|---|---|
+| `FromClient(client, mount, path)` | The process outlives its token, uses any auth method other than `VAULT_TOKEN`, or shares a client. |
+| `FromConfig(cfg, mount, path)` | You assembled a `*vaultapi.Config` and want the adapter to build the client from it. |
+| `Default(mount, path)` | Nothing to configure: `VAULT_ADDR`, `VAULT_TOKEN` and friends in the environment. Fine for a short-lived command. |
 
-If your platform already delivers the secret, as an injected environment variable or a
-file mounted by an agent or sidecar, then `WithEnv`, [`WithFiles`](load-and-merge.md)
-or [`config-filekv`](filekv.md) read it with no Vault SDK and no token to manage.
+Each has a prefix twin (`FromClientPrefix`, `FromConfigPrefix`, `DefaultPrefix`), covered under
+[how keys map](#map-secrets-to-keys). Nothing here returns anything to close, and none of the rungs
+contacts Vault: `vaultapi.NewClient` does no network I/O, so reaching the server waits for `Load`.
+The reasoning behind the ladder is in [who owns the connection](../explanation/connection-ownership.md).
 
-Reach for `config-vault` when your process should authenticate and fetch for itself:
-short-lived credentials, values that rotate under a running process, or an audit trail
-that has to name your application rather than the agent.
+The `FromConfig` and `Default` rungs build a client but do not log in for you. They check what the
+SDK makes easy to miss: `vaultapi.DefaultConfig` reports failure by populating the `Error` **field**
+on the config it returns rather than returning an error, so a config that looks fine can already be
+broken. `Default` inherits
+**Vault's own** documented `https://127.0.0.1:8200`, not an address this adapter invented. To share
+one Vault client across this adapter, `go/signing` and `go/encryption`, use
+[`go/vaultclient`](https://vaultclient.go.phpboyscout.uk) and hand its client to `FromClient`.
 
-## Authenticate however you like
+### Log in before you hand the client in
 
-`FromClient` has no auth method, no address and no credential anywhere in its API. It uses the
-client you give it, which is what lets every Vault auth method work without the adapter knowing any
-of them. (The `FromConfig` and `Default` rungs below build a client from a config or the
-environment, but they still do not log in for you.)
-
-Every method ends the same way, with an authenticated `*api.Client` going into `FromClient`:
+Every auth method ends the same way, with an authenticated `*api.Client` going into `FromClient`:
 
 ```go
 // AppRole, the common service-to-service path.
@@ -80,32 +85,48 @@ config.WithBackend(configvault.FromClient(client, "secret", "app"))
 ```
 
 The auth helper packages (`vault/api/auth/approle`, `.../kubernetes`) are separate modules. Add
-whichever you use; `config-vault` depends on none of them.
+whichever you use; `config-vault` depends on none of them. Runnable versions are in the module's
+[package examples](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-vault#pkg-examples),
+compiled by its test suite so they cannot drift from the API.
 
-!!! warning "Tokens expire, and the adapter does not renew them"
+### Renew the token yourself
 
-    When a Vault token lapses, reads through this backend start failing. That includes reloads and watch
-    polls. That is Vault rejecting the token, not a defect in the adapter, and it surfaces as a
-    load error rather than being swallowed.
+Tokens expire and no rung renews them. `vaultapi.NewClient` reads `VAULT_TOKEN` a single time and
+holds it for the life of the client, so a backend carries whatever token was set when it was built.
+Once the TTL lapses, every read through the backend fails, reloads and watch polls included. That is
+Vault rejecting the token, and it surfaces as a load error rather than being swallowed.
 
-    If your process outlives its token's TTL, renew it:
+A command rarely outlives its token. A long-lived process reloading configuration does, and
+`Default` is where it is easiest to meet this without noticing, because you never handle the token.
+Build the client yourself, keep a lifetime watcher renewing it, and pass it to `FromClient`:
 
-    ```go
-    watcher, _ := client.NewLifetimeWatcher(&vaultapi.LifetimeWatcherInput{Secret: login})
-    go watcher.Start()
-    defer watcher.Stop()
-    ```
+```go
+watcher, _ := client.NewLifetimeWatcher(&vaultapi.LifetimeWatcherInput{Secret: login})
+go watcher.Start()
+defer watcher.Stop()
+```
 
-    Vault Agent or your platform's sidecar does the same job. Runnable versions of all of the above
-    are in the module's [package
-    examples](https://pkg.go.dev/gitlab.com/phpboyscout/go/config-vault#pkg-examples), compiled by
-    its test suite so they cannot drift from the API.
+Vault Agent or your platform's sidecar does the same job.
 
-## One secret, or a tree of them
+## Map secrets to keys
 
-`FromClient` reads **one secret**. That is the common shape: one request, one `read` grant in your policy.
-When configuration genuinely spans a tree, `FromClientPrefix` walks a prefix recursively, stripping
-it and nesting each secret's fields under its remaining path segments:
+`FromClient` reads **one secret**, and its fields become the layer, keeping the structure Vault
+stores them with:
+
+```
+secret/app = {                          store.View().GetString("db.host") // "db.internal"
+  "db": { "host": "db.internal",   →    store.View().GetInt("db.port")    // 5432
+          "port": 5432 } }
+```
+
+Unlike the byte-valued stores (Consul, the parameter stores), Vault returns **already-structured**
+JSON, so nested maps, slices, booleans and nulls survive the round trip. There is no value codec
+here and none is needed. Integers come through as `int64` and other numbers as `float64`.
+
+### Read a tree of secrets
+
+When configuration spans a tree, `FromClientPrefix` walks a prefix recursively, strips it, and nests
+each secret's fields under its remaining path segments:
 
 ```
 secret/app        = { "name": "checkout" }         name: checkout
@@ -120,47 +141,32 @@ config.WithBackend(configvault.FromClientPrefix(client, "secret", "app"))
 Prefix mode is opt-in because its cost is real. Vault has no recursive list, so a walk is one
 request per directory **plus** one per secret, and it needs the `list` capability on every
 directory it descends, which least-privilege policies often withhold. Each watch poll pays that
-same cost again. The whole tree becomes one layer.
+cost again.
 
-## A field and a child secret cannot share a name
+### A field and a child secret cannot share a name
 
-In Vault a path is **both a secret and a directory**: listing a prefix returns `app` and `app/`
-for the same name. In prefix mode that means a secret's own fields merge with its child secrets
-into one node, and they can collide:
+A Vault path is both a secret and a directory, so in prefix mode a secret's own fields merge with
+its child secrets into one node and can collide:
 
 ```
 secret/app     = { "db": "postgres://…" }     ← a field named "db"
 secret/app/db  = { "host": "db.internal" }    ← a child secret also named "db"
 ```
 
-Both claim `db`. There is no correct silent answer, because either resolution throws away a value you
-can see in Vault, so **the load is refused**:
+Either resolution would throw away a value you can see in Vault, so **the load is refused** with
+`configvault.ErrFieldCollision`, naming the path and the segment. Rename the field or move the
+child secret in Vault. Single-secret mode cannot produce this. The same choice is made by
+[`config-xml`](xml.md) for an attribute colliding with a child element, and the reasoning is in
+[How dynamic backends work](../explanation/dynamic-backends.md#ambiguous-structure-is-refused-not-guessed).
 
-```go
-_, err := config.NewStore(ctx,
-	config.WithBackend(configvault.FromClientPrefix(client, "secret", "app")))
+## Read-only, and where writes go
 
-// errors.Is(err, configvault.ErrFieldCollision)
-// configvault: secret field collides with a child secret: "app" holds a field "db" and a child secret "app/db"
-```
+Vault is never written to. Every value in it is a secret, so the backend declares itself
+`Sensitive` and read-only by policy, and those two facts combine into a guard worth meeting here
+rather than in production.
 
-Fix it in Vault by renaming the field or moving the child secret. The error names the path and the
-segment so you know which two to look at. This is the same choice
-[`config-xml`](xml.md) makes for an attribute colliding with a child element, and the reasoning is
-in [How dynamic backends work](../explanation/dynamic-backends.md#ambiguous-structure-is-refused-not-guessed).
-
-Single-secret mode cannot produce this, because it has only one flat map of fields. That is a
-further reason it is the default.
-
-## Writing a Vault-provided key is refused
-
-Every value in Vault is a secret, so this backend declares itself `Sensitive`, and it is
-**read-only** by policy. Those two facts combine into a guard worth meeting here rather than in
-production.
-
-Because the layer is read-only, a write to a key it provides cannot land in Vault, so it would
-otherwise fall through to the next writable layer, typically a plain YAML file on disk. The core
-**refuses that write**:
+A write to a key the Vault layer provides cannot land in Vault, so it would otherwise fall through
+to the next writable layer, typically a plain YAML file on disk. The core **refuses that write**:
 
 ```go
 _, err := store.Apply(ctx, config.Set("db.password", "rotated"))
@@ -171,12 +177,12 @@ That is the core stopping a secret being written into a plaintext file. If a key
 writable, do not source it from Vault. See [sensitive read-only
 backends](../explanation/dynamic-backends.md#sensitive-read-only-backends) for the full reasoning.
 
-## Watching for change
+## Watch for changes
 
 Vault's Go client offers no change feed, so watching is **polling**, at **60 seconds** by default.
 That is deliberately slower than the file watcher, because every poll is an authenticated read that
-lands in Vault's audit log. The interval you pass to `Store.Watch` does not apply to this layer; use
-the `WithPollInterval` option.
+lands in Vault's audit log. The interval you pass to `Store.Watch` does not apply to this layer; set
+this layer's own with `WithPollInterval`:
 
 ```go
 config.WithBackend(configvault.FromClient(client, "secret", "app",
@@ -184,82 +190,64 @@ config.WithBackend(configvault.FromClient(client, "secret", "app",
 ```
 
 A poll compares the secret's KV v2 version, so another client writing it is noticed and reaches
-your observers. Vault being briefly unreachable (sealed, restarting, mid-renewal) backs off for a second and
-retries rather than ending the watch.
+your observers. Vault being briefly unreachable (sealed, restarting, mid-renewal) backs off for a
+second and retries rather than ending the watch. See [hot-reload](hot-reload.md) for the store side.
 
-## Two limits worth knowing
+## Test without Vault
 
-**Vault rounds integers above 2^53.** Vault decodes submitted JSON numbers through a float, so an
-integer larger than `9007199254740992` is rounded *on write*, before this adapter sees it:
-
-```go
-kv.Put(ctx, "app", map[string]any{"id": 9007199254740993})
-store.View().Get("id")  // 9007199254740992
-```
-
-If you keep large identifiers or nanosecond timestamps in Vault, **store them as strings**, which
-round-trip exactly. The adapter converts integers as `int64` rather than through a float, so it
-adds no further loss, but it cannot recover what Vault has already discarded.
-
-**KV v2 only.** Vault's default and recommended secrets engine. KV v1 is legacy, has no version
-metadata for the watch to compare, and lists through a different path.
-
-Vault Enterprise **namespaces** are set on the client (`client.SetNamespace(…)`), so the adapter is
-namespace-agnostic and takes no parameter for it.
-
-## Getting a client
-
-Building the client yourself is the default. Two further rungs exist, each in
-both shapes:
+The adapter reaches Vault through a two-method `configvault.KV` interface, so a unit test hands
+`New` (or `NewPrefix`) a fake and needs no server:
 
 ```go
-// You assembled the config; the adapter builds the client.
-b, err := configvault.FromConfig(cfg, "secret", "app/config")
-b, err := configvault.FromConfigPrefix(cfg, "secret", "app/")
+type fakeKV map[string]*configvault.Secret
 
-// Nothing at all: VAULT_ADDR, VAULT_TOKEN and friends.
-b, err := configvault.Default("secret", "app/config")
-b, err := configvault.DefaultPrefix("secret", "app/")
+func (f fakeKV) Get(_ context.Context, path string) (*configvault.Secret, error) {
+	return f[path], nil // nil, nil is "absent"
+}
+
+func (fakeKV) List(context.Context, string) ([]string, error) { return nil, nil }
+
+backend := configvault.New(fakeKV{
+	"app": {Data: map[string]any{"db": map[string]any{"host": "db.internal"}}, Version: 1},
+}, "app")
 ```
 
-`Default` inherits **Vault's own** documented `https://127.0.0.1:8200`, not one
-this adapter invented.
+`Wrap(client, mount)` is the real implementation, and what `FromClient` uses. The module's
+integration suite, under `test/integration`, runs against a real Vault in a container and is skipped
+unless `INT_TEST_INTEGRATION=1` is set; it needs a Docker daemon. It exists because the fake was
+modelled on behaviour probed from a real Vault, so only the real one can show the fake is right.
 
-Every rung checks something the SDK makes easy to miss. `vaultapi.DefaultConfig`
-reports failure by populating the `Error` **field** on the config it returns
-rather than by returning an error, so a config that looks fine can already be
-broken. The rungs also return `ErrNoConfig` for a nil config and `ErrNoAddress` for one with no
-address. None of them contacts Vault, because `vaultapi.NewClient` does no network I/O, and none
-returns anything to close. The why behind the ladder is in
-[who owns the connection](../explanation/connection-ownership.md).
+## Errors you'll see
 
-To share one Vault client across this adapter, `go/signing` and `go/encryption`,
-use [`go/vaultclient`](https://vaultclient.go.phpboyscout.uk) and hand the
-client to `FromClient`.
+| Error | Cause | Fix |
+|---|---|---|
+| `configvault.ErrFieldCollision` | Prefix mode found a field and a child secret with the same name. | Rename the field or move the child secret in Vault. |
+| `config.ErrSensitiveLeak` | An `Apply` set a key the Vault layer provides, and the next writable layer is plainer. | Do not write Vault-sourced keys; change them in Vault. |
+| `configvault.ErrNoConfig` | `FromConfig` or `FromConfigPrefix` got a nil config. | Pass a config, or use `Default`. |
+| `configvault.ErrNoAddress` | The config names no Vault address. | Set `Address` on the config, or `VAULT_ADDR`. |
+| `fs.ErrNotExist` | The secret (or the whole prefix) is absent, soft-deleted, destroyed or empty. | Check the mount and path. The store tolerates it as an empty layer unless it is the first source and you set `RequireFirstSource`. |
+| A permission error from Vault (wrapped, no sentinel) | The token expired or the policy lacks `read` (or `list` in prefix mode). | [Renew the token](#renew-the-token-yourself), or widen the policy. |
 
-### The token is read once, and no rung renews it
+## Limits
 
-`vaultapi.NewClient` reads `VAULT_TOKEN` a single time and holds it for the life
-of the client. Nothing re-reads the environment and nothing renews the lease, so
-a backend carries whatever token was set when it was built for as long as your
-`Store` holds it.
+- **Vault rounds integers above 2^53.** Vault decodes submitted JSON numbers through a float, so
+  `9007199254740993` is stored as `9007199254740992` before this adapter sees it. Store large
+  identifiers and nanosecond timestamps as strings. The adapter converts integers as `int64`, so it
+  adds no loss of its own.
+- **KV v2 only.** KV v1 is legacy, has no version metadata for the watch to compare, and lists
+  through a different path.
+- **Namespaces** (Vault Enterprise) are set on the client with `client.SetNamespace(…)`; the adapter
+  takes no parameter for them.
 
-For a command that is fine, because it rarely outlives its token. For a **long-lived
-process reloading configuration it is not**: once the TTL expires every
-subsequent `Load` fails with a permission error, and there is no path back,
-because the backend cannot learn that its credential lapsed.
+## When you don't need this
 
-This is a property of Vault's client rather than of any one rung, and `FromClient`
-has always behaved the same way. But `Default` is where it is easiest to meet
-without noticing, precisely because you never handle the token yourself. If the
-process outlives the TTL, build the client, keep a `vaultapi.LifetimeWatcher`
-renewing it, and pass it to `FromClient`:
+If your platform already delivers the secret, as an injected environment variable or a file mounted
+by an agent or sidecar, then `WithEnv`, [`WithFiles`](load-and-merge.md) or
+[`config-filekv`](filekv.md) read it with no Vault SDK and no token to manage.
 
-```go
-client, err := vaultapi.NewClient(vaultapi.DefaultConfig())
-// ... start a LifetimeWatcher renewing client's token ...
-b := configvault.FromClient(client, "secret", "app/config")
-```
+Reach for `config-vault` when your process should authenticate and fetch for itself: short-lived
+credentials, values that rotate under a running process, or an audit trail that has to name your
+application rather than the agent.
 
 ## What it costs
 
