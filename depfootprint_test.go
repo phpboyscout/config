@@ -44,9 +44,8 @@ var allowedModules = []string{
 	"github.com/go-viper/mapstructure",
 	// Native filesystem notification, with a polling fallback.
 	"github.com/fsnotify/fsnotify",
-	// Comment-preserving YAML editing, and the parser beneath it.
+	// Comment-preserving YAML editing. Since v0.6.0 yamldoc owns its parser.
 	"gitlab.com/phpboyscout/go/yamldoc",
-	"github.com/goccy/go-yaml",
 	// YAML values. Deliberately separate from the document parser above: the
 	// two disagree about scalar types, and the boundary must not be crossed.
 	"go.yaml.in/yaml",
