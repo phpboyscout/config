@@ -196,8 +196,11 @@ implement**:
 | `WritableBackend` | `Apply` can route writes to it |
 | `WatchableBackend` | it takes part in hot-reload, on its own schedule |
 
-A read-only Consul layer implements one interface. A backend with a real subscription
-implements `WatchableBackend` and gets push-based reload without polling anything. Nothing
+A read-only Consul layer implements one interface. A backend that can watch its own
+source implements `WatchableBackend` and takes part in hot-reload. How it notices is up to
+it: Consul holds a blocking query open for up to the Store's poll interval (2 seconds by
+default) and returns early when a key changes, while most remote backends poll, on
+the Store's interval or a slower one the backend hints at. Nothing
 forces a source to pretend it can do something it cannot, and that is what makes a single
 fat interface with stubbed methods so unpleasant to live with. See
 **[Write a custom backend](https://config.go.phpboyscout.uk/how-to/custom-backend/)**.

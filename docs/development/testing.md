@@ -1,6 +1,6 @@
 ---
 title: Testing
-description: The testing philosophy for the config module, and the failure modes that have actually caught us out.
+description: The testing philosophy for the config module, and the failure modes that have caught us out.
 tags: [development, testing, quality]
 authors: [Matt Cockayne <matt@phpboyscout.uk>]
 ---
@@ -11,14 +11,14 @@ Coverage sits above 90%, the race detector is part of CI, and behaviour that spa
 components is covered by godog scenarios. None of that is the interesting part.
 
 The interesting part is that this module has repeatedly had **tests that passed for the
-wrong reason** — green because of an unrelated bug, or because the harness was broken
+wrong reason**: green because of an unrelated bug, or because the harness was broken
 rather than the code. Most of this page is about recognising that.
 
 ## Running things
 
 ```bash
-just              # tidy, lint, test — before every push
-just ci           # the full local CI: tidy, test, race, lint
+just              # tidy, lint, test: before every push
+just ci           # the full local CI: tidy, test, test-race, lint
 just test-race    # the race detector on its own
 just coverage     # HTML coverage report
 ```
@@ -30,16 +30,16 @@ in any of them is a real defect a user will eventually hit.
 ## Shape of a test
 
 - **Parallel by default.** `t.Parallel()` unless there is a reason not to. There is no
-  global state to fight over — that is deliberate.
-- **In-memory filesystems.** `memFilesystem(t, files)` — afero's `MemMapFs` behind a
-  `config.FS` adapter — for anything that would otherwise touch disk. afero is a *test*
-  dependency now, deliberately: it is the best in-memory filesystem in Go and it stays out
-  of what consumers inherit. Reserve real files for the handful of cases exercising a
+  global state to fight over, deliberately.
+- **In-memory filesystems.** `memFS(t, files)` (afero's `MemMapFs` behind a
+  `config.FS` adapter) for anything that would otherwise touch disk. afero is used only by
+  tests, deliberately: it is a good in-memory filesystem and it stays out of what consumers
+  inherit. Reserve real files for the handful of cases exercising a
   genuine OS watcher, and `config.Dir(t.TempDir())` where a real rooted directory is
   wanted.
 - **Table-driven for variations**, individual functions for distinct guarantees. When a
-  test asserts several independent promises, split it — a failure should name which promise
-  broke, not just that something did.
+  test asserts several independent promises, split it, so a failure names which promise
+  broke and not just that something did.
 - **Name the guarantee, not the mechanism.** `TestReadsNeverStraddleAReload` says what
   breaks if it fails; `TestView2` does not.
 
@@ -63,7 +63,7 @@ break that line deliberately and check the test fails.
 ### A test that is vacuously true
 
 `TestApply_ValidationAgreesWithTheReloadItCauses` used a single file and no environment
-layer — so the two things it claimed to compare were trivially identical. It could not have
+layer, so the two things it claimed to compare were trivially identical. It could not have
 failed.
 
 Another asserted a write created a missing file, but used a flat scalar, where the nesting
@@ -76,19 +76,19 @@ answer is "none", it is not a test.
 
 Three times this has produced a confident, wrong conclusion:
 
-- Measuring read coherence with `os.WriteFile`, which truncates before writing — so both
+- Measuring read coherence with `os.WriteFile`, which truncates before writing. Both
   libraries under test were being measured against a writer that exposed half-written
   files. The module appeared to tear 12,407 times. It does not. Writing atomically
   (temp file, then rename) gave 0.
 - A negative control that injected an OpenTelemetry package to prove a dependency guard
-  would catch it. It produced no output, which read as "not caught". It was a build failure
-  from a bad escape in the harness; `grep` simply had nothing to match.
+  would catch it. It produced no output, which read as "not caught". In fact it was a build failure
+  from a bad escape in the harness, and `grep` simply had nothing to match.
 - A multi-file watch measurement that showed one notification and looked correct. Both
   writes had landed before the first reload ran. Varying the gap showed two.
 
 **What to do:** when measuring anything involving concurrent file writes, make the writes
 atomic first. When a check produces no output, confirm it *ran*. And watch every guard fail
-at least once — **a guard nobody has watched fail is a guard nobody knows works.**
+at least once, because **a guard nobody has watched fail is a guard nobody knows works.**
 
 ### Doc comment and test encoding the same confusion
 
@@ -104,18 +104,18 @@ would see, not the intermediate representation.
 
 `TestAddLayer_AFailingLayerWithdrawsOnlyItself` asserted that a concurrent good layer
 always succeeds. It does not, and should not: both calls adopt a backend then reload every
-backend, so if the bad layer is registered when the good one reloads, that reload fails —
-correctly, because reloading is fail-closed. The test failed roughly once in several
-hundred full-suite runs, for a correct reason.
+backend, so if the bad layer is registered when the good one reloads, that reload fails.
+That is correct, because reloading is fail-closed. The test failed roughly once in several
+hundred full-suite runs, and the failure was correct.
 
 **What to do:** under concurrency, assert the invariant rather than one interleaving's
 outcome. Here the invariant is "a caller told its layer was added must find it
-contributing" — true whichever order things happen in. Where practical, add a deterministic
+contributing", which holds whichever order things happen in. Where practical, add a deterministic
 sibling test that fails every time rather than occasionally.
 
 ## Conformance suite for codec adapters
 
-A format adapter — `config-json`, `config-toml`, one you write — proves it behaves like a
+A format adapter (`config-json`, `config-toml`, or one you write) proves it behaves like a
 first-class backend by running the exported conformance suite against its codec, in one test:
 
 ```go
@@ -129,17 +129,19 @@ func TestConformance(t *testing.T) {
 }
 ```
 
-`Run` executes one named subtest per contract — decode-and-merge, provenance, absent-source
-tolerance, and for an `EditingCodec` the write round-trip and the **`ErrConflict`** the seam
-exists to make unmissable — so a failing adapter sees exactly which one it breaks. It uses
+`Run` executes one named subtest per contract, so a failing adapter sees exactly which one
+it breaks. Every codec gets the capability split, decode-and-merge, absent-source tolerance
+and provenance. A read-only codec also has its layer checked as skipped by write routing.
+An `EditingCodec` gets the write round-trip, the no-edit no-op and the **`ErrConflict`**
+the seam exists to make unmissable instead. It uses
 stdlib `testing` only, so running it costs an adapter no assertion-library dependency.
 
 The suite lives in `conformance/` and is itself tested in `conformance/conformance_test.go`
 against trivial in-package codecs, which is also where its teeth are confirmed: break a codec's
 `Apply` and the relevant subtest fails. The core's own seam coverage stays independent of it in
 `codec_test.go`, so a suite that ever passed wrongly would not take the core's checks down with
-it. What the suite does *not* assert — multi-document provenance, exact scalar types — is
-format-specific and lives in each adapter's own fidelity tests.
+it. What the suite does *not* assert, such as multi-document provenance and exact scalar
+types, is format-specific and lives in each adapter's own fidelity tests.
 
 ## Testing the documentation
 
@@ -147,9 +149,9 @@ Documentation claims are tested, because they are the claims a user actually rel
 
 | Test | Pins |
 |---|---|
-| `docsclaim_test.go` | the worked before/after example on the landing page |
-| `coherence_test.go` | the measured read-coherence figure |
-| `observer_contract_test.go` | all seven observer guarantees, one per test |
+| `docsclaim_test.go` | the worked examples and claims in the docs, such as the before/after on the landing page |
+| `coherence_test.go` | the read-coherence guarantee: no read straddles a reload |
+| `observer_contract_test.go` | the observer guarantees, one per test |
 | `custombackend_test.go` | every snippet in the custom-backend guide, including the write path |
 | `fidelity_test.go` | the comment- and structure-preservation contract |
 | `depfootprint_test.go` | the dependency-footprint claim |
@@ -157,7 +159,7 @@ Documentation claims are tested, because they are the claims a user actually rel
 If you change behaviour one of these describes, the test failing is the reminder to update
 the prose. That is the point.
 
-A mechanical check worth re-running after editing guides — extract every Go block and
+A mechanical check worth re-running after editing guides is to extract every Go block and
 confirm it parses either as statements or as declarations. Blocks that parse *neither* way
 mix top-level declarations with statements, and cannot be made valid wherever a reader puts
 them. That check has caught four such blocks, one of them added minutes earlier in the same
@@ -165,12 +167,13 @@ editing pass.
 
 ## BDD scenarios
 
-`features/` holds godog scenarios for behaviour that spans components and time — reload,
-concurrency, watching, the typed-section contract. A scenario earns its place when the
-behaviour is hard to see in a unit test: several components, an ordering, a failure that
-has to propagate somewhere specific.
+`features/store/` holds godog scenarios for behaviour that spans components and time:
+reload, concurrency, watching, the typed-section contract. A scenario earns its place when
+the behaviour is hard to see in a unit test: several components, an ordering, a failure
+that has to propagate somewhere specific. `bdd_test.go` runs them inside the ordinary
+`go test` job, and `BDD_TAGS` selects a single feature or scenario.
 
-Steps live in `steps_*_test.go`, grouped by area. Keep step definitions thin — they should
+Steps live in `steps_*_test.go`, grouped by area. Keep step definitions thin: they should
 drive the public API and assert, not contain logic of their own.
 
 ## Coverage

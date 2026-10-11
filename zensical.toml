@@ -1,7 +1,7 @@
 [project]
 site_name = "config"
 extra_css = ["stylesheets/hero.css"]
-site_description = "Layered configuration for Go with a single owner — comment-preserving layer-correct writes, per-key provenance, safe hot-reload, typed sections and struct-tag validation"
+site_description = "Layered configuration for Go with a single owner: comment-preserving layer-correct writes, per-key provenance, safe hot-reload, typed sections and struct-tag validation"
 site_author = "Matt Cockayne"
 site_url = "https://config.go.phpboyscout.uk"
 repo_url = "https://gitlab.com/phpboyscout/go/config"
@@ -14,7 +14,7 @@ copyright = "Copyright &copy; 2026 Matt Cockayne"
 #
 # The first entry in each section is that section's index page, which
 # navigation.indexes turns into the section landing page rather than a child of
-# it. Adding a page means adding it here — the cost of curating the order.
+# it. Adding a page means adding it here, which is the cost of curating the order.
 nav = [
   { Home = "index.md" },
 

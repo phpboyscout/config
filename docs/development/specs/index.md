@@ -12,7 +12,7 @@ decision record; the code is downstream of it.
 
 That rule earns its keep here more than in most projects. `config` is consumed by other
 modules and by downstream tools, so a public API change is expensive to undo. And the
-module's behaviour is deliberately counter-intuitive in several places — refusing writes
+module's behaviour is deliberately counter-intuitive in several places: refusing writes
 from inside observers, dropping superseded snapshots, handing back a usable store alongside
 an error. Each of those is a decision someone made for a reason, and without the reason
 written down the next person reads it as a bug and "fixes" it.
@@ -25,20 +25,20 @@ written down the next person reads it as a bug and "fixes" it.
 https://gitlab.com/phpboyscout/go/config/-/wikis/specs/<NNNN>-<slug>
 ```
 
-A spec is a point-in-time decision record — written once, true of a moment, read later for
-its conclusions. Twenty-six of them sitting in `docs/` buried the living documentation they
-were beside, so they moved. Contributor guides, engineering standards and testing
+A spec is a point-in-time decision record. It is written once, true of a moment, and read
+later for its conclusions. Twenty-six of them sitting in `docs/` buried the living
+documentation beside them, so they moved. Contributor guides, engineering standards and testing
 conventions stay here, because those change when the code does.
 
-- **[All `config` specs](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/home)** — the
+- **[All `config` specs](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/home)**: the
   core architecture and the three umbrella specs.
-- **[Reports](https://gitlab.com/phpboyscout/go/config/-/wikis/reports/home)** — audits and
+- **[Reports](https://gitlab.com/phpboyscout/go/config/-/wikis/reports/home)**: audits and
   reviews, which are the same kind of document.
 
 ### A spec belongs to the project it decides
 
 The adapters are sibling modules, and so are their specs. An adapter's spec lives in **that
-adapter's own wiki**, numbered from `0001` there — `config-vault` spec 0001, `config-consul`
+adapter's own wiki**, numbered from `0001` there: `config-vault` spec 0001, `config-consul`
 spec 0001. Only the umbrella specs, the ones settling what a whole family of adapters
 shares, live here.
 
@@ -46,7 +46,7 @@ That is why the numbers restart per project, and why "spec 0001" is ambiguous wi
 naming the project. Refer to one by project and name: *"config-vault 0001"*, *"the
 dynamic-backend umbrella"*.
 
-Eight adapters have no spec of their own — `config-afero` and the seven format adapters.
+Eight adapters have no spec of their own: `config-afero` and the seven format adapters.
 They were built under an umbrella, and each of their wikis says which one.
 
 ## When a spec is required
@@ -87,7 +87,7 @@ blocked-by: <the obstacle, named>     # optional
 ```
 
 `[[_TOC_]]` generates a contents block from the headings. A spec past a couple of hundred
-lines is unnavigable without one, and it costs a line.
+lines is hard to navigate without one, and it costs a line.
 
 ## Status lifecycle
 
@@ -105,11 +105,11 @@ lines is unnavigable without one, and it costs a line.
 
 ### Blocked is not a status
 
-A spec can be agreed and still unstartable — waiting on a release, a credential, a window.
+A spec can be agreed and still unstartable, for example while it waits on a release, a credential or a window.
 Say so in `blocked-by`, naming the obstacle, and leave the status alone. Blocking is
 orthogonal to status: a spec can be blocked while `DRAFT`, `APPROVED` or `IN PROGRESS`
 alike, and a `HELD` status would force a false choice between "agreed" and "blocked" when
-both are true. Clear the field when the obstacle clears — a stale `blocked-by` reads as
+both are true. Clear the field when the obstacle clears. A stale `blocked-by` reads as
 current and stops work that could have started.
 
 **Keep rejected specs.** The value is the durable "we thought about X and chose not to,
@@ -121,19 +121,19 @@ explaining why, and leave the rest of the document intact.
 
 Adapt to the decision, but most specs want:
 
-1. **Problem** — the current pain, specifically. Not "improve X" but what breaks and for
+1. **Problem.** The current pain, specifically. Not "improve X" but what breaks and for
    whom.
-2. **Decisions**, as a numbered list — **D1, D2, …** — so reviews, merge requests and later
+2. **Decisions**, as a numbered list (**D1, D2, …**), so reviews, merge requests and later
    specs can cite "D7" precisely. This is the core of the document.
-3. **Rejected alternatives** — what else was considered, and why it lost. Frequently the
+3. **Rejected alternatives.** What else was considered, and why it lost. Frequently the
    most valuable section six months later.
-4. **Public API** — every exported name the change adds, removes or alters.
-5. **Testing strategy** — how each decision will be verified. Evaluate godog fit for
+4. **Public API.** Every exported name the change adds, removes or alters.
+5. **Testing strategy.** How each decision will be verified. Evaluate godog fit for
    behaviour that spans components and time.
-6. **Migration & compatibility** — what breaks, and what a consumer has to do about it.
-7. **Open questions** — what is still live. Resolve these *with* the human before the
+6. **Migration & compatibility.** What breaks, and what a consumer has to do about it.
+7. **Open questions.** What is still live. Resolve these *with* the human before the
    status moves to `APPROVED`.
-8. **Implementation phases** — a prioritised breakdown, each independently verifiable.
+8. **Implementation phases.** A prioritised breakdown, each independently verifiable.
 
 ### Numbering decisions
 
@@ -143,17 +143,17 @@ decision is withdrawn, mark it withdrawn in place and add a new one.
 
 ### Recording revisions
 
-A spec amended after the fact — a decision that proved wrong in practice, or was
-under-specified — gets a **dated revision note**, not a silent edit. The record should show
+A spec amended after the fact, because a decision proved wrong in practice or was
+under-specified, gets a **dated revision note**, not a silent edit. The record should show
 the change of mind.
 
-The convention here is a numbered revision section, **R1, R2, …**, each stating what was
+The convention here is a numbered revision section (**R1, R2, …**), each stating what was
 decided, what actually happened, and why the original was or was not right. Cross-link the
 decision it revises, so a reader arriving at D8 sees that R10 amended it.
 
-That cross-link is not decoration. In this module a decision was recorded, half implemented,
-and the unimplemented half then documented as intended behaviour — because the person
-writing the docs read the code rather than the spec. The link is what makes that visible.
+That cross-link is not decoration. In this module a decision was recorded and half
+implemented, and the unimplemented half was then documented as intended behaviour, because
+the person writing the docs read the code rather than the spec. The link is what makes that visible.
 
 ## Writing for the wiki
 
@@ -168,11 +168,11 @@ label, `%1.2` to a milestone, `$123` to a snippet, and `@name` to a user.
 `@name` is the one that does harm rather than merely being wrong: it resolves against every
 user on the forge, so it links **and notifies, immediately, always**. Never write one.
 
-Everything else resolves only when its target exists — which makes it a review hazard rather
+Everything else resolves only when its target exists, which makes it a review hazard rather
 than a rendering bug. A spec citing an upstream project's "issue #821", or its own
-"Resolved #4", is not wrong today; it is wrong *later*, silently, when this project grows an
-issue 821 or 4. **Backtick any sigil you did not mean as a reference** — `` `#821` `` stays
-text permanently — or write the cross-project form that links to the thing you actually
+"Resolved #4", is not wrong today. It becomes wrong *later*, silently, when this project
+grows an issue 821 or 4. **Backtick any sigil you did not mean as a reference.** `` `#821` `` stays
+text permanently. Or write the cross-project form that links to the thing you actually
 meant:
 
 ```
@@ -184,7 +184,7 @@ Inline code and fenced blocks are never autolinked, so anything already in code 
 
 ### Links out of a wiki page
 
-A wiki page **cannot use a relative link into the repository** — those do not resolve. Link
+A wiki page **cannot use a relative link into the repository**, because those do not resolve. Link
 to a repository file or a docs page by full URL, and to another wiki page by its slug:
 
 ```
@@ -195,14 +195,14 @@ https://config.go.phpboyscout.uk/how-to/vault/                            a docs
 
 ### Worth using
 
-**Mermaid**, in a fenced ` ```mermaid ` block, wherever the prose is describing a shape — an
-order of calls, a state machine, a dependency graph. A diagram that lives *in* the spec stays
+**Mermaid**, in a fenced ` ```mermaid ` block, wherever the prose is describing a shape,
+such as an order of calls, a state machine or a dependency graph. A diagram that lives *in* the spec stays
 true to it; one in a separate image file drifts, and nobody notices because images do not
 show up in a diff. `sequenceDiagram`, `stateDiagram-v2`, `flowchart` and `erDiagram` carry
 most specs.
 
-**Alerts** (`> [!important]`) for the one load-bearing fact a reader must not miss — sparingly,
-because a spec where everything is important has nothing important in it. **`<details>`** to
+**Alerts** (`> [!important]`) for the one load-bearing fact a reader must not miss. Use them
+sparingly, because a spec where everything is important has nothing important in it. **`<details>`** to
 keep long evidence available without it dominating the page.
 
 ## Working with an AI assistant
@@ -216,14 +216,14 @@ Give it the problem, the constraints, and the existing specs as format examples.
 
 - **Answer its open questions yourself.** If it picks the convenient option to keep moving,
   the decision has been made by nobody.
-- **Challenge the edge cases** — concurrency, failure partway through, what a consumer sees
+- **Challenge the edge cases**: concurrency, failure partway through, what a consumer sees
   when it goes wrong.
 - **Make it name what it rejected.** A spec with no rejected alternatives has not thought
   about the problem.
 
 ### Implementing
 
-Once a spec is `approved`, implementation is **test-first**, phase by phase:
+Once a spec is `APPROVED`, implementation is **test-first**, phase by phase:
 
 1. Write the failing tests for the phase, derived from the spec's decisions and acceptance
    criteria.
@@ -237,7 +237,7 @@ implementation, where it is not.
 
 !!! warning "Verify the work, do not accept it"
     The specific failure mode to watch for is **a test that passes for the wrong reason**.
-    This module has had at least five: a green test upheld by an unrelated bug, a
+    This module has had at least five. Examples: a green test upheld by an unrelated bug, a
     concurrency test whose harness was broken rather than the code, a fidelity test whose
     assertion encoded the same confusion as the implementation.
 
@@ -255,7 +255,7 @@ Draft a feature specification for the `config` module.
 
 ## Constraints
 
-- The Store is the sole owner of configuration I/O — nothing else reads, writes or watches
+- The Store is the sole owner of configuration I/O. Nothing else reads, writes or watches
   a source. If this change needs a second owner, say so explicitly rather than working
   around it.
 - The module is pre-1.0 but consumed by other phpboyscout modules; public API changes need
@@ -275,7 +275,7 @@ the change touches.>
 - Include a "Rejected alternatives" section, with reasoning. Do not skip it.
 - List every exported name added, removed or changed, and what it costs consumers.
 - Describe how each decision will be tested, including what would falsely pass.
-- Raise open questions rather than resolving them yourself — I will answer them.
+- Raise open questions rather than resolving them yourself. I will answer them.
 - Set status to `DRAFT`, and save it as a wiki page at specs/<NNNN>-<slug>, taking the
   next free number in this project's wiki.
 ```
@@ -302,11 +302,11 @@ not need; it cannot infer one it was never given.
 ## The specs themselves
 
 They are in the wiki, and the index there is generated from the specs rather than
-maintained beside them:
+maintained by hand:
 
-- **[config specs](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/home)** — the core
+- **[config specs](https://gitlab.com/phpboyscout/go/config/-/wikis/specs/home)**: the core
   architecture, and the umbrella specs governing each adapter family.
-- **[config reports](https://gitlab.com/phpboyscout/go/config/-/wikis/reports/home)** — audits
+- **[config reports](https://gitlab.com/phpboyscout/go/config/-/wikis/reports/home)**: audits
   and reviews.
 
 Each adapter's spec is in its own project's wiki; the list of all of them is on the
