@@ -6,6 +6,15 @@ import (
 	"testing"
 )
 
+// sentinelPackage is a dependency that must always be present — cast backs the
+// typed accessors. Its absence from the scan means the scan itself failed.
+const sentinelPackage = "github.com/spf13/cast"
+
+// selfModule is this module, which `go list -deps .` naturally includes. It is
+// not a dependency and is skipped rather than allowlisted, so allowedModules
+// stays a list of things consumers inherit from elsewhere.
+const selfModule = "gitlab.com/phpboyscout/go/config"
+
 // allowedModules is every third-party module this library may pull into a
 // consumer's dependency graph.
 //
@@ -20,15 +29,6 @@ import (
 // Adding an entry here should feel like a decision, because it is one. This
 // module's pitch includes having a smaller graph than what it replaced, and a
 // claim like that decays silently unless something checks it.
-// sentinelPackage is a dependency that must always be present — cast backs the typed accessors, so it is always present.
-// Its absence from the scan means the scan itself failed.
-const sentinelPackage = "github.com/spf13/cast"
-
-// selfModule is this module, which `go list -deps .` naturally includes. It is
-// not a dependency and is skipped rather than allowlisted, so the list above
-// stays a list of things consumers inherit from elsewhere.
-const selfModule = "gitlab.com/phpboyscout/go/config"
-
 var allowedModules = []string{
 	// The estate's errors package, which replaced the standard
 	// library's here so that hints, stacks and structured attributes
@@ -82,7 +82,7 @@ func TestDependencyFootprint(t *testing.T) {
 	seen := false
 
 	for pkg := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
-		if strings.HasPrefix(pkg, sentinelPackage) {
+		if pkg == sentinelPackage || strings.HasPrefix(pkg, sentinelPackage+"/") {
 			seen = true
 		}
 

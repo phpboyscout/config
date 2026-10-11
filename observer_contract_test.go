@@ -12,9 +12,9 @@ import (
 	"gitlab.com/phpboyscout/go/config"
 )
 
-// The four guarantees below are what the documentation claims for observers.
-// They are cheap to state and easy to lose one at a time, so each is asserted
-// separately — a failure should name which promise broke.
+// The tests below assert what the documentation claims for observers. Each
+// claim is cheap to state and easy to lose on its own, so each has its own
+// test — a failure should name which promise broke.
 
 func TestObserver_ABatchNotifiesExactlyOnce(t *testing.T) {
 	t.Parallel()
