@@ -6,9 +6,10 @@ tags: [how-to, formats, properties]
 
 # Read Java properties
 
-The core's own codec is YAML. Java `.properties` come from a sibling module,
-[`config-properties`](https://gitlab.com/phpboyscout/go/config-properties), which adds
-**nothing** to your dependency graph: a properties file is read with the standard library.
+Java `.properties` files become a config layer through
+[`config-properties`](https://gitlab.com/phpboyscout/go/config-properties), a sibling module: the
+core's own codec is YAML, and this one adds **nothing** to your dependency graph, because a
+properties file is read with the standard library. The layer is read-only.
 
 ```bash
 go get gitlab.com/phpboyscout/go/config-properties
@@ -21,38 +22,36 @@ import (
 )
 
 store, err := config.NewStore(ctx,
-	config.WithFiles(fsys, "/etc/app.yaml"),                               // YAML, the default
-	config.WithBackend(configproperties.New(fsys, "/etc/app.properties")), // outranks it
+	config.WithFiles(config.OS(), "/etc/app.yaml"),               // real files outrank them
+	config.WithBackend(configproperties.New(config.OS(), "/etc/app.properties")), // outranks it
 )
+if err != nil {
+	return err
+}
+
+host := store.View().GetString("server.host") // "localhost"
+port := store.View().GetInt("server.port")    // 8080
 ```
 
-## When you do *not* need this
-
-If the file is yours, YAML costs nothing extra.
-
-Reach for `.properties` when you are sharing configuration with a JVM application that already
-reads one, so both sides consume the same file rather than one generating the other. It is
-read-only, so it is an input rather than a write target.
-
-## Keys nest on dots
-
-A properties key is dotted already, and each dot is a nesting separator:
+with `/etc/app.properties` containing:
 
 ```properties
 server.host=localhost
 server.port=8080
 ```
 
-```go
-host := store.View().GetString("server.host") // "localhost"
-port := store.View().GetInt("server.port")    // 8080
-```
+## Map properties to keys
 
-A properties layer therefore merges into a nested YAML or JSON one by the same paths. In Java a
-dotted key is a single flat string. Here it nests, which is what makes it a configuration layer
-rather than a map.
+A properties key is dotted already, and each dot is a nesting separator, so a properties layer
+merges into a nested YAML or JSON one by the same paths. In Java a dotted key is a single flat
+string. Here it nests, which is what makes it a configuration layer rather than a map.
 
-## The format it honours
+Values are strings, and the read path casts them. When two lines name the same key the later one
+wins, and that includes a key that is a prefix of another, which Java allows and this mapping
+cannot hold: `db=x` followed by `db.host=y` leaves only `db.host`, and the reverse order leaves
+only `db`, set to `x`. Neither is reported.
+
+### The format it honours
 
 - `key=value`, `key:value` and `key value` are all separators. Leading whitespace and
   whitespace around the separator is ignored.
@@ -63,10 +62,42 @@ rather than a map.
 - An empty key, or a truncated or invalid `\u` escape, fails the load with
   `config.ErrBackendParse`, naming the file and line.
 
-## Read-only
+## Read-only, and where writes go
 
-Values are strings, and the read path casts them. The format is read-only: the backend is not a
-write target, so a `store.Apply` is routed to another layer.
+The backend is never a write target. A `store.Apply` to a key the properties layer provides is
+routed to the next writable layer and reported shadowed, because the properties value still
+outranks it. With no writable layer at all, the write fails with `config.ErrNoWritableLayer`.
+
+## Watch for changes
+
+A properties file is watched like any file-backed source: native filesystem notification where it
+works, polling where it does not, at the interval you pass to `Store.Watch` with
+`config.WithPollInterval` (two seconds by default). See [hot-reload](hot-reload.md).
+
+## Test with a string
+
+`Codec` is exported, so decoding a string needs no store and no filesystem:
+
+```go
+docs, err := configproperties.Codec{}.Decode("app.properties", []byte("server.port=8080\n"))
+// docs[0]["server"].(map[string]any)["port"] == "8080"
+```
+
+To test through a store, point `config.Dir(t.TempDir())` at a file you write first.
+
+## Errors you'll see
+
+| Error | Cause | Fix |
+|---|---|---|
+| `config.ErrBackendParse` | An empty key, or a truncated or invalid `\u` escape. The error names the file and line. | Fix the line. |
+| `config.ErrNoWritableLayer` | An `Apply` set a key and no layer in the store can be written. | Add a writable layer, such as a YAML file. |
+
+## When you don't need this
+
+If the file is yours, YAML costs nothing extra.
+
+Reach for `.properties` when you are sharing configuration with a JVM application that already
+reads one, so both sides consume the same file rather than one generating the other.
 
 ## What it costs
 

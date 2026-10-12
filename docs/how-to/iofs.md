@@ -7,8 +7,8 @@ tags: [how-to, filesystem, iofs, embed]
 # Read config from an io/fs filesystem
 
 Configuration compiled into the binary with [`embed`](https://pkg.go.dev/embed), or read from a
-zip, a tar, or any other [`io/fs.FS`](https://pkg.go.dev/io/fs#FS), becomes a `config` layer
-through the [`config-iofs`](https://gitlab.com/phpboyscout/go/config-iofs) sibling module.
+zip, a tar, or any other [`io/fs.FS`](https://pkg.go.dev/io/fs#FS), becomes a read-only `config`
+layer through the [`config-iofs`](https://gitlab.com/phpboyscout/go/config-iofs) sibling module.
 
 ```bash
 go get gitlab.com/phpboyscout/go/config-iofs
@@ -28,27 +28,37 @@ import (
 var embedded embed.FS
 
 store, err := config.NewStore(ctx,
-	config.WithFiles(configiofs.Wrap(embedded), "defaults.yaml"),   // baked-in defaults
-	config.WithFiles(config.OS(), "/etc/app.yaml"),                 // real files outrank them
+	config.WithFiles(configiofs.Wrap(embedded), "defaults.yaml"), // baked-in defaults
+	config.WithFiles(config.OS(), "/etc/app.yaml"),               // real files outrank them
 	config.WithEnv("APP"),
 )
+if err != nil {
+	return err
+}
+
+format := store.View().GetString("log.format")
 ```
 
 `Wrap` is the whole API. It takes any `io/fs.FS` (an `embed.FS`, `os.DirFS`, `zip.Reader`, a
 tar-derived filesystem, an `fstest.MapFS` in a test) and returns a `config.FS`.
 
-## When you do *not* need this
+## Name files the io/fs way
 
-For a **single** embedded defaults document, [`WithReaders`](load-and-merge.md) takes bytes you
-already have and needs no module. The [layering tutorial](../tutorials/layering.md) does exactly
-that.
+Pass an `io/fs`-valid name: slash-separated, no leading slash, no `.` or `..` segments (see
+[`fs.ValidPath`](https://pkg.go.dev/io/fs#ValidPath)). An invalid name is refused with an error
+wrapping `fs.ErrInvalid`, rather than read as a missing file, so a fat-fingered absolute path
+surfaces instead of silently resolving to "absent". A valid name that does not exist still
+returns the not-exist error the Store treats as a normal absent layer.
 
-Reach for `config-iofs` when the defaults have outgrown a string literal: several files, a
-directory you want to keep as files, or a zip or tar you are reading in place. The layer is
-read-only, which suits embedded defaults. See
-[Ship defaults inside the binary](../tutorials/embedded-defaults.md).
+To root a sub-tree, compose [`fs.Sub`](https://pkg.go.dev/io/fs#Sub) before `Wrap`. It already
+works with no help from this module:
 
-## It is read-only, and says so
+```go
+sub, _ := fs.Sub(embedded, "config")
+store, _ := config.NewStore(ctx, config.WithFiles(configiofs.Wrap(sub), "app.yaml"))
+```
+
+## Read-only, and where writes go
 
 `io/fs.FS` is read-only *by design*: the interface has no write, rename or remove. So
 `config-iofs` is read-only too, and its four write methods return the shared sentinel
@@ -69,30 +79,14 @@ To land such a write somewhere useful, name the writable layer with `config.To`.
 [embedded defaults tutorial](../tutorials/embedded-defaults.md) walks through it. A layer that
 is only ever read, such as baked-in defaults, never triggers the error.
 
-## Names are io/fs names
-
-Pass an `io/fs`-valid name: slash-separated, no leading slash, no `.` or `..` segments (see
-[`fs.ValidPath`](https://pkg.go.dev/io/fs#ValidPath)). An invalid name is refused with an error
-wrapping `fs.ErrInvalid`, rather than read as a missing file, so a fat-fingered absolute path
-surfaces instead of silently resolving to "absent". A valid name that does not exist still
-returns the not-exist error the Store treats as a normal absent layer.
-
-To root a sub-tree, compose [`fs.Sub`](https://pkg.go.dev/io/fs#Sub) before `Wrap`. It already
-works with no help from this module:
-
-```go
-sub, _ := fs.Sub(embedded, "config")
-store, _ := config.NewStore(ctx, config.WithFiles(configiofs.Wrap(sub), "app.yaml"))
-```
-
-## Watching
+## Watch for changes
 
 An `io/fs.FS` has no operating-system path and no symlink resolution, so the wrapper satisfies
 neither `config.RealPather` nor `config.LinkReader`. The Store polls it, which is harmless for
 `embed.FS`: a poll re-reads the same bytes and the Store stays quiet. For native watching over a
 real directory, use `config.Dir`.
 
-## Listing a directory
+## List a directory
 
 [`config-filekv`](filekv.md) reads a whole directory, so it needs `config.DirLister`. `Wrap`
 claims it only where the filesystem can list: one that implements `fs.ReadDirFS`, such as
@@ -100,6 +94,36 @@ claims it only where the filesystem can list: one that implements `fs.ReadDirFS`
 `zip.Reader`. Checking the root is the only I/O `Wrap` does. A filesystem that can do neither is
 wrapped without `ReadDir`, and `configfilekv.New` then returns `ErrNotListable` rather than
 contributing nothing later.
+
+## Test with fstest.MapFS
+
+[`fstest.MapFS`](https://pkg.go.dev/testing/fstest#MapFS) is an `io/fs.FS` built from a map, so a
+test needs no files and no embed directive:
+
+```go
+fsys := fstest.MapFS{"defaults.yaml": {Data: []byte("log:\n  format: json\n")}}
+
+store, err := config.NewStore(ctx, config.WithFiles(configiofs.Wrap(fsys), "defaults.yaml"))
+```
+
+## Errors you'll see
+
+| Error | Cause | Fix |
+|---|---|---|
+| `config.ErrReadOnlyFS` | A write was routed to a key that lives only in the iofs layer. | Name a writable layer with `config.To`. |
+| `fs.ErrInvalid` | The name is not `io/fs`-valid: a leading slash, or a `.` or `..` segment. | Pass a relative, slash-separated name, and use `fs.Sub` to root a sub-tree. |
+| `fs.ErrNotExist` | The name is valid but the file is not there. | Nothing, if the source is optional: the store treats it as an empty layer. |
+
+## When you don't need this
+
+For a **single** embedded defaults document, [`WithReaders`](load-and-merge.md) takes bytes you
+already have and needs no module. The [layering tutorial](../tutorials/layering.md) does exactly
+that.
+
+Reach for `config-iofs` when the defaults have outgrown a string literal: several files, a
+directory you want to keep as files, or a zip or tar you are reading in place. The layer is
+read-only, which suits embedded defaults. See
+[Ship defaults inside the binary](../tutorials/embedded-defaults.md).
 
 ## What it costs
 
