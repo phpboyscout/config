@@ -1,6 +1,6 @@
 module gitlab.com/phpboyscout/go/config
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/cucumber/godog v0.16.0
