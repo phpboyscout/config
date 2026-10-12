@@ -242,17 +242,25 @@ func (n *nested) Watch(ctx context.Context, interval time.Duration, onChange fun
 	return func() { once.Do(cancel) }, nil
 }
 
+// storeHolder is a backend that is, or decorates, a nested Store. A type
+// assertion on *nested would miss the promotable variant and every decorator.
+type storeHolder interface {
+	nestedStore() *Store
+}
+
+func (n *nested) nestedStore() *Store { return n.inner }
+
 // nestedStores reports the stores reachable through a backend, including the
 // one it wraps, so composition can be checked for a store appearing twice.
 func nestedStores(b Backend) []*Store {
-	n, ok := b.(*nested)
-	if !ok {
+	inner := innerNestedStore(b)
+	if inner == nil {
 		return nil
 	}
 
-	out := []*Store{n.inner}
-	for _, inner := range n.inner.backends {
-		out = append(out, nestedStores(inner)...)
+	out := []*Store{inner}
+	for _, backend := range inner.backends {
+		out = append(out, nestedStores(backend)...)
 	}
 
 	return out

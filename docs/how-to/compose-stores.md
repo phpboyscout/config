@@ -103,7 +103,8 @@ It is the only way to discover them, since no unpinned plan will ever name one.
 
 A store may appear **at most once** in a graph. Nesting one already reachable is
 `ErrCyclicStore` at construction, including as a diamond where the same store is reached
-through two different intermediates.
+through two different intermediates, and however each copy is nested: plain, with
+`NestedPromotable`, or under `Filtered` or `Constrained`.
 
 That is stricter than refusing cycles, deliberately: a store appearing twice would
 contribute its layers twice at two precedences, so every value in it would be shadowed by a

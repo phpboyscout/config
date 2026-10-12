@@ -218,6 +218,8 @@ func (f *filtered) pinOnlyLayers() bool { return innerPinOnly(f.inner) }
 
 func (f *filtered) hasConstraint() bool { return innerHasConstraint(f.inner) }
 
+func (f *filtered) nestedStore() *Store { return innerNestedStore(f.inner) }
+
 // constrain forwards, so a constraint the filter wraps still judges what its
 // source supplied. It sees the filtered layers: a key the filter hid was never
 // supplied.

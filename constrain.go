@@ -132,6 +132,7 @@ func (c *constrained) WatchPath() (string, bool)           { return innerWatchPa
 func (c *constrained) pinOnlyLayers() bool                 { return innerPinOnly(c.inner) }
 func (c *constrained) withheldSensitive() []string         { return innerWithheldSensitive(c.inner) }
 func (c *constrained) hasConstraint() bool                 { return true }
+func (c *constrained) nestedStore() *Store                 { return innerNestedStore(c.inner) }
 
 func (c *constrained) Load(ctx context.Context, prev []Layer) ([]Layer, error) {
 	return c.inner.Load(ctx, prev)

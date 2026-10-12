@@ -198,6 +198,61 @@ func TestNested_TreeRuleRefusesAStoreAppearingTwice(t *testing.T) {
 			t.Errorf("err = %v, want ErrCyclicStore for the diamond", err)
 		}
 	})
+
+	// The rule is about the store, so it must see one however it is wrapped.
+	// Missed, the duplicate surfaced later as ErrDuplicateLayer, or not at all
+	// for a store contributing no layers yet.
+	wrappings := map[string]func(*config.Store, string) config.Backend{
+		"promotable": func(s *config.Store, id string) config.Backend {
+			return config.Nested(s, id, config.NestedPromotable)
+		},
+		"filtered": func(s *config.Store, id string) config.Backend {
+			return config.Filtered(config.Nested(s, id), config.Deny("unrelated"))
+		},
+		"constrained": func(s *config.Store, id string) config.Backend {
+			return config.Constrained(config.Nested(s, id), config.Forbid("unrelated"))
+		},
+		"filtered over constrained": func(s *config.Store, id string) config.Backend {
+			return config.Filtered(
+				config.Constrained(config.Nested(s, id, config.NestedPromotable), config.Forbid("unrelated")),
+				config.Deny("unrelated"))
+		},
+	}
+
+	for name, wrap := range wrappings {
+		t.Run(name+", twice in one store", func(t *testing.T) {
+			t.Parallel()
+
+			shared := innerStore(t, map[string]string{"s.yaml": "a: 1\n"}, "s.yaml")
+
+			_, err := config.NewStore(context.Background(),
+				config.WithBackend(wrap(shared, "first")),
+				config.WithBackend(config.Nested(shared, "second")))
+
+			if !errors.Is(err, config.ErrCyclicStore) {
+				t.Errorf("err = %v, want ErrCyclicStore", err)
+			}
+		})
+
+		t.Run(name+", reached through an intermediate", func(t *testing.T) {
+			t.Parallel()
+
+			shared := innerStore(t, map[string]string{"s.yaml": "a: 1\n"}, "s.yaml")
+
+			middle, err := config.NewStore(context.Background(), config.WithBackend(wrap(shared, "s")))
+			if err != nil {
+				t.Fatalf("NewStore(middle): %v", err)
+			}
+
+			_, err = config.NewStore(context.Background(),
+				config.WithBackend(wrap(middle, "middle")),
+				config.WithBackend(config.Nested(shared, "direct")))
+
+			if !errors.Is(err, config.ErrCyclicStore) {
+				t.Errorf("err = %v, want ErrCyclicStore", err)
+			}
+		})
+	}
 }
 
 // Two stores over the same file, both able to write to it, produce layers equal

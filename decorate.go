@@ -55,6 +55,14 @@ func innerConstrain(inner Backend, layers []Layer, r *ValidationResult) {
 	}
 }
 
+func innerNestedStore(inner Backend) *Store {
+	if h, ok := inner.(storeHolder); ok {
+		return h.nestedStore()
+	}
+
+	return nil
+}
+
 func innerWithheldSensitive(inner Backend) []string {
 	if w, ok := inner.(sensitiveWithholder); ok {
 		return w.withheldSensitive()
