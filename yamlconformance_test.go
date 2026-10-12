@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"fmt"
 	"testing"
 
 	yaml "go.yaml.in/yaml/v3"
@@ -57,6 +58,17 @@ func writeYAMLSeed(t *testing.T, fsys config.FS, name string, seed map[string]an
 func TestBackendConformance_YAMLFileBackend(t *testing.T) {
 	t.Parallel()
 
+	for _, caseSensitive := range []bool{false, true} {
+		t.Run(fmt.Sprintf("case_sensitive=%v", caseSensitive), func(t *testing.T) {
+			t.Parallel()
+			runYAMLFileConformance(t, caseSensitive)
+		})
+	}
+}
+
+func runYAMLFileConformance(t *testing.T, caseSensitive bool) {
+	t.Helper()
+
 	backendconformance.Run(t, backendconformance.Suite{
 		NewBackend: func(t *testing.T, seed map[string]any) (config.Backend, backendconformance.Control) {
 			fsys, err := config.Dir(t.TempDir())
@@ -74,8 +86,12 @@ func TestBackendConformance_YAMLFileBackend(t *testing.T) {
 
 			return config.NewFileBackend(fsys, name), &fileControl{fs: fsys, name: name}
 		},
-		Seed:     conformanceSeed(),
-		Defines:  conformanceDefines(),
-		WriteKey: "level", WriteValue: "debug",
+		Seed:          conformanceSeed(),
+		Defines:       conformanceDefines(),
+		WriteKey:      "level",
+		WriteValue:    "debug",
+		CaseSensitive: caseSensitive,
+		MixedCaseSeed: mixedCaseSeed(),
+		MixedCaseKey:  "Server.Port",
 	})
 }

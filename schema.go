@@ -22,6 +22,10 @@ var ErrEmptySchema = errors.NewSentinel("config.empty_schema", "config: schema h
 // dialect of its own.
 type StructSchema struct {
 	fields map[string]FieldSchema
+	// exact is fields with untagged struct names as written, for a
+	// case-sensitive Store. Both are built at construction, so one cached
+	// schema serves a Store of either mode.
+	exact  map[string]FieldSchema
 	strict bool
 }
 
@@ -46,6 +50,7 @@ type SchemaOption func(*schemaConfig)
 
 type schemaConfig struct {
 	fields map[string]FieldSchema
+	exact  map[string]FieldSchema
 	strict bool
 }
 
@@ -60,7 +65,8 @@ func WithStrictMode() SchemaOption {
 // Supported tags: `config:"key" validate:"required" enum:"a,b,c" default:"value"`.
 func WithStructSchema(v any) SchemaOption {
 	return func(c *schemaConfig) {
-		maps.Copy(c.fields, parseStructTags(reflect.TypeOf(v), ""))
+		maps.Copy(c.fields, parseStructTags(reflect.TypeOf(v), "", keysFolded))
+		maps.Copy(c.exact, parseStructTags(reflect.TypeOf(v), "", keysExact))
 	}
 }
 
@@ -73,6 +79,7 @@ func WithStructSchema(v any) SchemaOption {
 func NewSchema(opts ...SchemaOption) (*StructSchema, error) {
 	cfg := &schemaConfig{
 		fields: make(map[string]FieldSchema),
+		exact:  make(map[string]FieldSchema),
 	}
 
 	for _, opt := range opts {
@@ -85,6 +92,7 @@ func NewSchema(opts ...SchemaOption) (*StructSchema, error) {
 
 	return &StructSchema{
 		fields: cfg.fields,
+		exact:  cfg.exact,
 		strict: cfg.strict,
 	}, nil
 }
@@ -95,7 +103,7 @@ func (s *StructSchema) Fields() map[string]FieldSchema {
 }
 
 // parseStructTags walks a struct type and extracts schema fields from tags.
-func parseStructTags(t reflect.Type, prefix string) map[string]FieldSchema {
+func parseStructTags(t reflect.Type, prefix string, keys keyCase) map[string]FieldSchema {
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
@@ -105,7 +113,7 @@ func parseStructTags(t reflect.Type, prefix string) map[string]FieldSchema {
 	for _, f := range reflect.VisibleFields(t) {
 		configKey := f.Tag.Get("config")
 		if configKey == "" || configKey == "-" {
-			recurseUntaggedStruct(f, prefix, fields)
+			recurseUntaggedStruct(f, prefix, fields, keys)
 
 			continue
 		}
@@ -121,20 +129,20 @@ func parseStructTags(t reflect.Type, prefix string) map[string]FieldSchema {
 }
 
 // recurseUntaggedStruct handles struct fields that lack a config tag by recursing into them.
-func recurseUntaggedStruct(f reflect.StructField, prefix string, fields map[string]FieldSchema) {
+func recurseUntaggedStruct(f reflect.StructField, prefix string, fields map[string]FieldSchema, keys keyCase) {
 	if f.Type.Kind() != reflect.Struct {
 		return
 	}
 
 	if f.Anonymous {
-		maps.Copy(fields, parseStructTags(f.Type, prefix))
+		maps.Copy(fields, parseStructTags(f.Type, prefix, keys))
 
 		return
 	}
 
-	sub := joinPath(prefix, normaliseKey(f.Name))
+	sub := joinPath(prefix, keys.key(f.Name))
 
-	maps.Copy(fields, parseStructTags(f.Type, sub))
+	maps.Copy(fields, parseStructTags(f.Type, sub, keys))
 }
 
 // buildFieldSchema constructs a FieldSchema from struct field tags.
@@ -184,4 +192,13 @@ func goTypeToSchemaType(t reflect.Type) string {
 		// string, which is what the accessors will coerce it through anyway.
 		return "string"
 	}
+}
+
+// fieldsIn returns the fields as a Store of the given mode names them.
+func (s *StructSchema) fieldsIn(keys keyCase) map[string]FieldSchema {
+	if keys.exact() {
+		return s.exact
+	}
+
+	return s.fields
 }

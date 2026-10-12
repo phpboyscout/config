@@ -49,7 +49,7 @@ func TestMatchPattern(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := matchPattern(tc.pattern, splitPath(tc.path)); got != tc.want {
+			if got := matchPattern(tc.pattern, keysFolded.split(tc.path), keysFolded); got != tc.want {
 				t.Errorf("matchPattern(%q, %q) = %v, want %v", tc.pattern, tc.path, got, tc.want)
 			}
 		})
@@ -86,7 +86,7 @@ func TestFilterRules(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := tc.rules.permits(splitPath(tc.path)); got != tc.want {
+			if got := tc.rules.permits(keysFolded.split(tc.path), keysFolded); got != tc.want {
 				t.Errorf("permits(%q) = %v, want %v", tc.path, got, tc.want)
 			}
 		})

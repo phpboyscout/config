@@ -919,7 +919,7 @@ func sectionSnapshot(version uint64, host string) *Snapshot {
 	return newSnapshot(version, []Layer{{
 		Source: Source{Kind: SourceFile, Name: "/app.yaml"},
 		Values: map[string]any{"server": map[string]any{"host": host}},
-	}})
+	}}, keysFolded)
 }
 
 // A Store publishes under its lock but notifies outside it, so nothing orders
@@ -1649,9 +1649,9 @@ func TestNotify_SupersededDeliveryIsNotPassedOn(t *testing.T) {
 		Values: map[string]any{"a": 1},
 	}}
 
-	n.notify(newSnapshot(3, layers))
-	n.notify(newSnapshot(2, layers))
-	n.notify(newSnapshot(4, layers))
+	n.notify(newSnapshot(3, layers, keysFolded))
+	n.notify(newSnapshot(2, layers, keysFolded))
+	n.notify(newSnapshot(4, layers, keysFolded))
 
 	mu.Lock()
 	defer mu.Unlock()

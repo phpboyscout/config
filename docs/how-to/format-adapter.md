@@ -157,6 +157,14 @@ one named subtest per contract, so a failure names exactly which one broke:
 | `write_round_trips` | *(editing codecs)* a write is served and reaches disk |
 | `no_edit_is_a_noop` | *(editing codecs)* `Apply` with no edits changes no value |
 | `conflict_detected` | *(editing codecs)* a change between load and write is refused with `ErrConflict` |
+| `existing_key_written_in_another_case` | *(editing codecs, with `MixedCaseSample`)* writing `server.port` to a source spelling it `Server.Port` edits that key |
+| `new_key_under_a_mixed_case_parent` | *(editing codecs, with `MixedCaseSample`)* a new key lands under the parent as the source spells it |
+| `mixed_case_key_is_exact` | *(editing codecs, with `MixedCaseSample` and `CaseSensitive`)* the key is read and written only in its own spelling |
+
+Run the suite twice, once with `CaseSensitive: true`, so your codec is proven in a store built
+with `WithCaseSensitiveKeys` as well as in one that folds keys. `MixedCaseSample` is a source
+holding `MixedCaseKey`, a mixed-case leaf beneath a parent such as `Server.Port`; leave both
+unset and the case cases are skipped.
 
 The suite uses the standard library `testing` package and no testify, so running
 it adds no assertion-library dependency to your module. It exercises real file semantics through

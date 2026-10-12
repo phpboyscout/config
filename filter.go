@@ -43,13 +43,13 @@ type filterRules struct {
 func (r filterRules) empty() bool { return len(r.allow) == 0 && len(r.deny) == 0 }
 
 // permits reports whether a path survives the rules.
-func (r filterRules) permits(segs []string) bool {
+func (r filterRules) permits(segs []string, keys keyCase) bool {
 	if segs == nil {
 		return false
 	}
 
 	for _, pattern := range r.deny {
-		if matchPattern(pattern, segs) {
+		if matchPattern(pattern, segs, keys) {
 			return false
 		}
 	}
@@ -59,7 +59,7 @@ func (r filterRules) permits(segs []string) bool {
 	}
 
 	for _, pattern := range r.allow {
-		if matchPattern(pattern, segs) {
+		if matchPattern(pattern, segs, keys) {
 			return true
 		}
 	}
@@ -83,9 +83,10 @@ func (r filterRules) permits(segs []string) bool {
 // as the last segment. Anything after it would be unreachable, and a pattern
 // whose tail can never match is a typo worth not honouring quietly.
 //
-// Both sides are folded: [Filtered] sees the backend's raw keys, and the Store
-// folds them afterwards, so a pattern must match every spelling of its key.
-func matchPattern(pattern string, segs []string) bool {
+// In a folded Store both sides are folded: [Filtered] sees the backend's raw
+// keys, and the Store folds them afterwards, so a pattern must match every
+// spelling of its key.
+func matchPattern(pattern string, segs []string, keys keyCase) bool {
 	parts := strings.Split(pattern, ".")
 
 	for i, part := range parts {
@@ -99,7 +100,7 @@ func matchPattern(pattern string, segs []string) bool {
 			return false
 		}
 
-		if part != "*" && normaliseKey(part) != normaliseKey(segs[i]) {
+		if part != "*" && keys.key(part) != keys.key(segs[i]) {
 			return false
 		}
 	}
@@ -183,6 +184,8 @@ type filtered struct {
 	// refuse writes to a key nothing owns.
 	mu       sync.RWMutex
 	withheld []string
+
+	binding keyCaseBinding
 }
 
 // ID and Capabilities are forwarded unchanged, and both matter.
@@ -220,6 +223,15 @@ func (f *filtered) hasConstraint() bool { return innerHasConstraint(f.inner) }
 
 func (f *filtered) nestedStore() *Store { return innerNestedStore(f.inner) }
 
+// BindKeyCase forwards, then records the mode its patterns match in.
+func (f *filtered) BindKeyCase(caseSensitive bool) error {
+	if err := forwardKeyCase(f.inner, caseSensitive); err != nil {
+		return err
+	}
+
+	return f.binding.bind(caseSensitive)
+}
+
 // constrain forwards, so a constraint the filter wraps still judges what its
 // source supplied. It sees the filtered layers: a key the filter hid was never
 // supplied.
@@ -238,15 +250,17 @@ func (f *filtered) Load(ctx context.Context, below []Layer) ([]Layer, error) {
 		withheld []string
 	)
 
+	keys := f.binding.keys()
+
 	// filterValues stringifies non-string keys as it walks, so a collision
 	// between them would be decided here, silently, before the Store could
 	// refuse it.
-	if _, _, err := normalised(layers); err != nil {
+	if _, _, err := normalised(layers, keys); err != nil {
 		return nil, err
 	}
 
 	for _, layer := range layers {
-		kept, removed := filterValues(layer.Values, f.rules, nil)
+		kept, removed := filterValues(layer.Values, f.rules, nil, keys)
 
 		if sensitive {
 			withheld = append(withheld, removed...)
@@ -285,7 +299,7 @@ func (f *filtered) withheldSensitive() []string {
 // paths it removed. Parent maps left empty are dropped, so a filtered subtree
 // does not linger as an empty map that reads as "defined, but with nothing in
 // it".
-func filterValues(values map[string]any, rules filterRules, prefix []string) (map[string]any, []string) {
+func filterValues(values map[string]any, rules filterRules, prefix []string, keys keyCase) (map[string]any, []string) {
 	if len(values) == 0 {
 		return nil, nil
 	}
@@ -298,7 +312,7 @@ func filterValues(values map[string]any, rules filterRules, prefix []string) (ma
 		path := append(append([]string{}, prefix...), key)
 
 		if nested, isMap := asStringMap(value); isMap && len(nested) > 0 {
-			sub, subRemoved := filterValues(nested, rules, path)
+			sub, subRemoved := filterValues(nested, rules, path, keys)
 			removed = append(removed, subRemoved...)
 
 			if len(sub) > 0 {
@@ -308,8 +322,8 @@ func filterValues(values map[string]any, rules filterRules, prefix []string) (ma
 			continue
 		}
 
-		if !rules.permits(path) {
-			removed = append(removed, normaliseKey(strings.Join(path, ".")))
+		if !rules.permits(path, keys) {
+			removed = append(removed, keys.key(strings.Join(path, ".")))
 
 			continue
 		}

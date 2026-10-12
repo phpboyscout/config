@@ -185,6 +185,7 @@ func initStoreSteps(ctx *godog.ScenarioContext) {
 	initLifecycleSteps(ctx, w)
 	initSensitiveSteps(ctx, w)
 	initClosingSteps(ctx, w)
+	initKeyCaseSteps(ctx, w)
 }
 
 // --- Given implementations -------------------------------------------------

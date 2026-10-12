@@ -26,7 +26,7 @@ func testSnapshot() *Snapshot {
 		{Source: Source{Kind: SourceEnv, Name: "APP_SERVER_HOST"}, Values: map[string]any{
 			"server": map[string]any{"host": "env-host"},
 		}},
-	})
+	}, keysFolded)
 }
 
 func TestSnapshot_Get(t *testing.T) {
@@ -181,7 +181,7 @@ func TestSnapshot_IsImmutable(t *testing.T) {
 	t.Parallel()
 
 	original := map[string]any{"server": map[string]any{"port": 8080}}
-	s := newSnapshot(1, []Layer{{Source: fileSource("a.yaml", 0), Values: original}})
+	s := newSnapshot(1, []Layer{{Source: fileSource("a.yaml", 0), Values: original}}, keysFolded)
 
 	t.Run("mutating the source map after construction", func(t *testing.T) {
 		t.Parallel()
@@ -222,7 +222,7 @@ func TestSnapshot_IsImmutable(t *testing.T) {
 func TestSnapshot_VersionAndNilSafety(t *testing.T) {
 	t.Parallel()
 
-	s := newSnapshot(7, nil)
+	s := newSnapshot(7, nil, keysFolded)
 	if s.Version() != 7 {
 		t.Errorf("Version() = %d, want 7", s.Version())
 	}
@@ -306,7 +306,7 @@ func TestSnapshot_EmptyThenPopulatedDropsLeafProvenance(t *testing.T) {
 	s := newSnapshot(1, []Layer{
 		{Source: fileSource("base.yaml", 0), Values: map[string]any{"x": map[string]any{}}},
 		{Source: fileSource("overlay.yaml", 0), Values: map[string]any{"x": map[string]any{"a": 1}}},
-	})
+	}, keysFolded)
 
 	if src, ok := s.Origin("x"); ok {
 		t.Errorf("Origin(x) = %q, want not-found once the subtree is populated", src)
@@ -333,7 +333,7 @@ func TestSnapshot_GetDoesNotLeakLiveState(t *testing.T) {
 				"hosts": []any{"a", "b"},
 			},
 		},
-	}})
+	}}, keysFolded)
 
 	got, ok := snap.Get("server")
 	if !ok {

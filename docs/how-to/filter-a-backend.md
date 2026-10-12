@@ -38,6 +38,10 @@ at all.
 | `db.**` | `db.host`, `db.primary.host` | `db`, `cache.host` |
 | `**` | everything | nothing |
 
+In a store that folds keys, a pattern matches every spelling of its key: `Deny("db.password")`
+hides `DB.Password` and `db.password` alike. In a store built with `WithCaseSensitiveKeys`, a
+pattern matches only the spelling it is written in.
+
 The segment boundary is the whole design. `*` stops at one; `**` crosses any number.
 Patterns are deliberately not regular expressions. A regexp invites patterns that cross
 boundaries in ways that are hard to reason about against a tree, and a mistake in one
@@ -118,6 +122,11 @@ capability you configured.
   capabilities would strip the flag from a secrets backend entirely.
 
 Both are asserted by tests that fail if the forwarding is removed.
+
+If you wrap a filtered backend in a decorator of your own, forward
+[`KeyCaseBinder`](https://pkg.go.dev/gitlab.com/phpboyscout/go/config#KeyCaseBinder) to it.
+Otherwise the filter never learns the store's key mode, and in a case-sensitive store it
+goes on matching patterns in any case.
 
 ## Related
 

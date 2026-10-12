@@ -101,6 +101,12 @@ key prefix for any child tag that contains no dot of its own. So `Server.Port` t
 `config:"port"` yields the key `server.port`, exactly as the fully-qualified form above
 would. Both spellings work; pick one and stay with it.
 
+In a store built with `WithCaseSensitiveKeys`, the field name is used as written, so the same
+struct yields `Server.port`, and every `config` tag must match the key's spelling exactly. One
+struct serves both kinds of store. `ValidateStruct` learns the mode from the `*View` it is
+given; a wrapper of your own around a view is validated as folded unless it forwards
+`CaseSensitiveKeys`.
+
 !!! warning "Validation reads; it never writes"
     The `default:` tag is hint text only. Validation does not inject defaults into the
     configuration. Defaults belong in exactly one place, your shipped or embedded
@@ -110,7 +116,7 @@ would. Both spellings work; pick one and stay with it.
 !!! note "Two different sets of struct tags"
     Validation reads **`config:`** (plus `validate:`, `enum:`, `default:` and
     `description:`). [Section decoding](typed-sections.md) reads **`mapstructure:`**,
-    falling back to `yaml:` then `json:` then the lower-cased field name. They are separate
+    falling back to `yaml:` then `json:` then the field name. They are separate
     mechanisms, and one struct may carry both sets. See
     [Struct tags](../reference/struct-tags.md).
 

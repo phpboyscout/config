@@ -2,7 +2,6 @@ package config
 
 import (
 	"slices"
-	"strings"
 )
 
 // Snapshot is an immutable, fully-resolved view of configuration at a point in
@@ -18,13 +17,14 @@ type Snapshot struct {
 	values  map[string]any
 	origin  map[string]Source
 	version uint64
+	keys    keyCase
 }
 
 // newSnapshot folds layers into an immutable snapshot.
 //
 // The layers are cloned on the way in: a snapshot whose contents can be
 // changed through a reference the caller kept is not immutable.
-func newSnapshot(version uint64, layers []Layer) *Snapshot {
+func newSnapshot(version uint64, layers []Layer, keys keyCase) *Snapshot {
 	owned := make([]Layer, 0, len(layers))
 
 	for _, l := range layers {
@@ -42,7 +42,22 @@ func newSnapshot(version uint64, layers []Layer) *Snapshot {
 		values:  values,
 		origin:  origin,
 		version: version,
+		keys:    keys,
 	}
+}
+
+// CaseSensitiveKeys reports whether this snapshot compares keys exactly, as
+// built by a Store with [WithCaseSensitiveKeys], rather than folded.
+func (s *Snapshot) CaseSensitiveKeys() bool { return s.keyCase().exact() }
+
+// keyCase tolerates a nil snapshot, which reads as folded like every other
+// empty configuration.
+func (s *Snapshot) keyCase() keyCase {
+	if s == nil {
+		return keysFolded
+	}
+
+	return s.keys
 }
 
 // Version is a monotonically increasing counter, incremented for every
@@ -62,7 +77,7 @@ func (s *Snapshot) Get(path string) (any, bool) {
 		return nil, false
 	}
 
-	segs := splitPath(path)
+	segs := s.keys.split(path)
 	if len(segs) == 0 {
 		return nil, false
 	}
@@ -93,7 +108,7 @@ func (s *Snapshot) Has(path string) bool {
 		return false
 	}
 
-	segs := splitPath(path)
+	segs := s.keys.split(path)
 	if len(segs) == 0 {
 		return false
 	}
@@ -123,7 +138,7 @@ func (s *Snapshot) Origin(path string) (Source, bool) {
 		return Source{}, false
 	}
 
-	src, ok := s.origin[normalisePath(path)]
+	src, ok := s.origin[s.keys.path(path)]
 
 	return src, ok
 }
@@ -139,7 +154,7 @@ func (s *Snapshot) DefinedIn(path string) []Source {
 		return nil
 	}
 
-	segs := splitPath(path)
+	segs := s.keys.split(path)
 	if len(segs) == 0 {
 		return nil
 	}
@@ -224,35 +239,4 @@ func lookup(values map[string]any, segs []string) (any, bool) {
 	}
 
 	return current, true
-}
-
-// splitPath splits a dotted path into normalised segments, returning nil for
-// a path that is empty or malformed.
-func splitPath(path string) []string {
-	if strings.TrimSpace(path) == "" {
-		return nil
-	}
-
-	segs := strings.Split(path, ".")
-	out := make([]string, 0, len(segs))
-
-	for _, s := range segs {
-		if s == "" {
-			return nil
-		}
-
-		out = append(out, normaliseKey(s))
-	}
-
-	return out
-}
-
-// normalisePath applies key normalisation to a whole dotted path.
-func normalisePath(path string) string {
-	segs := splitPath(path)
-	if segs == nil {
-		return ""
-	}
-
-	return strings.Join(segs, ".")
 }

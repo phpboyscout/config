@@ -161,11 +161,14 @@ func validateView(view Reader, schema *StructSchema) *ValidationResult {
 		return result
 	}
 
-	for key, field := range schema.fields {
+	keys := readerKeyCase(view)
+	fields := schema.fieldsIn(keys)
+
+	for key, field := range fields {
 		validateField(key, field, view.Get(key), view.Has(key), result)
 	}
 
-	detectUnknownKeys(configuredKeys(view), schema.fields, result, schema.strict)
+	detectUnknownKeys(configuredKeys(view), knownKeys(fields, keys), result, schema.strict)
 
 	return result
 }
@@ -341,7 +344,19 @@ func configuredKeys(view Reader) []string {
 	return out
 }
 
-func detectUnknownKeys(allKeys []string, fields map[string]FieldSchema, result *ValidationResult, strict bool) {
+// knownKeys returns the field keys as a Store of the given mode spells them, so
+// a camelCase tag is recognised among a folded Store's keys.
+func knownKeys(fields map[string]FieldSchema, keys keyCase) map[string]bool {
+	out := make(map[string]bool, len(fields))
+
+	for key := range fields {
+		out[keys.path(key)] = true
+	}
+
+	return out
+}
+
+func detectUnknownKeys(allKeys []string, fields map[string]bool, result *ValidationResult, strict bool) {
 	for _, key := range allKeys {
 		if _, known := fields[key]; known {
 			continue
@@ -363,7 +378,7 @@ func detectUnknownKeys(allKeys []string, fields map[string]FieldSchema, result *
 }
 
 // isKnownKeyPrefix returns true if key is a parent prefix of any known schema field.
-func isKnownKeyPrefix(key string, fields map[string]FieldSchema) bool {
+func isKnownKeyPrefix(key string, fields map[string]bool) bool {
 	prefix := key + "."
 
 	for known := range fields {

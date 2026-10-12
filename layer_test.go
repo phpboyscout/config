@@ -449,7 +449,7 @@ func TestMerge_IsLinearInMapSize(t *testing.T) {
 func mustNormalise(t *testing.T, layers []Layer) []Layer {
 	t.Helper()
 
-	out, _, err := normalised(layers)
+	out, _, err := normalised(layers, keysFolded)
 	if err != nil {
 		t.Fatalf("normalised: %v", err)
 	}

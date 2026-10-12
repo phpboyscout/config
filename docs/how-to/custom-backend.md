@@ -508,6 +508,28 @@ Serving real data after healing rather than an empty source is worth the extra
 lines where you can afford it: an empty source proves only that the connection was
 re-made, whereas a value proves the healed path *read* it.
 
+## Key case
+
+A store either folds keys to lower case or, built with `WithCaseSensitiveKeys`, keeps them
+exactly as each source spells them. A backend that returns keys as its system spells them,
+and addresses `Edit.Path` exactly, needs nothing more for either mode:
+
+- In a folded store, an edit to a key your layer already defines arrives spelled the way
+  your layer spells it, so writing `server.port` reaches your `Server.Port`.
+- In a case-sensitive store, `Edit.Path` is exactly what the caller wrote, and
+  `Edit.CaseSensitive` is true. Only a backend that itself matches keys in any case needs to
+  read it.
+
+A decorator, or any backend that matches patterns or names against keys, implements
+[`KeyCaseBinder`](https://pkg.go.dev/gitlab.com/phpboyscout/go/config#KeyCaseBinder).
+`NewStore` calls `BindKeyCase` once, before the first load, and a decorator forwards it to
+the backend it wraps. Without the forward, a `Filtered` backend beneath yours keeps folding
+inside a case-sensitive store, and nothing reports it.
+
+Run the conformance suite in both modes, with `Suite.CaseSensitive` set on the second run.
+`Suite.MixedCaseSeed` and `Suite.MixedCaseKey` add the cases that check a write in another
+case edits an existing key rather than adding a second spelling beside it.
+
 ## Shipping read-only first, and adding writes later
 
 Shipping a backend that reads before it writes is a normal and supported path, often the

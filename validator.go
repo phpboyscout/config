@@ -78,7 +78,7 @@ func WithSchemaAt(prefix string, schema Schema, opts ...MountOption) StoreOption
 			return
 		}
 
-		m := mounted{at: normalisePath(prefix), schema: schema}
+		m := mounted{at: prefix, schema: schema}
 		for _, opt := range opts {
 			opt(&m)
 		}
@@ -157,7 +157,7 @@ func validateAgainst(snap *Snapshot, mounts []mounted, paths []string) *Validati
 	result := &ValidationResult{}
 
 	for _, m := range mounts {
-		if !withinAny(m.at, paths) {
+		if !withinAny(m.at, paths, snap.keys) {
 			continue
 		}
 
@@ -229,13 +229,13 @@ func attribute(r *ValidationResult, fromError, fromWarning int, name string) {
 // withinAny reports whether a mount should run for the requested paths. No
 // paths means everything; otherwise a mount runs when it sits at or beneath one
 // of them.
-func withinAny(at string, paths []string) bool {
+func withinAny(at string, paths []string, keys keyCase) bool {
 	if len(paths) == 0 {
 		return true
 	}
 
 	for _, p := range paths {
-		p = normalisePath(p)
+		p = keys.path(p)
 		if p == "" || at == p || strings.HasPrefix(at, p+".") {
 			return true
 		}

@@ -26,7 +26,7 @@ The rules, in full:
 | Segments are separated by `.` | `server.port` addresses key `port` inside mapping `server`. |
 | A segment must not be empty | `a..b`, `.a` and `a.` are all invalid. |
 | The whole path must not be blank | `""` and `"   "` are invalid. |
-| Every segment is lower-cased before use | `Server.Port`, `SERVER.PORT` and `server.port` are the same path. |
+| Every segment is lower-cased before use, unless the store is case-sensitive | `Server.Port`, `SERVER.PORT` and `server.port` are the same path. In a store built with `WithCaseSensitiveKeys` they are three. |
 | Surrounding whitespace is not trimmed per segment | `"server .port"` looks for a segment literally named `server ` (with the space). |
 
 An invalid path passed to `Store.Apply` or `Store.Plan` returns
@@ -34,10 +34,10 @@ An invalid path passed to `Store.Apply` or `Store.Plan` returns
 is not an error. Reads return the zero value for anything they cannot resolve, including a
 path that is malformed.
 
-## Keys are lower-cased, everywhere
+## Keys are lower-cased, unless you ask for exact keys
 
-Every key entering the store is lower-cased, recursively, including keys inside sequence
-elements. So a file written as:
+By default every key entering the store is lower-cased, recursively, including keys inside
+sequence elements. So a file written as:
 
 ```yaml
 Server:
@@ -60,6 +60,40 @@ sources, different spellings are simply the same key, and the later source wins.
 spells it `Server.Port` edits that key, on every writable backend, rather than adding a
 second spelling beside it. Below the last segment the source defines, the path is written as
 you spelled it, except that a new key in a YAML file is written lower-cased.
+
+### Exact keys
+
+A store built with `config.WithCaseSensitiveKeys()` keeps every key as its source spells it,
+so `Port` and `port` are two keys:
+
+```go
+store, err := config.NewStore(ctx,
+    config.WithCaseSensitiveKeys(),
+    config.WithFiles(config.OS(), "app.yaml"),
+)
+```
+
+The mode belongs to the whole store and is fixed when it is built. In a case-sensitive store:
+
+- Every lookup compares exactly: `Get`, `Has`, `IsSet`, `DefinedIn`, `Origin`, `Sub`,
+  `Keys` and `Explain`.
+- A later source's `Port` does not override an earlier source's `port`, because they are
+  different keys.
+- One source may hold `port` and `Port` together. Keys that are not strings and print the
+  same, such as `1` and `1.0`, are still refused with `ErrKeyCollision`.
+- A write is addressed exactly as you spell it. Writing `server.port` beside an existing
+  `Server.Port` adds a second key.
+- `Allow`, `Deny` and `Forbid` patterns match exactly, and so does the
+  [sensitive-leak guard](errors.md#errsensitiveleak): `db.password` is not the
+  `DB.Password` a secrets backend holds.
+- A source changing only the case of a key is a change, and observers are told.
+- Struct fields match keys exactly; see [struct tags](struct-tags.md).
+- An environment variable matches an existing key in any case; see
+  [environment variables](environment-variables.md).
+
+A nested store must be built in the same mode as the store it is nested in, and a backend
+can belong to stores of only one mode. Either mistake fails `NewStore` with
+[`ErrKeyCaseMismatch`](errors.md#errkeycasemismatch).
 
 ## A key containing a literal dot cannot be addressed
 

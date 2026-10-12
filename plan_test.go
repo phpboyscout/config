@@ -24,7 +24,7 @@ func routingSnapshot() *Snapshot {
 		}},
 		{Source: Source{Kind: SourceEnv, Name: "APP_SERVER_HOST", Writable: false},
 			Values: map[string]any{"server": map[string]any{"host": "env-host"}}},
-	})
+	}, keysFolded)
 }
 
 // sourcesOf lists a snapshot's sources in precedence order, which is what
@@ -167,7 +167,7 @@ func TestRoute_NoWritableLayer(t *testing.T) {
 	snap := newSnapshot(1, []Layer{
 		{Source: Source{Kind: SourceEnv, Name: "APP_A", Writable: false},
 			Values: map[string]any{"a": 1}},
-	})
+	}, keysFolded)
 
 	if _, err := route(snap, writableOf(snap), writableOf(snap), sourcesOf(snap), nil, nil, []Change{Set("a", 2)}); !errors.Is(err, ErrNoWritableLayer) {
 		t.Errorf("err = %v, want ErrNoWritableLayer", err)
@@ -206,7 +206,7 @@ func TestRoute_ChoosesBetweenDocumentsOfOneFile(t *testing.T) {
 	snap := newSnapshot(1, []Layer{
 		{Source: fileSource("app.yaml", 0), Values: map[string]any{"a": 1, "onlydoc0": true}},
 		{Source: fileSource("app.yaml", 1), Values: map[string]any{"a": 2}},
-	})
+	}, keysFolded)
 
 	p := planFor(t, snap, Set("a", 3), Set("onlydoc0", false), Set("brandnew", 1))
 
@@ -330,7 +330,7 @@ func TestMatchTarget_PrefersTheHighestPrecedenceLayerWithThatName(t *testing.T) 
 	snap := newSnapshot(1, []Layer{
 		{Source: lower, Values: map[string]any{"which": "lower"}},
 		{Source: upper, Values: map[string]any{"which": "upper"}},
-	})
+	}, keysFolded)
 
 	p := planFor(t, snap, Change{Path: "which", Value: "x", Target: &Source{Name: "shared"}})
 
@@ -409,7 +409,7 @@ func TestToDocument_AddressesASpecificDocument(t *testing.T) {
 	snap := newSnapshot(1, []Layer{
 		{Source: fileSource("multi.yaml", 0), Values: map[string]any{"a": 1}},
 		{Source: fileSource("multi.yaml", 1), Values: map[string]any{"b": 2}},
-	})
+	}, keysFolded)
 
 	p := planFor(t, snap, Set("a", 9, ToDocument("multi.yaml", 1)))
 

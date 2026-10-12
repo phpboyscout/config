@@ -49,7 +49,8 @@ A dotenv key is lower-cased and its underscores become dotted-key separators, so
 `DATABASE_HOST` reads as `database.host`. A dotenv layer therefore merges into a nested YAML or
 JSON one by the same paths. The rule is deterministic and is the mapping the environment backend
 uses for an unmatched variable, so a key with a literal underscore in its name cannot be
-expressed, by design.
+expressed, by design. The rule is the same in a store built with `WithCaseSensitiveKeys`:
+it is how a dotenv name becomes a key, not a folding of keys a source spelled.
 
 Values are strings, and the read path casts them: `GetInt("database.port")` turns `"5432"` into
 `5432`. When two lines name the same key the later one wins, and that includes a key that is a

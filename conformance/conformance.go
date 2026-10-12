@@ -57,6 +57,20 @@ type Suite struct {
 	// back after the write.
 	WriteKey   string
 	WriteValue string
+
+	// CaseSensitive builds every Store the suite uses with
+	// [config.WithCaseSensitiveKeys]. Run the suite once with it and once
+	// without, so the codec is proven in both key modes; Defines must then be
+	// spelled exactly as Sample spells them.
+	CaseSensitive bool
+
+	// MixedCaseSample is a valid source defining MixedCaseKey, a leaf spelled
+	// in mixed case beneath at least one parent, such as "Server.Port". When
+	// both are set on an [config.EditingCodec], the suite checks that a write
+	// addressed in another case edits that key rather than adding a second
+	// spelling, and that a new key lands under the parent as spelled.
+	MixedCaseSample []byte
+	MixedCaseKey    string
 }
 
 // Run executes the whole suite against s, one named subtest per contract, so a
@@ -94,6 +108,10 @@ func Run(t *testing.T, s Suite) {
 		t.Run("no_edit_is_a_noop", func(t *testing.T) { s.noEditIsANoop(t, ec) })
 		t.Run("conflict_detected", func(t *testing.T) { s.conflictDetected(t, ec) })
 
+		if len(s.MixedCaseSample) > 0 {
+			s.runMixedCase(t)
+		}
+
 		return
 	}
 
@@ -124,7 +142,7 @@ func (s Suite) decodesAndMerges(t *testing.T) {
 	write(t, fsys, "base.yaml", []byte(base))
 	write(t, fsys, "sample", s.Sample)
 
-	store := newStore(t,
+	store := s.newStore(t,
 		config.WithBackend(config.NewFileBackend(fsys, "base.yaml")),        // lower precedence
 		config.WithBackend(config.NewCodecBackend(fsys, "sample", s.Codec)), // higher precedence
 	)
@@ -157,7 +175,7 @@ func (s Suite) absentSourceTolerated(t *testing.T) {
 
 	write(t, fsys, "base.yaml", []byte(nestedYAML(key, "from-base")))
 
-	store := newStore(t,
+	store := s.newStore(t,
 		config.WithBackend(config.NewFileBackend(fsys, "base.yaml")),
 		config.WithBackend(config.NewCodecBackend(fsys, "does-not-exist", s.Codec)),
 	)
@@ -175,7 +193,7 @@ func (s Suite) provenanceNamesSource(t *testing.T) {
 
 	write(t, fsys, "sample", s.Sample)
 
-	store := newStore(t, config.WithBackend(config.NewCodecBackend(fsys, "sample", s.Codec)))
+	store := s.newStore(t, config.WithBackend(config.NewCodecBackend(fsys, "sample", s.Codec)))
 
 	src, ok := store.View().Origin(key)
 	if !ok {
@@ -197,7 +215,7 @@ func (s Suite) readOnlySkippedByRouting(t *testing.T) {
 	write(t, fsys, "base.yaml", []byte(nestedYAML(key, "from-base")))
 	write(t, fsys, "sample", s.Sample)
 
-	store := newStore(t,
+	store := s.newStore(t,
 		config.WithBackend(config.NewFileBackend(fsys, "base.yaml")),
 		config.WithBackend(config.NewCodecBackend(fsys, "sample", s.Codec)),
 	)
@@ -223,7 +241,7 @@ func (s Suite) writeRoundTrips(t *testing.T) {
 	fsys := dir(t)
 	write(t, fsys, "sample", s.Sample)
 
-	store := newStore(t, config.WithBackend(config.NewCodecBackend(fsys, "sample", s.Codec)))
+	store := s.newStore(t, config.WithBackend(config.NewCodecBackend(fsys, "sample", s.Codec)))
 
 	if _, err := store.Apply(context.Background(), config.Set(s.WriteKey, s.WriteValue)); err != nil {
 		t.Fatalf("Apply(Set(%q, %q)): %v", s.WriteKey, s.WriteValue, err)
@@ -235,7 +253,7 @@ func (s Suite) writeRoundTrips(t *testing.T) {
 
 	// A fresh store over the same file must read the written value, or the write
 	// did not reach disk through the codec.
-	fresh := newStore(t, config.WithBackend(config.NewCodecBackend(fsys, "sample", s.Codec)))
+	fresh := s.newStore(t, config.WithBackend(config.NewCodecBackend(fsys, "sample", s.Codec)))
 	if got := fresh.View().GetString(s.WriteKey); got != s.WriteValue {
 		t.Errorf("a fresh read of the file has %s = %q, want %q — the write did not reach disk",
 			s.WriteKey, got, s.WriteValue)
@@ -254,7 +272,7 @@ func (s Suite) noEditIsANoop(t *testing.T, ec config.EditingCodec) {
 	fsys := dir(t)
 	write(t, fsys, "after", out)
 
-	store := newStore(t, config.WithBackend(config.NewCodecBackend(fsys, "after", s.Codec)))
+	store := s.newStore(t, config.WithBackend(config.NewCodecBackend(fsys, "after", s.Codec)))
 
 	for key, want := range s.Defines {
 		if got := store.View().GetString(key); got != want {
@@ -271,11 +289,13 @@ func (s Suite) conflictDetected(t *testing.T, ec config.EditingCodec) {
 	fsys := dir(t)
 	write(t, fsys, "sample", s.Sample)
 
-	store := newStore(t, config.WithBackend(config.NewCodecBackend(fsys, "sample", s.Codec)))
+	store := s.newStore(t, config.WithBackend(config.NewCodecBackend(fsys, "sample", s.Codec)))
 
 	// A foreign change: valid, different content produced by the codec itself,
 	// so it is guaranteed to be a source the codec accepts.
-	foreign, err := ec.Apply("sample", s.Sample, []config.Edit{{Path: s.WriteKey, Value: s.WriteValue}})
+	foreign, err := ec.Apply("sample", s.Sample, []config.Edit{
+		{Path: s.WriteKey, Value: s.WriteValue, CaseSensitive: s.CaseSensitive},
+	})
 	if err != nil {
 		t.Fatalf("producing foreign content via Apply: %v", err)
 	}
@@ -351,8 +371,19 @@ func dir(t *testing.T) config.FS {
 	return fsys
 }
 
-func newStore(t *testing.T, opts ...config.StoreOption) *config.Store {
+// newStore builds a Store in the mode the suite runs in.
+func (s Suite) newStore(t *testing.T, opts ...config.StoreOption) *config.Store {
 	t.Helper()
+
+	return newStoreIn(t, s.CaseSensitive, opts...)
+}
+
+func newStoreIn(t *testing.T, caseSensitive bool, opts ...config.StoreOption) *config.Store {
+	t.Helper()
+
+	if caseSensitive {
+		opts = append(opts, config.WithCaseSensitiveKeys())
+	}
 
 	store, err := config.NewStore(context.Background(), opts...)
 	if err != nil {

@@ -21,6 +21,8 @@ type envBackend struct {
 	// environ is the source of variables, injectable so tests need not mutate
 	// process state and race each other.
 	environ func() []string
+
+	binding keyCaseBinding
 }
 
 // EnvOption configures the environment backend.
@@ -58,6 +60,10 @@ func NewEnvBackend(prefix string, opts ...EnvOption) Backend {
 }
 
 func (b *envBackend) ID() string { return "env:" + b.prefix }
+
+// BindKeyCase records whether the keys below are spelled as their sources spell
+// them, which changes how a variable name is matched against them.
+func (b *envBackend) BindKeyCase(caseSensitive bool) error { return b.binding.bind(caseSensitive) }
 
 // Capabilities reports the environment as readable but never writable.
 // Persisting to it would not survive the process, so routing must skip it.
@@ -98,7 +104,7 @@ func (b *envBackend) Load(ctx context.Context, below []Layer) ([]Layer, error) {
 			continue
 		}
 
-		key, err := mapKey(strings.TrimPrefix(name, prefix), known)
+		key, err := mapKey(strings.TrimPrefix(name, prefix), known, b.binding.keys())
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s", err, name)
 		}
@@ -129,15 +135,26 @@ func (b *envBackend) Load(ctx context.Context, below []Layer) ([]Layer, error) {
 // cannot express which is meant, and this reports that rather than choosing.
 // Choosing would be worse than it sounds: the candidates arrive in map
 // iteration order, so the winner would vary between runs of the same program.
-func mapKey(suffix string, known []string) (string, error) {
+//
+// In a case-sensitive Store the suffix is compared upper-cased, so
+// APP_Log_Level reaches an existing Log.Level; and Log.Level beside log.level
+// is ambiguous for the same reason. A folded Store compares it as given, since
+// upper-casing there would change which key APP_Log_Level sets (spec 0015 D4).
+func mapKey(suffix string, known []string, keys keyCase) (string, error) {
 	if suffix == "" {
 		return "", nil
+	}
+
+	want := suffix
+
+	if keys.exact() {
+		want = strings.ToUpper(suffix)
 	}
 
 	var matches []string
 
 	for _, candidate := range known {
-		if envName(candidate) == suffix {
+		if envName(candidate) == want {
 			matches = append(matches, candidate)
 		}
 	}

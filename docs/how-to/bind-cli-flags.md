@@ -86,8 +86,10 @@ config.BindFlag("output", "")   // parsed as a flag, never a configuration value
 
 Avoid dots inside flag names. A flag literally named `--a.b` maps verbatim to the key
 `a.b`, which is rarely what anyone intends and cannot be told apart from the derived form
-afterwards. Configuration keys are lower-cased, so a flag name that differs only in case
-will not give you a distinct key.
+afterwards. A flag name keeps its case, so `--Log-Level` maps to `Log.Level`. A store that
+folds keys then lower-cases it like any other key, so a flag name that differs only in case
+will not give you a distinct key. In a store built with `WithCaseSensitiveKeys` it will, and
+`BindFlag("level", "Log.Level")` is how a short flag name reaches a mixed-case key.
 
 ## Check that a flag really is winning
 

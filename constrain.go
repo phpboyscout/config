@@ -115,8 +115,9 @@ func ConstraintName(name string) ConstraintOption {
 
 // constrained is the read half.
 type constrained struct {
-	inner Backend
-	rules constraint
+	inner   Backend
+	rules   constraint
+	binding keyCaseBinding
 }
 
 func (c *constrained) ID() string                 { return c.inner.ID() }
@@ -133,6 +134,15 @@ func (c *constrained) pinOnlyLayers() bool                 { return innerPinOnly
 func (c *constrained) withheldSensitive() []string         { return innerWithheldSensitive(c.inner) }
 func (c *constrained) hasConstraint() bool                 { return true }
 func (c *constrained) nestedStore() *Store                 { return innerNestedStore(c.inner) }
+
+// BindKeyCase forwards, then records the mode its Forbid patterns match in.
+func (c *constrained) BindKeyCase(caseSensitive bool) error {
+	if err := forwardKeyCase(c.inner, caseSensitive); err != nil {
+		return err
+	}
+
+	return c.binding.bind(caseSensitive)
+}
 
 func (c *constrained) Load(ctx context.Context, prev []Layer) ([]Layer, error) {
 	return c.inner.Load(ctx, prev)
@@ -153,7 +163,7 @@ func (c *constrained) constrain(layers []Layer, r *ValidationResult) {
 
 	for _, layer := range layers {
 		for _, key := range leafPaths(layer.Values, nil) {
-			if !matchesAny(key, c.rules.forbid) {
+			if !matchesAny(key, c.rules.forbid, c.binding.keys()) {
 				continue
 			}
 
@@ -177,7 +187,7 @@ func (c *constrained) constrain(layers []Layer, r *ValidationResult) {
 	// schema's "required" fires on absence, and absence is exactly what a
 	// source may legitimately have — the base file omits what the overlay
 	// supplies. Only what this layer actually put there is its business.
-	snap := newSnapshot(0, layers)
+	snap := newSnapshot(0, layers, c.binding.keys())
 
 	supplied := &ValidationResult{}
 	c.rules.schema.Validate(snap, "", supplied)
@@ -202,7 +212,9 @@ func (c *constrained) constrain(layers []Layer, r *ValidationResult) {
 }
 
 // forbids reports whether a path may not be written to this source.
-func (c *constrained) forbids(path string) bool { return matchesAny(path, c.rules.forbid) }
+func (c *constrained) forbids(path string) bool {
+	return matchesAny(path, c.rules.forbid, c.binding.keys())
+}
 
 type constrainedWritable struct {
 	*constrained
@@ -258,14 +270,14 @@ type sourceConstraint interface {
 
 // matchesAny reports whether a dotted path matches any pattern, using the same
 // glob semantics [Deny] uses so a caller does not have to learn a second one.
-func matchesAny(path string, patterns []string) bool {
+func matchesAny(path string, patterns []string, keys keyCase) bool {
 	if len(patterns) == 0 {
 		return false
 	}
 
-	segs := splitPath(path)
+	segs := keys.split(path)
 	for _, p := range patterns {
-		if matchPattern(p, segs) {
+		if matchPattern(p, segs, keys) {
 			return true
 		}
 	}

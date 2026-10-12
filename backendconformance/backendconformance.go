@@ -139,6 +139,21 @@ type Suite struct {
 	// The unreachable state must be reached without a network: point the backend
 	// at a fake whose dial fails, not at a real endpoint expected to be down.
 	NewUnreachable func(t *testing.T) (b config.Backend, heal func())
+
+	// CaseSensitive builds every Store the suite uses with
+	// [config.WithCaseSensitiveKeys]. Run the suite once with it and once
+	// without, as for each value mode; Defines and WriteKey must then be
+	// spelled exactly as Seed spells them.
+	CaseSensitive bool
+
+	// MixedCaseSeed is a seed defining MixedCaseKey, a leaf spelled in mixed
+	// case beneath at least one parent, such as "Server.Port". When both are
+	// set on a writable backend, the suite checks that a write addressed in
+	// another case edits that key rather than adding a second spelling, and
+	// that a new key lands under the parent as spelled. The new-key case is
+	// skipped under BoundedKeySpace.
+	MixedCaseSeed map[string]any
+	MixedCaseKey  string
 }
 
 // Control stands in for another client of the same backing store. It is how the
@@ -205,6 +220,10 @@ func Run(t *testing.T, s Suite) {
 		t.Run("write_round_trips", s.writeRoundTrips)
 		t.Run("conflict_detected", s.conflictDetected)
 		t.Run("renderable_scalars_and_hostile_keys", s.renderableScalarsAndHostileKeys)
+
+		if len(s.MixedCaseSeed) > 0 {
+			s.runMixedCase(t)
+		}
 	} else {
 		t.Run("read_only_skipped_by_routing", s.readOnlySkippedByRouting)
 	}
@@ -343,7 +362,7 @@ func (s Suite) participatesAsLayer(t *testing.T) {
 
 	base := nestedYAML(shared, "from-base") + "backendconformance_base_only: present\n"
 
-	store := newStore(t,
+	store := s.newStore(t,
 		config.WithReaders(config.NamedSource{Name: "base.yaml", Content: []byte(base)}), // lower precedence
 		config.WithBackend(backend), // higher precedence
 	)
@@ -381,7 +400,7 @@ func (s Suite) absentSourceTolerated(t *testing.T) {
 	key := s.sortedKeys()[0]
 	backend, _ := s.newBackend(t, nil) // nil seed: the source is absent
 
-	store := newStore(t,
+	store := s.newStore(t,
 		config.WithReaders(config.NamedSource{Name: "base.yaml", Content: []byte(nestedYAML(key, "from-base"))}),
 		config.WithBackend(backend),
 	)
@@ -406,7 +425,7 @@ func (s Suite) applyToleratedBesideAbsentSource(t *testing.T) {
 	fsys := dir(t)
 	write(t, fsys, "base.yaml", []byte(nestedYAML(key, "pre-write")))
 
-	store := newStore(t,
+	store := s.newStore(t,
 		config.WithBackend(config.NewFileBackend(fsys, "base.yaml")), // writable, defines the key
 		config.WithBackend(backend),                                  // declared, absent
 	)
@@ -436,7 +455,7 @@ func (s Suite) provenanceNamesBackend(t *testing.T) {
 	key := s.sortedKeys()[0]
 	backend, _ := s.newBackend(t, s.Seed)
 
-	store := newStore(t, config.WithBackend(backend))
+	store := s.newStore(t, config.WithBackend(backend))
 
 	src, ok := store.View().Origin(key)
 	if !ok {
@@ -498,7 +517,7 @@ func (s Suite) readOnlySkippedByRouting(t *testing.T) {
 	fsys := dir(t)
 	write(t, fsys, "base.yaml", []byte(nestedYAML(key, "from-base")))
 
-	store := newStore(t,
+	store := s.newStore(t,
 		config.WithBackend(config.NewFileBackend(fsys, "base.yaml")), // writable, lower precedence
 		config.WithBackend(backend),                                  // read-only, higher precedence
 	)
@@ -538,7 +557,7 @@ func (s Suite) readOnlySkippedByRouting(t *testing.T) {
 // — so the write reached the store, not only the Store's snapshot.
 func (s Suite) writeRoundTrips(t *testing.T) {
 	backend, ctrl := s.newBackend(t, s.Seed)
-	store := newStore(t, config.WithBackend(backend))
+	store := s.newStore(t, config.WithBackend(backend))
 
 	if _, err := store.Apply(context.Background(), s.writeChange(t, store, s.WriteKey, s.WriteValue)); err != nil {
 		t.Fatalf("Apply(Set(%q, %q)): %v", s.WriteKey, s.WriteValue, err)
@@ -550,7 +569,7 @@ func (s Suite) writeRoundTrips(t *testing.T) {
 
 	// A fresh backend over the same backing store must read the written value, or
 	// the write did not reach the store through Commit.
-	fresh := newStore(t, config.WithBackend(ctrl.Reopen(t)))
+	fresh := s.newStore(t, config.WithBackend(ctrl.Reopen(t)))
 	if got := fresh.View().GetString(s.WriteKey); got != s.WriteValue {
 		t.Errorf("a fresh read of the backing store has %s = %q, want %q — the write did not reach it",
 			s.WriteKey, got, s.WriteValue)
@@ -562,7 +581,7 @@ func (s Suite) writeRoundTrips(t *testing.T) {
 // and re-checked at Verify.
 func (s Suite) conflictDetected(t *testing.T) {
 	backend, ctrl := s.newBackend(t, s.Seed)
-	store := newStore(t, config.WithBackend(backend))
+	store := s.newStore(t, config.WithBackend(backend))
 
 	// Something else changes the backing store after the Store loaded it.
 	ctrl.Mutate(t)
@@ -612,7 +631,7 @@ func (s Suite) renderableScalarsAndHostileKeys(t *testing.T) {
 
 		t.Run(tc.name, func(t *testing.T) {
 			backend, _ := s.newBackend(t, s.Seed)
-			store := newStore(t, config.WithBackend(backend))
+			store := s.newStore(t, config.WithBackend(backend))
 
 			_, err := store.Apply(context.Background(), s.writeChange(t, store, tc.key, tc.value))
 			if err != nil {
@@ -656,7 +675,7 @@ func (s Suite) renderableScalarsAndHostileKeys(t *testing.T) {
 // how eagerly the backend chose to poll.
 func (s Suite) foreignChangeReachesObservers(t *testing.T) {
 	backend, ctrl := s.newBackend(t, s.Seed)
-	store := newStore(t, config.WithBackend(backend))
+	store := s.newStore(t, config.WithBackend(backend))
 
 	fired := make(chan struct{}, observerBuffer)
 
@@ -771,8 +790,19 @@ func dir(t *testing.T) config.FS {
 	return fsys
 }
 
-func newStore(t *testing.T, opts ...config.StoreOption) *config.Store {
+// newStore builds a Store in the mode the suite runs in.
+func (s Suite) newStore(t *testing.T, opts ...config.StoreOption) *config.Store {
 	t.Helper()
+
+	return newStoreIn(t, s.CaseSensitive, opts...)
+}
+
+func newStoreIn(t *testing.T, caseSensitive bool, opts ...config.StoreOption) *config.Store {
+	t.Helper()
+
+	if caseSensitive {
+		opts = append(opts, config.WithCaseSensitiveKeys())
+	}
 
 	store, err := config.NewStore(context.Background(), opts...)
 	if err != nil {

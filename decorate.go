@@ -70,3 +70,11 @@ func innerWithheldSensitive(inner Backend) []string {
 
 	return nil
 }
+
+func forwardKeyCase(inner Backend, caseSensitive bool) error {
+	if b, ok := inner.(KeyCaseBinder); ok {
+		return b.BindKeyCase(caseSensitive)
+	}
+
+	return nil
+}

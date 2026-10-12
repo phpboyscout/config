@@ -53,6 +53,12 @@ func (s *Store) With(fn func(*View) error) error {
 // Snapshot returns the snapshot this view reads from.
 func (v *View) Snapshot() *Snapshot { return v.pinned() }
 
+// CaseSensitiveKeys reports whether this view compares keys exactly. See
+// [KeyCaseReporter].
+func (v *View) CaseSensitiveKeys() bool { return v.pinned().CaseSensitiveKeys() }
+
+func (v *View) keys() keyCase { return v.pinned().keyCase() }
+
 // qualify prepends the view's prefix to a path.
 func (v *View) qualify(path string) string {
 	if v == nil {
@@ -215,7 +221,7 @@ func (v *View) Keys() []string {
 
 // Unmarshal decodes the whole view into a struct.
 func (v *View) Unmarshal(target any) error {
-	return decodeInto(v.valuesForPrefix(), target)
+	return decodeInto(v.valuesForPrefix(), target, v.keys())
 }
 
 // UnmarshalKey decodes a subtree into a struct.
@@ -238,7 +244,7 @@ func (v *View) UnmarshalKey(path string, target any) error {
 		return nil
 	}
 
-	return decodeInto(got, target)
+	return decodeInto(got, target, v.keys())
 }
 
 func (v *View) valuesForPrefix() any {
@@ -254,7 +260,7 @@ func (v *View) valuesForPrefix() any {
 // decodeInto runs the struct decoder with the conversions configuration
 // realistically needs: durations and times written as strings, and comma
 // separated values arriving as one string.
-func decodeInto(input, target any) error {
+func decodeInto(input, target any, keys keyCase) error {
 	t := reflect.TypeOf(target)
 	if t == nil {
 		return fmt.Errorf("%w: nil target", ErrInvalidTarget)
@@ -268,10 +274,11 @@ func decodeInto(input, target any) error {
 		return fmt.Errorf("%w: result must be addressable — target pointer is nil", ErrInvalidTarget)
 	}
 
-	input = translateKeys(input, t)
+	input = translateKeys(input, t, keys)
 
 	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
 		Result:           target,
+		MatchName:        matchName(keys),
 		WeaklyTypedInput: true,
 		// An embedded struct's fields belong to its parent. yaml and json both
 		// treat them that way by default, and a struct shared with either is
@@ -321,7 +328,7 @@ func decodeInto(input, target any) error {
 //
 // So all three are honoured, in that order of specificity: an explicit
 // mapstructure tag wins, then yaml, then json, then the field name itself.
-func translateKeys(input any, target reflect.Type) any {
+func translateKeys(input any, target reflect.Type, keys keyCase) any {
 	target = deref(target)
 	if target == nil {
 		return input
@@ -332,7 +339,7 @@ func translateKeys(input any, target reflect.Type) any {
 	// visited, so a field in it spelled with a yaml or json tag decoded as its
 	// zero value — silently, and with no error, which is precisely the failure
 	// this function exists to remove.
-	if translated, handled := translateCollection(input, target); handled {
+	if translated, handled := translateCollection(input, target, keys); handled {
 		return translated
 	}
 
@@ -351,7 +358,7 @@ func translateKeys(input any, target reflect.Type) any {
 	}
 
 	for i := range target.NumField() {
-		out = translateField(out, target.Field(i))
+		out = translateField(out, target.Field(i), keys)
 	}
 
 	return out
@@ -359,12 +366,12 @@ func translateKeys(input any, target reflect.Type) any {
 
 // translateField resolves one struct field's aliases within a value map and
 // carries translation into whatever that field holds.
-func translateField(out map[string]any, field reflect.StructField) map[string]any {
+func translateField(out map[string]any, field reflect.StructField, keys keyCase) map[string]any {
 	if !field.IsExported() {
 		return out
 	}
 
-	canonical, aliases, squash, skip := fieldKeys(field)
+	canonical, aliases, squash, skip := fieldKeys(field, keys)
 	if skip {
 		return out
 	}
@@ -372,15 +379,15 @@ func translateField(out map[string]any, field reflect.StructField) map[string]an
 	if squash {
 		// A squashed struct's fields live at this level, so its aliases have to
 		// be resolved here too.
-		squashed, _ := asStringMap(translateKeys(out, field.Type))
+		squashed, _ := asStringMap(translateKeys(out, field.Type, keys))
 
 		return squashed
 	}
 
-	resolveAlias(out, canonical, aliases)
+	resolveAlias(out, canonical, aliases, keys)
 
 	if nested, present := out[canonical]; present {
-		out[canonical] = translateKeys(nested, field.Type)
+		out[canonical] = translateKeys(nested, field.Type, keys)
 	}
 
 	return out
@@ -388,7 +395,7 @@ func translateField(out map[string]any, field reflect.StructField) map[string]an
 
 // translateCollection carries translation into a slice, array or map, and
 // reports whether the target was a collection at all.
-func translateCollection(input any, target reflect.Type) (any, bool) {
+func translateCollection(input any, target reflect.Type, keys keyCase) (any, bool) {
 	switch target.Kind() {
 	case reflect.Slice, reflect.Array:
 		items, ok := input.([]any)
@@ -398,7 +405,7 @@ func translateCollection(input any, target reflect.Type) (any, bool) {
 
 		out := make([]any, len(items))
 		for i, item := range items {
-			out[i] = translateKeys(item, target.Elem())
+			out[i] = translateKeys(item, target.Elem(), keys)
 		}
 
 		return out, true
@@ -411,7 +418,7 @@ func translateCollection(input any, target reflect.Type) (any, bool) {
 
 		out := make(map[string]any, len(entries))
 		for k, v := range entries {
-			out[k] = translateKeys(v, target.Elem())
+			out[k] = translateKeys(v, target.Elem(), keys)
 		}
 
 		return out, true
@@ -423,22 +430,22 @@ func translateCollection(input any, target reflect.Type) (any, bool) {
 
 // resolveAlias moves a value written under an alias to the canonical key.
 //
-// Matching is normalised on both sides. A tag is written in whatever case its
-// author chose, while a mapping's keys are lower-cased on the way into a
-// layer — but the keys inside a sequence element are not, because nothing walks
-// them. Comparing raw would therefore work in a list and fail in a map, which
-// is how a field tagged only yaml or json came to decode as its zero value in
-// one place and not the other.
-func resolveAlias(values map[string]any, canonical string, aliases []string) {
+// In a folded Store matching is normalised on both sides. A tag is written in
+// whatever case its author chose, while a mapping's keys are lower-cased on the
+// way into a layer — but the keys inside a sequence element are not, because
+// nothing walks them. Comparing raw would therefore work in a list and fail in
+// a map, which is how a field tagged only yaml or json came to decode as its
+// zero value in one place and not the other.
+func resolveAlias(values map[string]any, canonical string, aliases []string, keys keyCase) {
 	if _, ok := values[canonical]; ok {
 		return
 	}
 
 	for _, alias := range aliases {
-		want := normaliseKey(alias)
+		want := keys.key(alias)
 
 		for key, v := range values {
-			if normaliseKey(key) == want {
+			if keys.key(key) == want {
 				values[canonical] = v
 
 				return
@@ -449,7 +456,7 @@ func resolveAlias(values map[string]any, canonical string, aliases []string) {
 
 // fieldKeys reports the key a field decodes from, the alternative spellings
 // that should also match, and whether it is squashed or skipped.
-func fieldKeys(field reflect.StructField) (canonical string, aliases []string, squash, skip bool) {
+func fieldKeys(field reflect.StructField, keys keyCase) (canonical string, aliases []string, squash, skip bool) {
 	mapTag, mapOpts := splitTag(field.Tag.Get("mapstructure"))
 	if mapTag == "-" {
 		return "", nil, false, true
@@ -466,7 +473,7 @@ func fieldKeys(field reflect.StructField) (canonical string, aliases []string, s
 
 	canonical = mapTag
 	if canonical == "" {
-		canonical = normaliseKey(field.Name)
+		canonical = keys.key(field.Name)
 	}
 
 	for _, name := range []string{"yaml", "json"} {
@@ -520,4 +527,15 @@ func (v *View) pinned() *Snapshot {
 	}
 
 	return v.snap
+}
+
+// matchName is how the decoder pairs a key with a field. mapstructure's default
+// is strings.EqualFold, which in a case-sensitive Store would pick between
+// `PORT` and `Port` by map order. Spec 0015 D6.
+func matchName(keys keyCase) func(mapKey, fieldName string) bool {
+	if keys.exact() {
+		return func(mapKey, fieldName string) bool { return mapKey == fieldName }
+	}
+
+	return strings.EqualFold
 }

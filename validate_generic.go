@@ -59,6 +59,10 @@ func SchemaOf[T any](opts ...SchemaOption) (*StructSchema, error) {
 // the concrete type bought nothing and made every caller's own validation
 // untestable without a real Store.
 //
+// A Reader that does not implement [KeyCaseReporter] is validated as folded, so
+// a wrapper around a View from a [WithCaseSensitiveKeys] Store must forward
+// CaseSensitiveKeys for field names to be matched exactly.
+//
 // Schema options such as [WithStrictMode] may be passed through.
 func ValidateStruct[T any](cfg Reader, opts ...SchemaOption) error {
 	schema, err := SchemaOf[T](opts...)

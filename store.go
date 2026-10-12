@@ -70,6 +70,10 @@ type Store struct {
 	// registration order. Fixed at construction — see WithSchemaAt.
 	validators []mounted
 
+	// keys is fixed at construction, so every layer, lookup and write in the
+	// Store agrees on it. Spec 0015 D1.
+	keys keyCase
+
 	life lifecycle
 }
 
@@ -84,8 +88,8 @@ type backendLayers struct {
 
 // newBackendLayers normalises what a backend returned, refusing a layer whose
 // keys collide.
-func newBackendLayers(backend Backend, layers []Layer) (backendLayers, error) {
-	normalisedLayers, spellings, err := normalised(layers)
+func (s *Store) newBackendLayers(backend Backend, layers []Layer) (backendLayers, error) {
+	normalisedLayers, spellings, err := normalised(layers, s.keys)
 	if err != nil {
 		return backendLayers{}, err
 	}
@@ -223,6 +227,16 @@ func NewStore(ctx context.Context, opts ...StoreOption) (*Store, error) {
 	// Composition is a tree, so a store cannot appear in the graph twice.
 	if err := ensureTree(s, s.backends); err != nil {
 		return nil, s.abandon(err)
+	}
+
+	if err := bindKeyCase(s.keys, s.backends); err != nil {
+		return nil, s.abandon(err)
+	}
+
+	// Here rather than in WithSchemaAt, because options run in argument order
+	// and WithCaseSensitiveKeys may come after it.
+	for i := range s.validators {
+		s.validators[i].at = s.keys.path(s.validators[i].at)
 	}
 
 	if err := s.Reload(ctx); err != nil {
@@ -472,7 +486,7 @@ func (s *Store) violations(loaded []backendLayers) []ValidationError {
 		return nil
 	}
 
-	snap := newSnapshot(0, flatten(loaded))
+	snap := newSnapshot(0, flatten(loaded), s.keys)
 	result := &ValidationResult{}
 
 	// Per-source constraints first: they judge what a single backend supplied,
@@ -578,7 +592,7 @@ func (s *Store) loadAll(ctx context.Context) ([]backendLayers, error) {
 	for i, backend := range s.backends {
 		got, err := backend.Load(ctx, flatten(loaded))
 		if err == nil {
-			bl, err := newBackendLayers(backend, got)
+			bl, err := s.newBackendLayers(backend, got)
 			if err != nil {
 				return nil, err
 			}
@@ -648,7 +662,7 @@ func (s *Store) publish(loaded []backendLayers) *Snapshot {
 
 	flat := flatten(loaded)
 
-	next := newSnapshot(s.version.Add(1), flat)
+	next := newSnapshot(s.version.Add(1), flat, s.keys)
 	s.current.Store(next)
 
 	return next
@@ -920,6 +934,8 @@ func (s *Store) prepare(ctx context.Context, plan *Plan) (map[string]Pending, []
 			Path:     s.respell(op.Target, op.Change.Path),
 			Value:    op.Change.Value,
 			Remove:   op.Change.Remove,
+
+			CaseSensitive: s.keys.exact(),
 		})
 	}
 
@@ -1030,7 +1046,7 @@ func (s *Store) rebuild(ctx context.Context, pending map[string]Pending) ([]back
 
 	for _, bl := range s.loaded {
 		if staged, ok := pending[bl.backend.ID()]; ok {
-			written, err := newBackendLayers(bl.backend, staged.Layers())
+			written, err := s.newBackendLayers(bl.backend, staged.Layers())
 			if err != nil {
 				return nil, err
 			}
@@ -1072,7 +1088,7 @@ func (s *Store) rebuild(ctx context.Context, pending map[string]Pending) ([]back
 			return nil, err
 		}
 
-		reread, err := newBackendLayers(bl.backend, layers)
+		reread, err := s.newBackendLayers(bl.backend, layers)
 		if err != nil {
 			return nil, err
 		}
@@ -1318,6 +1334,10 @@ func (s *Store) backendBySource() map[Source]Backend {
 //
 // The caller must hold the lock.
 func (s *Store) respell(target Source, path string) string {
+	if s.keys.exact() {
+		return path
+	}
+
 	for _, bl := range s.loaded {
 		for i, l := range bl.layers {
 			if l.Source == target && i < len(bl.spellings) {

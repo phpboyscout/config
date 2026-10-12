@@ -46,6 +46,18 @@ already define:
    load fails with [`ErrAmbiguousEnvKey`](errors.md#errambiguousenvkey) naming the
    candidates.
 
+### In a case-sensitive store
+
+In a store built with `WithCaseSensitiveKeys`, the keys below keep their spelling, and the
+suffix is upper-cased before step 1 compares it. `MYTOOL_LOG_LEVEL` and `MYTOOL_Log_Level`
+both reach an existing `Log.Level`, which spells itself `LOG_LEVEL`. If the layers below
+define both `Log.Level` and `log.level`, both spell themselves `LOG_LEVEL`, and the variable
+is refused with [`ErrAmbiguousEnvKey`](errors.md#errambiguousenvkey). With no match, the
+fallback in step 2 is unchanged.
+
+A store that folds keys compares the suffix as given. That makes no difference to a
+variable written in upper case, which is nearly all of them.
+
 ### Why the fallback needs the resolution step
 
 `MYTOOL_SERVER_PORT` could mean `server.port` or `server_port`, and nothing in the name says

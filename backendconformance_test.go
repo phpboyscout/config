@@ -31,6 +31,10 @@ func conformanceDefines() map[string]string {
 	return map[string]string{"server.port": "9090", "level": "info"}
 }
 
+func mixedCaseSeed() map[string]any {
+	return map[string]any{"Server": map[string]any{"Port": 9090}, "level": "info"}
+}
+
 // suiteControl stands in for another client of the fake: it changes the backing
 // store out of band and re-opens a backend over it.
 type suiteControl struct {
@@ -45,19 +49,27 @@ func (c *suiteControl) Reopen(*testing.T) config.Backend { return c.reopen(c.rem
 func TestBackendConformance_Writable(t *testing.T) {
 	t.Parallel()
 
-	backendconformance.Run(t, backendconformance.Suite{
-		NewBackend: func(_ *testing.T, seed map[string]any) (config.Backend, backendconformance.Control) {
-			remote := newFakeRemote(seed)
+	for _, caseSensitive := range []bool{false, true} {
+		t.Run(fmt.Sprintf("case_sensitive=%v", caseSensitive), func(t *testing.T) {
+			t.Parallel()
 
-			return newRemoteBackend(remote, "app/"),
-				&suiteControl{remote: remote, reopen: func(r *fakeRemote) config.Backend {
-					return newRemoteBackend(r, "app/")
-				}}
-		},
-		Seed:     conformanceSeed(),
-		Defines:  conformanceDefines(),
-		WriteKey: "level", WriteValue: "debug",
-	})
+			backendconformance.Run(t, backendconformance.Suite{
+				NewBackend: func(_ *testing.T, seed map[string]any) (config.Backend, backendconformance.Control) {
+					remote := newFakeRemote(seed)
+
+					return newRemoteBackend(remote, "app/"),
+						&suiteControl{remote: remote, reopen: func(r *fakeRemote) config.Backend {
+							return newRemoteBackend(r, "app/")
+						}}
+				},
+				Seed:          conformanceSeed(),
+				Defines:       conformanceDefines(),
+				WriteKey:      "level",
+				WriteValue:    "debug",
+				CaseSensitive: caseSensitive,
+			})
+		})
+	}
 }
 
 func TestBackendConformance_ReadOnly(t *testing.T) {

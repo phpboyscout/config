@@ -90,8 +90,9 @@ the other would drop half the settings without saying so. Pass a merge function 
 `config: environment variable is ambiguous`
 
 Returned during load when a set environment variable could designate more than one existing
-configuration key, such as `MYTOOL_A_B_C` where both `a.b_c` and `a_b.c` exist. The message
-names both candidates and the variable.
+configuration key, such as `MYTOOL_A_B_C` where both `a.b_c` and `a_b.c` exist. In a
+case-sensitive store, `Log.Level` beside `log.level` makes `MYTOOL_LOG_LEVEL` ambiguous in
+the same way. The message names both candidates and the variable.
 
 Honouring it would mean guessing, and the guess would vary between runs of the same program.
 Rename one of the keys, or set the value in a file instead. See
@@ -247,7 +248,8 @@ the duplicate. See
 
 Returned when one source holds two keys that become the same key once the store lower-cases
 them, at any depth, or two non-string keys that read the same as text, such as `1` and
-`1.0`. The source is refused whatever the two values are, because keeping either would be a
+`1.0`. A store built with `WithCaseSensitiveKeys` lower-cases nothing, so there only the
+second kind collides. The source is refused whatever the two values are, because keeping either would be a
 silent choice of which setting you meant. Two *different* sources spelling a key
 differently is not a collision: the later source wins, as for any key.
 
@@ -301,6 +303,17 @@ precedences, so every value would be shadowed by a copy of itself.
 
 Enforcement is by store identity alone, which leaves no room for a reachability analysis to
 be subtly wrong.
+
+### `ErrKeyCaseMismatch`
+
+`config: backend compares keys in the other case mode: nested store "team" is folded, this store is case-sensitive`
+
+Returned by `NewStore` when a backend cannot take the store's key mode. A nested store's keys
+were already folded, or not, by the store it wraps, so it must be built in the same mode as
+the store it is nested in. A backend that matches keys, such as a `Filtered` or
+`Constrained` one, takes the mode of the first store that owns it, and a store of the other
+mode is refused rather than left matching in the wrong one. Build both stores in the same
+mode, or give each its own backend.
 
 ### `ErrDuplicateLayer`
 

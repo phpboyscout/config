@@ -170,13 +170,24 @@ describes a multi-document stream as a sequence of independent documents and tak
 position on overlaying them. Refusing multi-document files, or reading only the first,
 would have meant a second rule for a construct that the layer model handles for free.
 
-## Keys are lower-cased
+## Keys are lower-cased, unless the store is built for exact keys
 
-Configuration keys are normalised to lower case as they are merged, so `Port` and `port`
-are the same setting. This is not cosmetic: schema validation compares field names against
-configuration keys, and struct decoding derives keys from field names. A case-sensitive
-model would break both, and would let a file define two keys that every consumer sees as
-one.
+By default, configuration keys are normalised to lower case as they enter the store, so
+`Port` and `port` are the same setting, and a later layer's `Port` overrides an earlier
+layer's `port`. Schema validation and struct decoding compare field names with keys, and
+folding makes `Port` the field and `port` the key agree without anyone spelling them alike.
+One source spelling a key two ways is refused, because folding would otherwise keep one of
+the two values at random.
+
+Some consumers need the opposite: a credential reader that refuses any field outside an
+allow list cannot accept `ACCESS_KEY_ID` as `access_key_id`. A store built with
+`WithCaseSensitiveKeys` keeps every key as its source spells it, and then precedence is per
+exact key: `Port` and `port` are two settings, merged independently.
+
+The mode is the whole store's, not each layer's. A store holding folded and exact layers
+together would have no answer to which spelling `Get("port")` should find, or whether
+`Port` above `port` overrides it. See [keys and paths](../reference/keys-and-paths.md#exact-keys)
+for everything the mode changes.
 
 ## The environment layer resolves names against the keys beneath it
 

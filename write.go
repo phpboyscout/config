@@ -64,6 +64,12 @@ type Edit struct {
 	Path   string
 	Value  any
 	Remove bool
+
+	// CaseSensitive reports that the Store compares keys exactly, so Path is
+	// the key as spelled and must not be matched against another spelling.
+	// Only a backend that matches keys in any case, such as the core YAML
+	// codec, reads it. Spec 0015 D3.
+	CaseSensitive bool
 }
 
 // WritableBackend is a backend that can persist changes.

@@ -199,14 +199,14 @@ func applyOne(tx *yamldoc.Transaction, path string, edit Edit) error {
 	}
 
 	if !edit.Remove {
-		if err := setPath(tx, root, edit.Path, edit.Value); err != nil {
+		if err := setPath(tx, root, edit.Path, edit.Value, keyCaseOf(edit.CaseSensitive)); err != nil {
 			return fmt.Errorf("config: setting %s in %s: %w", edit.Path, path, err)
 		}
 
 		return nil
 	}
 
-	if err := removePath(tx, root, edit.Path); err != nil {
+	if err := removePath(tx, root, edit.Path, keyCaseOf(edit.CaseSensitive)); err != nil {
 		return fmt.Errorf("config: removing %s from %s: %w", edit.Path, path, err)
 	}
 
@@ -215,8 +215,8 @@ func applyOne(tx *yamldoc.Transaction, path string, edit Edit) error {
 
 // setPath writes value at a dotted path under root, creating missing mapping
 // ancestors, each addressed in the spelling the document already uses.
-func setPath(tx *yamldoc.Transaction, root yamldoc.Node, path string, value any) error {
-	segs := splitPath(path)
+func setPath(tx *yamldoc.Transaction, root yamldoc.Node, path string, value any, keys keyCase) error {
+	segs := keys.split(path)
 	if segs == nil {
 		return fmt.Errorf("%w: %q", ErrInvalidTarget, path)
 	}
@@ -224,14 +224,14 @@ func setPath(tx *yamldoc.Transaction, root yamldoc.Node, path string, value any)
 	container := root
 
 	for i, seg := range segs[:len(segs)-1] {
-		child, err := container.Get(documentStep(container, seg))
+		child, err := container.Get(documentStep(container, seg, keys))
 		if errors.Is(err, yamldoc.ErrNotFound) {
 			nested, err := nestedMapping(segs[i+1:], value)
 			if err != nil {
 				return err
 			}
 
-			return tx.Set(container, documentStep(container, seg), nested)
+			return tx.Set(container, documentStep(container, seg, keys), nested)
 		}
 
 		if err != nil {
@@ -241,14 +241,14 @@ func setPath(tx *yamldoc.Transaction, root yamldoc.Node, path string, value any)
 		container = child
 	}
 
-	return tx.Set(container, documentStep(container, segs[len(segs)-1]), value)
+	return tx.Set(container, documentStep(container, segs[len(segs)-1], keys), value)
 }
 
 // removePath removes the entry at a dotted path under root. Removing something
 // already absent reaches the desired end state, so it is not worth failing a
 // batch over.
-func removePath(tx *yamldoc.Transaction, root yamldoc.Node, path string) error {
-	segs := splitPath(path)
+func removePath(tx *yamldoc.Transaction, root yamldoc.Node, path string, keys keyCase) error {
+	segs := keys.split(path)
 	if segs == nil {
 		return fmt.Errorf("%w: %q", ErrInvalidTarget, path)
 	}
@@ -256,7 +256,7 @@ func removePath(tx *yamldoc.Transaction, root yamldoc.Node, path string) error {
 	container := root
 
 	for _, seg := range segs[:len(segs)-1] {
-		child, err := container.Get(documentStep(container, seg))
+		child, err := container.Get(documentStep(container, seg, keys))
 		if errors.Is(err, yamldoc.ErrNotFound) {
 			return nil
 		}
@@ -268,7 +268,7 @@ func removePath(tx *yamldoc.Transaction, root yamldoc.Node, path string) error {
 		container = child
 	}
 
-	return tx.RemoveIfPresent(container, documentStep(container, segs[len(segs)-1]))
+	return tx.RemoveIfPresent(container, documentStep(container, segs[len(segs)-1], keys))
 }
 
 // nestedMapping wraps value in one mapping per remaining segment so a single
@@ -393,8 +393,8 @@ func preamble(original []byte) []byte {
 //
 // The segment is therefore resolved against the keys actually present. A
 // segment that matches nothing is a key being created, and takes the module's
-// normalised form.
-func documentStep(container yamldoc.Node, seg string) yamldoc.Step {
+// normalised form. In a case-sensitive Store only the key as spelled matches.
+func documentStep(container yamldoc.Node, seg string, keys keyCase) yamldoc.Step {
 	entries, err := container.Entries()
 	if err != nil {
 		return yamldoc.StringStep(seg)
@@ -402,7 +402,7 @@ func documentStep(container yamldoc.Node, seg string) yamldoc.Step {
 
 	for _, entry := range entries {
 		key, err := entry.Key.String()
-		if err == nil && normaliseKey(key) == seg {
+		if err == nil && keys.key(key) == seg {
 			return yamldoc.StringStep(key)
 		}
 	}

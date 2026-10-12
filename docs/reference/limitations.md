@@ -66,7 +66,7 @@ A key this module creates is written lower-cased, because keys are lower-cased o
 in. An existing key keeps the spelling the file has, since a write edits the existing node.
 So a file mixing `Server:` (yours) and `log:` (ours) is the expected outcome of writing a new
 section into a camel-cased file. *A consequence of case-insensitive keys, not a choice made
-separately.*
+separately.* A store built with `WithCaseSensitiveKeys` writes a new key as you spell it.
 
 ### Some documents are refused before you can write to them
 
@@ -156,6 +156,14 @@ will drift from the first. *Deliberate.*
 
 The tag is parsed onto `FieldSchema.Description` and no message this module produces reads
 it. *A known gap.*
+
+### In a case-sensitive store, an untagged field matches one spelling
+
+A store built with `WithCaseSensitiveKeys` decodes and validates by exact name. An untagged
+field `Port` matches the key `Port` and nothing else, so a file spelling it `port` leaves the
+field at its zero value, and a nested struct `Server` validates keys under `Server.`. Tag the
+field with the spelling your sources use. *Deliberate:* matching in any case would bring back
+the choice between `PORT` and `Port` that the mode exists to remove.
 
 ### `config:"-"` does not exclude a struct field
 

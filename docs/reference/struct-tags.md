@@ -79,7 +79,7 @@ contributes depends on whether it is embedded:
 
 | Field | Result |
 |---|---|
-| Named struct field `Server Inner` | Its lower-cased field name becomes a key prefix: `server.…`. |
+| Named struct field `Server Inner` | Its lower-cased field name becomes a key prefix: `server.…`. In a case-sensitive store, the name as written: `Server.…`. |
 | Embedded (anonymous) struct `Emb` | Merged into the parent with **no** prefix. |
 | Non-struct field with no `config` tag | Skipped entirely. |
 
@@ -190,6 +190,11 @@ Section decoding reads a different set, in this order of specificity:
 2. `yaml:"name"` is honoured as an alias when it differs from the above.
 3. `json:"name"` is honoured as an alias when it differs from the above.
 4. The **lower-cased field name**, when no tag names it.
+
+In a store that folds keys, each name is then matched against keys in any case. In a store
+built with `WithCaseSensitiveKeys`, every name is matched exactly: a tag must spell the key as
+the source does, and an untagged field `AccessKeyID` matches only the key `AccessKeyID`, not
+`accesskeyid` or `ACCESSKEYID`.
 
 Honouring all three is deliberate. A type shared with an API carries `json`, one shared with
 a YAML document carries `yaml`, and one written for this library carries `mapstructure`.

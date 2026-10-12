@@ -225,16 +225,6 @@ func asStringMap(v any) (map[string]any, bool) {
 	}
 }
 
-// normaliseKey applies the module's key-casing rule.
-//
-// Keys are lower-cased. This is not cosmetic: validation compares schema field
-// names against configuration keys, and struct decoding derives keys from field
-// names, so a case-sensitive model would make `Port` and `port` different
-// settings and break both.
-func normaliseKey(k string) string {
-	return strings.ToLower(k)
-}
-
 // cloneValues deep-copies a value tree so a Layer cannot be mutated through a
 // reference held elsewhere. Snapshots are immutable, and immutability that
 // depends on callers behaving is not immutability.
@@ -279,12 +269,12 @@ func cloneMap(m map[string]any) map[string]any {
 // has to remember. It used to be done when a snapshot was built, which left
 // anything reading layers beforehand — the key space handed to a backend's
 // Load, or the keys collected for it — normalising again on its own account.
-func normalised(layers []Layer) ([]Layer, []keySpelling, error) {
+func normalised(layers []Layer, keys keyCase) ([]Layer, []keySpelling, error) {
 	out := make([]Layer, 0, len(layers))
 	spellings := make([]keySpelling, 0, len(layers))
 
 	for _, l := range layers {
-		values, spelling, err := normaliseValues(l.Values, "")
+		values, spelling, err := normaliseValues(l.Values, "", keys)
 		if err != nil {
 			return nil, nil, fmt.Errorf("%w: %s %w", ErrKeyCollision, l.Source, err)
 		}
@@ -320,10 +310,10 @@ func (c collision) Error() string {
 // normaliseValues deep-copies a value map, normalising every key on the way, so
 // a layer can be queried with the same normalised paths as the merged view. It
 // refuses two keys that normalise alike, at any depth, whatever their values.
-func normaliseValues(m any, at string) (map[string]any, keySpelling, error) {
+func normaliseValues(m any, at string, keys keyCase) (map[string]any, keySpelling, error) {
 	switch typed := m.(type) {
 	case map[string]any:
-		f := newKeyFolder(at, len(typed))
+		f := newKeyFolder(at, len(typed), keys)
 
 		for k, v := range typed {
 			if err := f.add(k, v); err != nil {
@@ -333,7 +323,7 @@ func normaliseValues(m any, at string) (map[string]any, keySpelling, error) {
 
 		return f.out, f.spelling, nil
 	case map[any]any:
-		f := newKeyFolder(at, len(typed))
+		f := newKeyFolder(at, len(typed), keys)
 
 		for k, v := range typed {
 			if err := f.add(stringKey(k), v); err != nil {
@@ -350,17 +340,18 @@ func normaliseValues(m any, at string) (map[string]any, keySpelling, error) {
 // keyFolder accumulates one map's normalised copy for normaliseValues.
 type keyFolder struct {
 	at       string
+	keys     keyCase
 	out      map[string]any
 	seen     map[string]string
 	spelling keySpelling
 }
 
-func newKeyFolder(at string, size int) *keyFolder {
-	return &keyFolder{at: at, out: make(map[string]any, size), seen: make(map[string]string, size)}
+func newKeyFolder(at string, size int, keys keyCase) *keyFolder {
+	return &keyFolder{at: at, keys: keys, out: make(map[string]any, size), seen: make(map[string]string, size)}
 }
 
 func (f *keyFolder) add(key string, v any) error {
-	folded := normaliseKey(key)
+	folded := f.keys.key(key)
 
 	if earlier, dup := f.seen[folded]; dup {
 		return collision{first: joinPath(f.at, earlier), second: joinPath(f.at, key)}
@@ -368,7 +359,7 @@ func (f *keyFolder) add(key string, v any) error {
 
 	f.seen[folded] = key
 
-	nested, under, err := normaliseNested(v, joinPath(f.at, key))
+	nested, under, err := normaliseNested(v, joinPath(f.at, key), f.keys)
 	if err != nil {
 		return err
 	}
@@ -396,17 +387,17 @@ func stringKey(k any) string {
 	return fmt.Sprint(k)
 }
 
-func normaliseNested(v any, at string) (any, keySpelling, error) {
+func normaliseNested(v any, at string, keys keyCase) (any, keySpelling, error) {
 	switch typed := v.(type) {
 	case map[string]any, map[any]any:
-		return normaliseValues(typed, at)
+		return normaliseValues(typed, at, keys)
 	case []any:
 		out := make([]any, len(typed))
 
 		for i, item := range typed {
 			// A path never addresses into a sequence, so a spelling recorded
 			// here could never be used.
-			normalisedItem, _, err := normaliseNested(item, fmt.Sprintf("%s[%d]", at, i))
+			normalisedItem, _, err := normaliseNested(item, fmt.Sprintf("%s[%d]", at, i), keys)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -425,12 +416,12 @@ func normaliseNested(v any, at string) (any, keySpelling, error) {
 // respell rewrites a dotted path into the spelling a layer's source uses, for
 // each segment the layer defines. Below the first segment it does not define,
 // or below a scalar, the caller's spelling is kept, since nothing in the source
-// says otherwise. Spec 0015 D9.
+// says otherwise. Spec 0015 D9. Only a folded Store has spellings to restore.
 func respell(path string, values map[string]any, spelling keySpelling) string {
 	segs := strings.Split(path, ".")
 
 	for i, seg := range segs {
-		folded := normaliseKey(seg)
+		folded := keysFolded.key(seg)
 
 		value, defined := values[folded]
 		if !defined {

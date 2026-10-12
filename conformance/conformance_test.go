@@ -109,3 +109,24 @@ func TestRun_ReadOnlyCodec(t *testing.T) {
 		Defines: map[string]string{"level": "info", "region": "eu"},
 	})
 }
+
+func TestRun_YAMLCodecInBothKeyModes(t *testing.T) {
+	t.Parallel()
+
+	for _, caseSensitive := range []bool{false, true} {
+		t.Run(fmt.Sprintf("case_sensitive=%v", caseSensitive), func(t *testing.T) {
+			t.Parallel()
+
+			Run(t, Suite{
+				Codec:           config.YAMLCodec{},
+				Sample:          []byte("level: info\nserver:\n  port: 9090\n"),
+				Defines:         map[string]string{"level": "info", "server.port": "9090"},
+				WriteKey:        "server.host",
+				WriteValue:      "localhost",
+				CaseSensitive:   caseSensitive,
+				MixedCaseSample: []byte("Server:\n  Port: 9090\n"),
+				MixedCaseKey:    "Server.Port",
+			})
+		})
+	}
+}
