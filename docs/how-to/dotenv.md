@@ -6,9 +6,10 @@ tags: [how-to, formats, dotenv]
 
 # Read dotenv
 
-The core's own codec is YAML. dotenv (`.env`) comes from a sibling module,
-[`config-dotenv`](https://gitlab.com/phpboyscout/go/config-dotenv), which adds **nothing** to
-your dependency graph: a `.env` file is read with the standard library.
+dotenv (`.env`) files become a config layer through
+[`config-dotenv`](https://gitlab.com/phpboyscout/go/config-dotenv), a sibling module: the core's
+own codec is YAML, and this one adds **nothing** to your dependency graph, because a `.env` file is
+read with the standard library. The layer is read-only.
 
 ```bash
 go get gitlab.com/phpboyscout/go/config-dotenv
@@ -21,43 +22,41 @@ import (
 )
 
 store, err := config.NewStore(ctx,
-	config.WithFiles(fsys, "/etc/app.yaml"),                      // YAML, the default
-	config.WithBackend(configdotenv.New(fsys, "/etc/app.env")),   // outranks it
+	config.WithFiles(config.OS(), "/etc/app.yaml"),               // real files outrank them
+	config.WithBackend(configdotenv.New(config.OS(), "/etc/app.env")), // outranks it
 )
+if err != nil {
+	return err
+}
+
+host := store.View().GetString("database.host") // "localhost"
+port := store.View().GetInt("database.port")    // 5432
 ```
 
-`New` takes a `config.FS` and a path, and the layer takes part in precedence, merge and
-provenance like any other file.
-
-## When you do *not* need this
-
-If the values are already **exported** into the process environment (by a container runtime, a
-systemd unit or a CI job), then [`WithEnv`](load-and-merge.md) reads them with no module and no
-file.
-
-Reach for `config-dotenv` when a `.env` file exists but nothing has applied it: local
-development, or a compose file whose `env_file` your process never sees. It is read-only, so it
-is a source of values and never a write target.
-
-## Keys nest on underscores
-
-A dotenv key is lower-cased and its underscores become dotted-key separators:
+with `/etc/app.env` containing:
 
 ```dotenv
 DATABASE_HOST=localhost
 DATABASE_PORT=5432
 ```
 
-```go
-host := store.View().GetString("database.host") // "localhost"
-port := store.View().GetInt("database.port")    // 5432
-```
+`New` takes a `config.FS` and a path, and the layer takes part in precedence, merge and
+provenance like any other file.
 
-A dotenv layer therefore merges into a nested YAML or JSON one by the same paths. The rule is
-deterministic and is the mapping the environment backend uses for an unmatched variable, so a
-key with a literal underscore in its name cannot be expressed, by design.
+## Map dotenv to keys
 
-## What a line may contain
+A dotenv key is lower-cased and its underscores become dotted-key separators, so
+`DATABASE_HOST` reads as `database.host`. A dotenv layer therefore merges into a nested YAML or
+JSON one by the same paths. The rule is deterministic and is the mapping the environment backend
+uses for an unmatched variable, so a key with a literal underscore in its name cannot be
+expressed, by design.
+
+Values are strings, and the read path casts them: `GetInt("database.port")` turns `"5432"` into
+`5432`. When two lines name the same key the later one wins, and that includes a key that is a
+prefix of another: `DATABASE=x` followed by `DATABASE_HOST=y` leaves only `database.host`, and the
+reverse order leaves only `database`, set to `x`. Neither is reported.
+
+### What a line may contain
 
 - A line starting with `#` is a comment, and blank lines are skipped. A `#` after a value is
   part of the value, not a comment.
@@ -66,7 +65,7 @@ key with a literal underscore in its name cannot be expressed, by design.
 - A line with no `=` or an empty key fails the load with `config.ErrBackendParse`, naming the
   file and line.
 
-## No interpolation
+### No interpolation
 
 A `${VAR}` in a value is left as written, never expanded:
 
@@ -80,10 +79,45 @@ which is the unprefixed-environment leak the environment backend's required pref
 prevent. If you want environment values, add `config.WithEnv("PREFIX")` as an ordinary layer,
 where the prefix applies and provenance names the variable.
 
-## Read-only
+## Read-only, and where writes go
 
-Values are strings, and the read path casts them. The format is read-only: the backend is not a
-write target, so a `store.Apply` is routed to another layer.
+The backend is never a write target. A `store.Apply` to a key the dotenv layer provides is routed
+to the next writable layer and reported shadowed, because the dotenv value still outranks it. With
+no writable layer at all, the write fails with `config.ErrNoWritableLayer`. Pair the layer with a
+writable one if your application has to persist anything.
+
+## Watch for changes
+
+A `.env` file is watched like any file-backed source: native filesystem notification where it
+works, polling where it does not, at the interval you pass to `Store.Watch` with
+`config.WithPollInterval` (two seconds by default). See [hot-reload](hot-reload.md).
+
+## Test with a string
+
+`Codec` is exported, so decoding a string needs no store and no filesystem:
+
+```go
+docs, err := configdotenv.Codec{}.Decode("app.env", []byte("DATABASE_PORT=5432\n"))
+// docs[0]["database"].(map[string]any)["port"] == "5432"
+```
+
+To test through a store, point `config.Dir(t.TempDir())` at a file you write first.
+
+## Errors you'll see
+
+| Error | Cause | Fix |
+|---|---|---|
+| `config.ErrBackendParse` | A line has no `=`, or an empty key. The error names the file and line. | Fix the line, or comment it out with `#`. |
+| `config.ErrNoWritableLayer` | An `Apply` set a key and no layer in the store can be written. | Add a writable layer, such as a YAML file. |
+
+## When you don't need this
+
+If the values are already **exported** into the process environment (by a container runtime, a
+systemd unit or a CI job), then [`WithEnv`](load-and-merge.md) reads them with no module and no
+file.
+
+Reach for `config-dotenv` when a `.env` file exists but nothing has applied it: local
+development, or a compose file whose `env_file` your process never sees.
 
 ## What it costs
 

@@ -6,9 +6,9 @@ tags: [how-to, formats, xml]
 
 # Read XML
 
-The core's own codec is YAML. XML comes from a sibling module,
-[`config-xml`](https://gitlab.com/phpboyscout/go/config-xml), which adds **nothing** to your
-dependency graph: it reads XML with the standard library.
+XML files become a config layer through [`config-xml`](https://gitlab.com/phpboyscout/go/config-xml),
+a sibling module: the core's own codec is YAML, and this one adds **nothing** to your dependency
+graph, because it reads XML with the standard library. The layer is read-only.
 
 ```bash
 go get gitlab.com/phpboyscout/go/config-xml
@@ -21,35 +21,34 @@ import (
 )
 
 store, err := config.NewStore(ctx,
-	config.WithFiles(fsys, "/etc/app.yaml"),                    // YAML, the default
-	config.WithBackend(configxml.New(fsys, "/etc/log4j.xml")),  // outranks it
+	config.WithFiles(config.OS(), "/etc/app.yaml"),               // real files outrank them
+	config.WithBackend(configxml.New(config.OS(), "/etc/app.xml")), // outranks it
 )
+if err != nil {
+	return err
+}
+
+port := store.View().GetInt("server.port")    // 8080  (an attribute)
+host := store.View().GetString("server.host") // "localhost"  (a child element)
 ```
 
-## When you do *not* need this
-
-XML here is **read-only**, so it cannot be the layer your application writes back to. If you
-own the format, YAML or JSON will serve you better in every respect.
-
-Reach for XML when the file is not yours: an existing enterprise or legacy document you have to
-consume where it is, rather than convert and keep in step.
-
-## Attributes and elements share one namespace
-
-Real configuration XML is attribute-heavy (log4j and .NET `appSettings` are almost entirely
-attributes), so an attribute reads by the same dotted path a child element would:
+with `/etc/app.xml` containing:
 
 ```xml
-<server port="8080"><host>localhost</host></server>
+<config>
+  <server port="8080"><host>localhost</host></server>
+</config>
 ```
 
-```go
-port := store.View().GetInt("server.port")     // 8080  (an attribute)
-host := store.View().GetString("server.host")   // "localhost"  (a child element)
-```
+## Map XML to keys
+
+Real configuration XML is attribute-heavy (log4j and .NET `appSettings` are almost entirely
+attributes), so an attribute reads by the same dotted path a child element would. That is why
+`port` and `host` above are both under `server`.
 
 The root element is the container, so it does not appear in the path. Namespace declarations
-(`xmlns`, `xmlns:*`) are dropped as XML machinery rather than configuration.
+(`xmlns`, `xmlns:*`) are dropped as XML machinery rather than configuration. Values are strings,
+and the read path casts them.
 
 A repeated element becomes a slice, and a single one a scalar that the read path promotes to a
 one-element slice when asked. Declare a repeatable element as a slice and it reads correctly
@@ -59,7 +58,7 @@ whether the file has one entry or many:
 aliases := store.View().GetStringSlice("alias") // one <alias> or several, both decode
 ```
 
-## What it refuses, at load
+### What it refuses, at load
 
 Two shapes cannot be a value tree, and are refused with `config.ErrBackendUnsafe` naming the
 element rather than silently dropping half of it:
@@ -70,16 +69,48 @@ element rather than silently dropping half of it:
   and a map, and a key cannot be both.
 
 A root element with neither attributes nor children is refused the same way, because it carries
-no configuration. A document that is not well-formed XML fails with `config.ErrBackendParse`.
+no configuration. This is the same treatment an ambiguous environment variable name gets: two
+candidates, no basis to choose, so it says so rather than picking one.
 
-This is the same treatment an ambiguous environment variable name gets: two candidates, no basis
-to choose, so it says so rather than picking one.
-
-## Read-only
+## Read-only, and where writes go
 
 No Go library round-trips XML preserving formatting and comments, so `config-xml` reads and does
 not write. A write to a key an XML layer defines is routed past the read-only layer and reported
-shadowed rather than failing.
+shadowed rather than failing. With no writable layer at all, the write fails with
+`config.ErrNoWritableLayer`.
+
+## Watch for changes
+
+An XML file is watched like any file-backed source: native filesystem notification where it works,
+polling where it does not, at the interval you pass to `Store.Watch` with
+`config.WithPollInterval` (two seconds by default). See [hot-reload](hot-reload.md).
+
+## Test with a string
+
+`Codec` is exported, so decoding a string needs no store and no filesystem:
+
+```go
+docs, err := configxml.Codec{}.Decode("app.xml", []byte(`<config><server port="8080"/></config>`))
+// docs[0]["server"].(map[string]any)["port"] == "8080"
+```
+
+To test through a store, point `config.Dir(t.TempDir())` at a file you write first.
+
+## Errors you'll see
+
+| Error | Cause | Fix |
+|---|---|---|
+| `config.ErrBackendParse` | The document is not well-formed XML. | Fix the document. |
+| `config.ErrBackendUnsafe` | An attribute and a child element share a name, an element mixes text with attributes or children, or the root carries nothing. The error names the element. | Rename one of the pair, or move the text into its own child element. |
+| `config.ErrNoWritableLayer` | An `Apply` set a key and no layer in the store can be written. | Add a writable layer, such as a YAML file. |
+
+## When you don't need this
+
+XML here is **read-only**, so it cannot be the layer your application writes back to. If you
+own the format, YAML or JSON will serve you better in every respect.
+
+Reach for XML when the file is not yours: an existing enterprise or legacy document you have to
+consume where it is, rather than convert and keep in step.
 
 ## What it costs
 

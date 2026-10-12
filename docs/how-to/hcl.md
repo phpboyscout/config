@@ -6,8 +6,9 @@ tags: [how-to, formats, hcl]
 
 # Read and write HCL
 
-The core's own codec is YAML. HCL comes from a sibling module,
-[`config-hcl`](https://gitlab.com/phpboyscout/go/config-hcl).
+HCL files become a config layer through [`config-hcl`](https://gitlab.com/phpboyscout/go/config-hcl),
+a sibling module: the core's own codec is YAML, so you take this one only if you need HCL. Writes
+edit the file in place and keep its comments.
 
 ```bash
 go get gitlab.com/phpboyscout/go/config-hcl
@@ -20,19 +21,48 @@ import (
 )
 
 store, err := config.NewStore(ctx,
-	config.WithFiles(fsys, "/etc/app.yaml"),                    // YAML, the default
-	config.WithBackend(confighcl.New(fsys, "/etc/app.hcl")),    // outranks it
+	config.WithFiles(config.OS(), "/etc/app.yaml"),               // real files outrank them
+	config.WithBackend(confighcl.New(config.OS(), "/etc/app.hcl")), // outranks it
 )
+if err != nil {
+	return err
+}
+
+host := store.View().GetString("server.host") // "localhost"
+port := store.View().GetInt("server.port")    // 8080
 ```
 
-## When you do *not* need this
+with `/etc/app.hcl` containing:
 
-If you pick the format, YAML costs nothing extra and the core reads it.
+```hcl
+server {
+  host = "localhost"
+  port = 8080
+}
+```
 
-Reach for HCL when the file is shared with tooling that already speaks it, so your
-configuration sits alongside the rest of a stack rather than translating it.
+## Map HCL to keys
 
-## HCL as a configuration format, not Terraform
+A block's type and labels become dotted-key segments, and its attributes nest beneath them:
+
+```hcl
+migration "multi_state" "move_redis" {
+  enabled = true
+}
+```
+
+```go
+enabled := store.View().GetBool("migration.multi_state.move_redis.enabled")
+```
+
+Two blocks sharing a type and every label collide, which is an error rather than
+last-one-wins. Repeated unlabelled blocks of one type are refused as well, since they have no
+dotted-key representation, and so are a name used for both an attribute and a block type, and
+labelled and unlabelled blocks of the same type. All fail with `config.ErrBackendUnsafe`.
+
+Numbers decode as `float64`, and the read path casts them, so `GetInt` returns `8080`.
+
+### HCL as a configuration format, not Terraform
 
 This module serves HCL the way Nomad, Consul, Vault, Packer and purpose-built HCL DSLs use it,
 and **deliberately not Terraform**. A document that reaches outside itself for a value (a
@@ -49,25 +79,7 @@ it looks right. Point the adapter at a `.tf` file and it says so, rather than si
 the configuration it could not understand. JSON-encoded HCL (`.hcl.json`) is refused too, since
 the adapter reads native HCL syntax only.
 
-## Blocks and labels are path segments
-
-A block's type and labels become dotted-key segments:
-
-```hcl
-migration "multi_state" "move_redis" {
-  enabled = true
-}
-```
-
-```go
-enabled := store.View().GetBool("migration.multi_state.move_redis.enabled")
-```
-
-Two blocks sharing a type and every label collide, which is an error rather than
-last-one-wins. Repeated unlabelled blocks of one type are refused as well, since they have no
-dotted-key representation. Both fail with `config.ErrBackendUnsafe`.
-
-## Writing preserves the file
+## Write back to the file
 
 Because every accepted document is expression-free, HCL is exactly as safe to edit as YAML.
 Writing uses HashiCorp's `hclwrite` for a targeted edit that preserves comments, block order
@@ -84,10 +96,50 @@ server {
 
 changes `port` to `9090` and leaves every comment and the block untouched.
 
-Setting or removing a block attribute or a top-level attribute is supported. Writing into a
-sub-path of an object-valued attribute, or creating a new nested block from a dotted path, is
-refused with `config.ErrInvalidTarget` rather than guessed. A `Set` can carry a string, bool,
-integer, float, `[]string` or nil; any other value type fails with `config.ErrBackendUnsafe`.
+What you can do:
+
+- Set or remove a top-level attribute, or an attribute in a block that already exists. A new
+  attribute is appended to its block.
+- Set a string, bool, integer, float, `[]string` or nil.
+
+Writing into a sub-path of an object-valued attribute, or creating a new nested block from a
+dotted path, is refused with `config.ErrInvalidTarget` rather than guessed. Which layer a change
+lands in is the core's decision, not this adapter's. See
+[where a change lands](write-config.md#where-a-change-lands).
+
+## Watch for changes
+
+An HCL file is watched like any file-backed source: native filesystem notification where it works,
+polling where it does not, at the interval you pass to `Store.Watch` with
+`config.WithPollInterval` (two seconds by default). See [hot-reload](hot-reload.md).
+
+## Test with a string
+
+`Codec` is exported, so decoding or editing a string needs no store and no filesystem:
+
+```go
+docs, err := confighcl.Codec{}.Decode("app.hcl", []byte("server {\n  port = 8080\n}\n"))
+// docs[0]["server"].(map[string]any)["port"] == float64(8080)
+```
+
+To test through a store, point `config.Dir(t.TempDir())` at a file you write first.
+[Support a new file format](format-adapter.md) covers the conformance suite the adapter itself runs.
+
+## Errors you'll see
+
+| Error | Cause | Fix |
+|---|---|---|
+| `config.ErrBackendParse` | The file is not valid HCL syntax. It names the file. | Fix the file. |
+| `config.ErrBackendUnsafe` | At load: an attribute needs a variable, function or interpolation; the file is JSON-encoded HCL; or blocks collide as described under [Map HCL to keys](#map-hcl-to-keys). | Write the value literally, or rename the colliding block. |
+| `config.ErrBackendUnsafe` | On a write: the value is not a string, bool, integer, float, `[]string` or nil, a map for example. | Set the leaf keys one by one. |
+| `config.ErrInvalidTarget` | The write is into an object-valued attribute, or needs a block that does not exist yet. | Write the object as a block (`x { a = 1 }`), whose attributes can be set, or add the block to the file first. |
+
+## When you don't need this
+
+If you pick the format, YAML costs nothing extra and the core reads it.
+
+Reach for HCL when the file is shared with tooling that already speaks it, so your
+configuration sits alongside the rest of a stack rather than translating it.
 
 ## What it costs
 
