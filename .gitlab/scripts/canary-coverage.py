@@ -51,7 +51,7 @@ def canary_full_matrix():
     block = re.search(r"^canary-full:\n(.*?)^\s+rules:", text, re.S | re.M)
     if block is None:
         sys.exit(f"canary-coverage: no canary-full job in {CI_FILE}")
-    return set(re.findall(r"^\s+- (config-[a-z0-9-]+)\s*$", block.group(1), re.M))
+    return set(re.findall(r"^\s+- ([a-z][a-z0-9-]*)\s*$", block.group(1), re.M))
 
 
 def main():
