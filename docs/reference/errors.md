@@ -241,6 +241,21 @@ letting you discover it at commit time with nowhere to put your edits. Fix the a
 the duplicate. See
 [What survives a write](../explanation/write-fidelity.md#some-documents-are-refused-at-load).
 
+### `ErrKeyCollision`
+
+`config: two keys in one layer are the same key: app.yaml defines both "Port" and "port"`
+
+Returned when one source holds two keys that become the same key once the store lower-cases
+them, at any depth, or two non-string keys that read the same as text, such as `1` and
+`1.0`. The source is refused whatever the two values are, because keeping either would be a
+silent choice of which setting you meant. Two *different* sources spelling a key
+differently is not a collision: the later source wins, as for any key.
+
+`NewStore` returns it with no store. A reload, including one a watch triggered, is rejected
+and the last known good configuration stays live. `Store.AddLayer` withdraws the layer it
+added, and a write whose result would collide commits nothing. Rename or remove one of the
+two keys in the source.
+
 ### `ErrReadOnlyFS`
 
 `config: filesystem is read-only`

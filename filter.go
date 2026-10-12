@@ -238,6 +238,13 @@ func (f *filtered) Load(ctx context.Context, below []Layer) ([]Layer, error) {
 		withheld []string
 	)
 
+	// filterValues stringifies non-string keys as it walks, so a collision
+	// between them would be decided here, silently, before the Store could
+	// refuse it.
+	if _, _, err := normalised(layers); err != nil {
+		return nil, err
+	}
+
 	for _, layer := range layers {
 		kept, removed := filterValues(layer.Values, f.rules, nil)
 

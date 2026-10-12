@@ -77,6 +77,20 @@ type Store struct {
 type backendLayers struct {
 	backend Backend
 	layers  []Layer
+
+	// spellings pairs with layers by index.
+	spellings []keySpelling
+}
+
+// newBackendLayers normalises what a backend returned, refusing a layer whose
+// keys collide.
+func newBackendLayers(backend Backend, layers []Layer) (backendLayers, error) {
+	normalisedLayers, spellings, err := normalised(layers)
+	if err != nil {
+		return backendLayers{}, err
+	}
+
+	return backendLayers{backend: backend, layers: normalisedLayers, spellings: spellings}, nil
 }
 
 // StoreOption configures a Store.
@@ -564,7 +578,12 @@ func (s *Store) loadAll(ctx context.Context) ([]backendLayers, error) {
 	for i, backend := range s.backends {
 		got, err := backend.Load(ctx, flatten(loaded))
 		if err == nil {
-			loaded = append(loaded, backendLayers{backend: backend, layers: normalised(got)})
+			bl, err := newBackendLayers(backend, got)
+			if err != nil {
+				return nil, err
+			}
+
+			loaded = append(loaded, bl)
 
 			continue
 		}
@@ -898,7 +917,7 @@ func (s *Store) prepare(ctx context.Context, plan *Plan) (map[string]Pending, []
 		grouped[id] = append(grouped[id], Edit{
 			Document: op.Target.Document,
 			Target:   op.Target,
-			Path:     op.Change.Path,
+			Path:     s.respell(op.Target, op.Change.Path),
 			Value:    op.Change.Value,
 			Remove:   op.Change.Remove,
 		})
@@ -1011,7 +1030,12 @@ func (s *Store) rebuild(ctx context.Context, pending map[string]Pending) ([]back
 
 	for _, bl := range s.loaded {
 		if staged, ok := pending[bl.backend.ID()]; ok {
-			next = append(next, backendLayers{backend: bl.backend, layers: normalised(staged.Layers())})
+			written, err := newBackendLayers(bl.backend, staged.Layers())
+			if err != nil {
+				return nil, err
+			}
+
+			next = append(next, written)
 
 			continue
 		}
@@ -1048,7 +1072,12 @@ func (s *Store) rebuild(ctx context.Context, pending map[string]Pending) ([]back
 			return nil, err
 		}
 
-		next = append(next, backendLayers{backend: bl.backend, layers: normalised(layers)})
+		reread, err := newBackendLayers(bl.backend, layers)
+		if err != nil {
+			return nil, err
+		}
+
+		next = append(next, reread)
 	}
 
 	return next, nil
@@ -1282,6 +1311,22 @@ func (s *Store) backendBySource() map[Source]Backend {
 	}
 
 	return out
+}
+
+// respell addresses a path at the target layer in that layer's own spelling.
+// A target no layer carries, such as a synthesised one, takes the path as given.
+//
+// The caller must hold the lock.
+func (s *Store) respell(target Source, path string) string {
+	for _, bl := range s.loaded {
+		for i, l := range bl.layers {
+			if l.Source == target && i < len(bl.spellings) {
+				return respell(path, l.Values, bl.spellings[i])
+			}
+		}
+	}
+
+	return path
 }
 
 // Watch begins reacting to changes made outside this process.

@@ -3,7 +3,15 @@ package config
 import (
 	"fmt"
 	"strings"
+
+	"gitlab.com/phpboyscout/go/errors"
 )
+
+// ErrKeyCollision is returned when two keys in one layer are the same key once
+// folded or stringified, such as `port` beside `Port`, or `1` beside `1.0`. The
+// layer is refused rather than loaded with whichever spelling won, because no
+// rule for the winner would be anything but a silent choice of value.
+var ErrKeyCollision = errors.NewSentinel("config.key_collision", "config: two keys in one layer are the same key")
 
 // SourceKind identifies where a layer's values came from.
 //
@@ -263,51 +271,188 @@ func cloneMap(m map[string]any) map[string]any {
 	return out
 }
 
-// normalised returns layers whose keys carry the module's casing rule.
+// normalised returns layers whose keys carry the module's casing rule, with
+// each layer's record of how its source spelled the keys it folded.
 //
 // Applied where layers enter the Store, so "a Layer's keys are normalised" is a
 // property of every layer the Store holds rather than something each consumer
 // has to remember. It used to be done when a snapshot was built, which left
 // anything reading layers beforehand — the key space handed to a backend's
 // Load, or the keys collected for it — normalising again on its own account.
-func normalised(layers []Layer) []Layer {
+func normalised(layers []Layer) ([]Layer, []keySpelling, error) {
 	out := make([]Layer, 0, len(layers))
+	spellings := make([]keySpelling, 0, len(layers))
+
 	for _, l := range layers {
-		out = append(out, Layer{Source: l.Source, Values: normaliseValues(l.Values)})
+		values, spelling, err := normaliseValues(l.Values, "")
+		if err != nil {
+			return nil, nil, fmt.Errorf("%w: %s %w", ErrKeyCollision, l.Source, err)
+		}
+
+		out = append(out, Layer{Source: l.Source, Values: values})
+		spellings = append(spellings, spelling)
 	}
 
-	return out
+	return out, spellings, nil
+}
+
+// keySpelling records how a layer's source spelled each key whose folded form
+// differs, or under which one does, so a write can address an existing key as
+// the source spells it (spec 0015 D9). A layer spelled entirely in lower case
+// has none.
+type keySpelling map[string]spelt
+
+type spelt struct {
+	raw   string
+	under keySpelling
+}
+
+// collision is the detail of an in-layer collision, wrapped with
+// ErrKeyCollision and the layer by normalised.
+type collision struct{ first, second string }
+
+func (c collision) Error() string {
+	first, second := min(c.first, c.second), max(c.first, c.second)
+
+	return fmt.Sprintf("defines both %q and %q", first, second)
 }
 
 // normaliseValues deep-copies a value map, normalising every key on the way, so
-// a layer can be queried with the same normalised paths as the merged view.
-func normaliseValues(m map[string]any) map[string]any {
-	out := make(map[string]any, len(m))
+// a layer can be queried with the same normalised paths as the merged view. It
+// refuses two keys that normalise alike, at any depth, whatever their values.
+func normaliseValues(m any, at string) (map[string]any, keySpelling, error) {
+	switch typed := m.(type) {
+	case map[string]any:
+		f := newKeyFolder(at, len(typed))
 
-	for k, v := range m {
-		out[normaliseKey(k)] = normaliseNested(v)
-	}
-
-	return out
-}
-
-func normaliseNested(v any) any {
-	if nested, ok := asStringMap(v); ok {
-		return normaliseValues(nested)
-	}
-
-	if items, ok := v.([]any); ok {
-		out := make([]any, len(items))
-		for i, item := range items {
-			out[i] = normaliseNested(item)
+		for k, v := range typed {
+			if err := f.add(k, v); err != nil {
+				return nil, nil, err
+			}
 		}
 
-		return out
+		return f.out, f.spelling, nil
+	case map[any]any:
+		f := newKeyFolder(at, len(typed))
+
+		for k, v := range typed {
+			if err := f.add(stringKey(k), v); err != nil {
+				return nil, nil, err
+			}
+		}
+
+		return f.out, f.spelling, nil
+	}
+
+	return nil, nil, nil
+}
+
+// keyFolder accumulates one map's normalised copy for normaliseValues.
+type keyFolder struct {
+	at       string
+	out      map[string]any
+	seen     map[string]string
+	spelling keySpelling
+}
+
+func newKeyFolder(at string, size int) *keyFolder {
+	return &keyFolder{at: at, out: make(map[string]any, size), seen: make(map[string]string, size)}
+}
+
+func (f *keyFolder) add(key string, v any) error {
+	folded := normaliseKey(key)
+
+	if earlier, dup := f.seen[folded]; dup {
+		return collision{first: joinPath(f.at, earlier), second: joinPath(f.at, key)}
+	}
+
+	f.seen[folded] = key
+
+	nested, under, err := normaliseNested(v, joinPath(f.at, key))
+	if err != nil {
+		return err
+	}
+
+	f.out[folded] = nested
+
+	if key != folded || under != nil {
+		if f.spelling == nil {
+			f.spelling = keySpelling{}
+		}
+
+		f.spelling[folded] = spelt{raw: key, under: under}
+	}
+
+	return nil
+}
+
+// stringKey renders a map key the way asStringMap does, so the two cannot
+// disagree about which keys are the same.
+func stringKey(k any) string {
+	if s, ok := k.(string); ok {
+		return s
+	}
+
+	return fmt.Sprint(k)
+}
+
+func normaliseNested(v any, at string) (any, keySpelling, error) {
+	switch typed := v.(type) {
+	case map[string]any, map[any]any:
+		return normaliseValues(typed, at)
+	case []any:
+		out := make([]any, len(typed))
+
+		for i, item := range typed {
+			// A path never addresses into a sequence, so a spelling recorded
+			// here could never be used.
+			normalisedItem, _, err := normaliseNested(item, fmt.Sprintf("%s[%d]", at, i))
+			if err != nil {
+				return nil, nil, err
+			}
+
+			out[i] = normalisedItem
+		}
+
+		return out, nil, nil
 	}
 
 	// Only a scalar reaches here — maps and sequences are handled above — and a
 	// scalar is already a value, so there is nothing to copy.
-	return v
+	return v, nil, nil
+}
+
+// respell rewrites a dotted path into the spelling a layer's source uses, for
+// each segment the layer defines. Below the first segment it does not define,
+// or below a scalar, the caller's spelling is kept, since nothing in the source
+// says otherwise. Spec 0015 D9.
+func respell(path string, values map[string]any, spelling keySpelling) string {
+	segs := strings.Split(path, ".")
+
+	for i, seg := range segs {
+		folded := normaliseKey(seg)
+
+		value, defined := values[folded]
+		if !defined {
+			break
+		}
+
+		name := spelling[folded]
+		if name.raw != "" {
+			segs[i] = name.raw
+		} else {
+			segs[i] = folded
+		}
+
+		nested, isMap := value.(map[string]any)
+		if !isMap {
+			break
+		}
+
+		values, spelling = nested, name.under
+	}
+
+	return strings.Join(segs, ".")
 }
 
 // leafKeys lists every leaf path the given layers define, which is the key

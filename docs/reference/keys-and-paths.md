@@ -51,9 +51,15 @@ This is not cosmetic. Schema validation compares field names against configurati
 struct decoding derives keys from field names; a case-sensitive model would make `Port` and
 `port` two different settings and break both.
 
-**Casing is not preserved on write.** A key this module creates is written lower-cased. A
-key that already exists in the file keeps the spelling the file has, because a write edits
-the existing node rather than re-serialising the document.
+**Two spellings of one key in one source are refused.** A file holding both `port` and
+`Port`, at any depth, fails to load with
+[`ErrKeyCollision`](errors.md#errkeycollision), even when the two values agree. Across
+sources, different spellings are simply the same key, and the later source wins.
+
+**A write uses the spelling the source already has.** Writing `server.port` to a source that
+spells it `Server.Port` edits that key, on every writable backend, rather than adding a
+second spelling beside it. Below the last segment the source defines, the path is written as
+you spelled it, except that a new key in a YAML file is written lower-cased.
 
 ## A key containing a literal dot cannot be addressed
 

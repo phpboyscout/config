@@ -337,13 +337,21 @@ func (n *nestedWritable) Prepare(ctx context.Context, edits []Edit) (Pending, er
 
 	n.inner.mu.Lock()
 	owners := n.inner.backendBySource()
+
+	// The outer Store saw only the inner's folded keys, so only the inner can
+	// say how its sources spell them.
+	respelt := make([]Edit, len(edits))
+	for i, edit := range edits {
+		edit.Path = n.inner.respell(edit.Target, edit.Path)
+		respelt[i] = edit
+	}
 	n.inner.mu.Unlock()
 
 	grouped := map[string][]Edit{}
 	backends := map[string]WritableBackend{}
 	order := []string{}
 
-	for _, edit := range edits {
+	for _, edit := range respelt {
 		// The layer as the inner store knows it. The aggregate hands its own
 		// copy upward unchanged when promotable, so the two agree.
 		owner, ok := owners[edit.Target]

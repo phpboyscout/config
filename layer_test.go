@@ -86,7 +86,7 @@ func TestMerge_LaterLayerWinsPerLeaf(t *testing.T) {
 func TestMerge_KeysAreLowercased(t *testing.T) {
 	t.Parallel()
 
-	merged, origin := mergeLayers(normalised([]Layer{
+	merged, origin := mergeLayers(mustNormalise(t, []Layer{
 		layer("a.yaml", map[string]any{"Server": map[string]any{"Port": 1}}),
 		layer("b.yaml", map[string]any{"SERVER": map[string]any{"PORT": 2}}),
 	}))
@@ -444,4 +444,15 @@ func TestMerge_IsLinearInMapSize(t *testing.T) {
 	if ratio := float64(large) / float64(small); ratio > 24 {
 		t.Errorf("8x the keys took %.1fx the time (%v vs %v); want roughly linear", ratio, large, small)
 	}
+}
+
+func mustNormalise(t *testing.T, layers []Layer) []Layer {
+	t.Helper()
+
+	out, _, err := normalised(layers)
+	if err != nil {
+		t.Fatalf("normalised: %v", err)
+	}
+
+	return out
 }
