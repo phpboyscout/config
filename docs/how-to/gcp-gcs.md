@@ -1,21 +1,20 @@
 ---
-title: Read & write config in Cloud Storage
+title: Read and write config in Cloud Storage
 description: Point config at a configuration file that lives in a GCP Cloud Storage bucket, through a storage.Client you own.
 tags: [how-to, filesystem, gcs, gcp, cloud]
 ---
 
-# Read & write config in Cloud Storage
+# Read and write config in Cloud Storage
 
 When a tool's configuration file lives in a **GCP Cloud Storage bucket**, the
 [`config-gcp-gcs`](https://gitlab.com/phpboyscout/go/config-gcp-gcs) sibling module wraps a
-[`*storage.Client`](https://pkg.go.dev/cloud.google.com/go/storage#Client) as a `config.FS`.
+[`*storage.Client`](https://pkg.go.dev/cloud.google.com/go/storage#Client) as a `config.FS`. You
+build the storage client, so credentials, project and options all stay yours, and hand it in with
+the bucket name.
 
 ```bash
 go get gitlab.com/phpboyscout/go/config-gcp-gcs
 ```
-
-You build and configure the storage client, so credentials, project and options all stay yours, and
-hand it in with the bucket name:
 
 ```go
 import (
@@ -25,55 +24,34 @@ import (
 	configgcpgcs "gitlab.com/phpboyscout/go/config-gcp-gcs"
 )
 
-client, _ := storage.NewClient(ctx) // your credentials, your options
+client, err := storage.NewClient(ctx) // your credentials, your options
+if err != nil {
+	return err
+}
 defer client.Close()
 
 store, err := config.NewStore(ctx,
 	config.WithFiles(configgcpgcs.Wrap(client, "my-bucket"), "config.yaml"),
 	config.WithEnv("APP"),
 )
+if err != nil {
+	return err
+}
+
+host := store.View().GetString("db.host") // from gs://my-bucket/config.yaml
 ```
 
-The `config.FS` name is the object name, so `Wrap(client, "my-bucket")` reads and writes the object
-`config.yaml`.
+The object is read, merged, written and watched exactly as a local file would be.
 
-## When you do *not* need this
-
-If you read one object once at startup, fetch it and hand the bytes to
-[`WithReaders`](load-and-merge.md). No adapter needed.
-
-Reach for `config-gcp-gcs` when the bucket should behave like a filesystem: several
-files, writes routed back, or hot-reload noticing a change made elsewhere.
-
-## A base context, because the SDK needs one
-
-Every `storage` call takes a `context.Context`, but the `config.FS` methods do not, so `Wrap`
-defaults to `context.Background()`. If you want the adapter's operations bound to a cancellable
-context, pass one:
-
-```go
-configgcpgcs.Wrap(client, "my-bucket", configgcpgcs.WithContext(ctx))
-```
-
-A cancelled base context makes every subsequent adapter operation fail, so bind a context whose
-lifetime matches the store's.
-
-## The write is a real atomic move
-
-Unlike S3 and Azure Blob, Cloud Storage has a **native server-side move**, so the commit is a single
-`ObjectHandle.Move`. There is no copy-then-delete, and no window where a crash could orphan a staging
-object. Conflict detection is the core's SHA-256 content fingerprint, captured at load, so a write is
-refused if the object changed underneath it.
-
-## Hot-reload is polled, at a calm cadence
-
-An object store has no local path, so it is watched by **polling**. Because each poll is a billed
-object read, `config-gcp-gcs` declares a **60-second** default through `config.PollIntervalHinter`.
-Override it with `config.WithPollInterval` on `Store.Watch`.
-
-## Getting a client
+## Connect to Cloud Storage
 
 Building the client yourself is the default. Two further rungs exist:
+
+| Use | When |
+|---|---|
+| `Wrap(client, bucket)` | You built the `*storage.Client`, or share it with other code. It stays yours to close. |
+| `FromOptions(ctx, bucket, opts)` | You hold client options: an emulator endpoint, an explicit credentials file, or a credential resolved once with `go/gcpclient`. |
+| `Default(ctx, bucket)` | Nothing to configure: Application Default Credentials. |
 
 ```go
 // You hold client options: an emulator endpoint, an explicit credentials file,
@@ -87,6 +65,18 @@ store, err := config.NewStore(ctx, config.WithFiles(fsys, "config.yaml"), config
 defer store.Close()
 ```
 
+`FromOptions` and `Default` return `*OwnedFS`, which owns the client it built, so **close it**.
+`store.Close()` does that for you once you hand the filesystem over with `WithCloser`, as above. The
+obligation is real but weaker than for the Secret Manager sibling: `storage.Client` is HTTP-backed
+and its documentation says `Close` "need not be called at program exit", where
+`secretmanager.Client` says it "must be Closed". A filesystem from `Wrap` is not owned, and the
+client you built stays yours to close.
+
+This is the simplest zero-conf rung in the family: a bucket name is globally unique, so unlike
+Secret Manager and Parameter Manager there is no project or location to supply. An empty bucket
+returns `ErrNoBucket`. The why behind the ladder is in
+[who owns the connection](../explanation/connection-ownership.md).
+
 To detect Application Default Credentials **once** and feed several GCP adapters
 from it, resolve with
 [`go/gcpclient`](https://gcpclient.go.phpboyscout.uk) and pass the
@@ -94,16 +84,75 @@ options it yields to `FromOptions`. It hands out client options rather than a
 client precisely because the three GCP adapters need three different client
 types.
 
-Both return `*OwnedFS`, which owns the client it built, so **close it**. `store.Close()` does that
-for you once you hand the filesystem over with `WithCloser`, as above. The obligation is real but
-weaker than for the Secret Manager sibling: `storage.Client` is HTTP-backed and its documentation
-says `Close` "need not be called at program exit", where `secretmanager.Client` says it "must be
-Closed". An empty bucket returns `ErrNoBucket`. A filesystem from `Wrap` is not owned, and the
-client you built stays yours to close.
+### Give the adapter a base context
 
-This is the simplest zero-conf rung in the family: a bucket name is globally unique, so unlike
-Secret Manager and Parameter Manager there is no project or location to supply. The why behind the
-ladder is in [who owns the connection](../explanation/connection-ownership.md).
+Every `storage` call takes a `context.Context`, but the `config.FS` methods do not, so `Wrap`
+defaults to `context.Background()`. If you want the adapter's operations bound to a cancellable
+context, pass one:
+
+```go
+configgcpgcs.Wrap(client, "my-bucket", configgcpgcs.WithContext(ctx))
+```
+
+A cancelled base context makes every subsequent adapter operation fail, so bind a context whose
+lifetime matches the store's.
+
+## Map objects to keys
+
+The `config.FS` name is the object name, so `Wrap(client, "my-bucket")` reads and writes the object
+`config.yaml`. The config keys come from the object's contents, parsed by the same codec a local
+file would use.
+
+## Write back to the object
+
+Unlike S3 and Azure Blob, Cloud Storage has a **native server-side move**, so the commit is a single
+`ObjectHandle.Move`. There is no copy-then-delete, and no window where a crash could orphan a staging
+object. Conflict detection is the core's SHA-256 content fingerprint, captured at load, so a write is
+refused if the object changed underneath it.
+
+## Watch for changes
+
+An object store has no local path, so it is watched by **polling**. Because each poll is a billed
+object read, `config-gcp-gcs` declares a **60-second** default through `config.PollIntervalHinter`.
+The adapter has no interval option of its own: override it with `config.WithPollInterval` on
+`Store.Watch`. See [hot-reload](hot-reload.md) for the store side.
+
+## Test without GCP
+
+The adapter's in-memory bucket is internal to its own test suite, so a test of yours has two routes.
+Point `FromOptions` at an emulator such as
+[fake-gcs-server](https://github.com/fsouza/fake-gcs-server) with `option.WithEndpoint`, or, when
+the test is about your configuration rather than GCS, hand `config.WithFiles` an in-memory
+filesystem through [`config-afero`](afero.md) instead.
+
+fake-gcs-server does not implement the `objects.move` endpoint the SDK's `Move` issues, so a write
+through the adapter fails against it. Reads and watching work. The module's integration suite,
+under `test/integration`, runs against fake-gcs-server under testcontainers and skips its move test
+for that reason; only the adapter's in-memory fake proves the move. The suite is skipped unless
+`INT_TEST_INTEGRATION=1` is set, and needs a Docker daemon.
+
+## Errors you'll see
+
+| Error | Cause | Fix |
+|---|---|---|
+| `config.ErrConflict` | The object changed between load and write. | Reload and apply the change again. |
+| `configgcpgcs.ErrNoBucket` | `FromOptions` or `Default` got an empty bucket name. | Pass the bucket. |
+| `fs.ErrNotExist` | The object is absent. | Check the bucket and name. The store tolerates it as an empty layer unless it is the first source and you set `RequireFirstSource`. |
+| A context error on every call | The base context passed with `WithContext` was cancelled. | Bind a context that lives as long as the store. |
+
+## Limits
+
+- **No directories and no POSIX mode**, as for any object store.
+- **No local path and no symlinks**, which is why the store polls rather than using a native file
+  watcher.
+
+## When you don't need this
+
+If you read one object once at startup, fetch it and hand the bytes to
+[`WithReaders`](load-and-merge.md). No adapter needed.
+
+Reach for `config-gcp-gcs` when the bucket should behave like a filesystem: several
+files, writes routed back, or hot-reload noticing a change made elsewhere.
 
 ## What it costs
 
@@ -113,13 +162,11 @@ ladder is in [who owns the connection](../explanation/connection-ownership.md).
 
 The Cloud Storage SDK, plus `config`, asserted by an allowlist test. The SDK is a heavy graph, and
 the honest cost of the client. Because the adapter is its own module, only a consumer reading from
-GCS compiles it. The integration tests run against
-[fake-gcs-server](https://github.com/fsouza/fake-gcs-server) under testcontainers, so the suite needs
-no GCP project.
+GCS compiles it.
 
 ## Related
 
 - [How filesystem adapters work](../explanation/filesystem-adapters.md): the object-store commit
   model and polled reload
-- [Read & write config in S3](aws-s3.md) and [Azure Blob](azure-blob.md): the sibling object stores
+- [Read and write config in S3](aws-s3.md) and [Azure Blob](azure-blob.md): the sibling object stores
 - [Backends & capabilities](../explanation/backends.md): the `config.FS` interface

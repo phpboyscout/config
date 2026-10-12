@@ -6,18 +6,14 @@ tags: [how-to, adapters, backends, etcd]
 
 # Read and write etcd
 
-The core reads and writes files. An [etcd](https://etcd.io/) v3 cluster is a remote backend,
-provided by a sibling module,
-[`config-etcd`](https://gitlab.com/phpboyscout/go/config-etcd), so a consumer who needs etcd
-takes it and its etcd client, and one who does not pays nothing.
+An [etcd](https://etcd.io/) v3 prefix becomes a read-write config layer through
+[`config-etcd`](https://gitlab.com/phpboyscout/go/config-etcd), a sibling module, so a consumer who
+needs etcd takes it and its etcd client, and one who does not pays nothing. You build the client
+and hand it in with a **prefix** that scopes the read and is stripped from the keys.
 
 ```bash
 go get gitlab.com/phpboyscout/go/config-etcd
 ```
-
-You build and configure the client, which is where every endpoint, credential, TLS and
-namespace decision lives, and hand it in. The adapter takes a **prefix** that scopes the read and is
-stripped from the keys:
 
 ```go
 import (
@@ -30,36 +26,96 @@ client, err := clientv3.New(clientv3.Config{Endpoints: []string{"localhost:2379"
 if err != nil {
 	return err
 }
+defer client.Close()
 
 store, err := config.NewStore(ctx,
-	config.WithFiles(fsys, "/etc/app.yaml"),                   // YAML defaults
+	config.WithFiles(config.OS(), "/etc/app.yaml"),            // YAML defaults
 	config.WithBackend(configetcd.FromClient(client, "app/")), // etcd outranks them
 )
+if err != nil {
+	return err
+}
+
+port := store.View().GetInt("server.port") // 8080, from app/server/port
 ```
 
 An etcd layer takes part in precedence, per-key merge, provenance and hot-reload exactly as a
-file does. Keys under the prefix, split on `/`, become the nested tree:
+file does.
 
-```
-app/server/host = "localhost"
-app/server/port = "8080"
-```
+## Connect to etcd
+
+Building the client yourself is the default, because it is where every endpoint, credential, TLS
+and namespace decision lives. Two further rungs exist:
+
+| Use | When |
+|---|---|
+| `FromClient(client, prefix)` | You built the `*clientv3.Client`, or share it with other code. It stays yours to close. |
+| `FromConfig(cfg, prefix)` | You assembled a `clientv3.Config` and want the adapter to build the client from it. |
+| `Default(prefix)` | Nothing to configure: the environment `etcdctl` reads. |
 
 ```go
-store.View().GetString("server.host") // "localhost"
-store.View().GetInt("server.port")    // 8080
+// You assembled the config; the adapter builds the client.
+b, err := configetcd.FromConfig(clientv3.Config{Endpoints: []string{"localhost:2379"}}, "app/")
+
+// Nothing at all: the environment etcdctl reads.
+b, err := configetcd.Default("app/")
+
+store, err := config.NewStore(ctx, config.WithBackend(b), config.WithCloser(b))
+defer store.Close()
 ```
 
-## When you do *not* need this
+`FromConfig` and `Default` return `*OwnedBackend`, which **must be closed**. The adapter built the
+etcd client, so it owns the client's connections and goroutines. Hand it to the store with
+`WithCloser`, as above, and closing the store releases it. `FromConfig` has done this since
+config-etcd v0.3.0; before that, nothing could close it. A backend from `FromClient` is not owned,
+and the client you built stays yours to close.
 
-If nothing needs to change between deploys, a file is simpler and cannot be
-unreachable at start-up.
+Neither rung contacts etcd, so an unreachable cluster is a `Load` error. `FromConfig` returns
+`ErrNoEndpoints` when the config names none, because it does not fall back to `localhost`. The
+reasoning, including why the `etcdctl` convention was adopted when `clientv3` has none, is in
+[who owns the connection](../explanation/connection-ownership.md).
 
-Reach for etcd when values change at runtime, when you need a **write across several
-keys to be atomic**, or when you already run etcd and would rather not add a second
-system.
+### `Default` reads what etcdctl reads
 
-## Values are strings, or decoded documents
+`clientv3` has no `DefaultConfig` of its own, but etcd's command-line tool
+documents one: every global flag can be set as `ETCDCTL_` plus its name. So a
+machine that can run `etcdctl get` against a cluster already has what `Default`
+needs, and a tool built on `config` reaches the same cluster from the same shell.
+
+`Default` reads seven variables, once, at construction, and no others:
+
+| Variable | Sets |
+|---|---|
+| `ETCDCTL_ENDPOINTS` | the endpoints, comma-separated |
+| `ETCDCTL_CACERT`, `ETCDCTL_CERT`, `ETCDCTL_KEY` | TLS, which is on when any of the three is set |
+| `ETCDCTL_USER`, `ETCDCTL_PASSWORD` | the credentials; `ETCDCTL_USER` may be `user:password` when `ETCDCTL_PASSWORD` is unset, and a password with no user is an error |
+| `ETCDCTL_DIAL_TIMEOUT` | the dial timeout, as a duration such as `3s` |
+
+It departs from `etcdctl` in three places, each on purpose:
+
+- **No endpoint is an error, not `localhost:2379`.** `ErrNoEndpoints` names the
+  variable. A configuration store that guesses its source serves wrong values
+  instead of failing.
+- **A user with no password is an error, not a prompt.** A library has no
+  terminal to ask on.
+- **`ETCDCTL_INSECURE_SKIP_TLS_VERIFY` is never read.** If a test cluster needs
+  it, build the config yourself and use `FromConfig`.
+
+A variable it cannot use, such as a dial timeout of `3` with no unit or a
+certificate without its key, fails at `Default` with `ErrMalformedEnv`, naming the
+variable. With `ETCDCTL_DIAL_TIMEOUT` unset there is no dial timeout at all:
+nothing dials until `Load`, and `Load`'s context bounds it.
+
+## Map etcd keys to config keys
+
+Keys under the prefix, split on `/`, become the nested tree:
+
+```
+app/server/host = "localhost"        store.View().GetString("server.host") // "localhost"
+app/server/port = "8080"        →    store.View().GetInt("server.port")    // 8080
+```
+
+### Values are strings, or decoded documents
 
 etcd stores bytes, so by default every value is a scalar **string** and the View's typed
 accessors coerce it. `GetInt("server.port")` parses `"8080"`, the same as an environment
@@ -79,7 +135,21 @@ A value that decodes to a mapping becomes a subtree at its key's path; anything 
 rejects stays a scalar string. A prefix mixing flat keys and document blobs therefore reads
 correctly, and enabling a codec never turns a scalar key into a load error.
 
-## Writing, and what protects you
+### Leased keys can vanish under you
+
+etcd keys can carry a lease and disappear when it expires. This adapter reads them like any
+other key: the value contributes while it exists, and once the lease lapses the key is simply
+absent at the next load.
+
+!!! warning "A leased prefix can lose keys with nobody writing anything"
+    That is not a bug, and it is not special-cased. It is what a layer losing a key already
+    means, and merge, provenance and shadowing all handle it the same way they handle a file
+    being deleted underneath a running store.
+
+    It is worth knowing before it surprises you. If you did not mean the keys to be
+    ephemeral, use an unleased prefix.
+
+## Write back to etcd
 
 Unlike the parameter stores, etcd has genuine compare-and-swap, so writes are supported from
 the first release rather than deferred.
@@ -126,7 +196,7 @@ Match it with `errors.Is` against
 `ErrRequestTooLarge`. **It is not a conflict**, and treating it as one would send a caller
 into a retry loop that can never succeed.
 
-## Hot-reload is a real subscription
+## Watch for changes
 
 etcd's watch is a genuine change feed, so a change reaches your observers by push
 (`NativeWatch: true`). The store still passes a foreign change through its settle window and a
@@ -147,7 +217,52 @@ The cost is that a revision old enough to have been compacted away cannot be rep
 When that happens the adapter treats it as "reload and re-watch from the current revision",
 which is the honest recovery, because the alternative would leave the layer silently unwatched.
 
-## It is not a secrets store
+## Test without etcd
+
+The adapter reaches etcd through the three-method `configetcd.KV` interface (`Get`, `Txn`, `Watch`),
+so a unit test hands `New` a fake and needs no cluster:
+
+```go
+type fakeKV []configetcd.Pair
+
+func (f fakeKV) Get(context.Context, string) ([]configetcd.Pair, int64, error) {
+	return f, 1, nil
+}
+
+func (fakeKV) Txn(context.Context, []configetcd.Cmp, []configetcd.Op) (bool, error) {
+	return true, nil
+}
+
+func (fakeKV) Watch(context.Context, string, int64, func()) (func(), error) {
+	return func() {}, nil // nothing ever changes
+}
+
+backend := configetcd.New(fakeKV{
+	{Key: "app/server/port", Value: []byte("8080"), ModRevision: 1},
+}, "app/")
+```
+
+`Wrap(client)` is the real implementation, and what `FromClient` uses. The module's integration
+suite, under `test/integration`, runs against a real etcd under testcontainers and is skipped unless
+`INT_TEST_INTEGRATION=1` is set; it needs a Docker daemon.
+
+## Errors you'll see
+
+| Error | Cause | Fix |
+|---|---|---|
+| `config.ErrConflict` | A key under the prefix changed between load and write. | Reload and re-plan; do not retry blindly. |
+| `config.ErrBackendUnsafe` | The written value is a map, a slice or a lossy number, which a flat key cannot hold. | Write scalars, one key at a time, or a whole document as a string. |
+| `rpctypes.ErrTooManyOps`, `rpctypes.ErrRequestTooLarge` | The batch exceeded the server's `--max-txn-ops` or `--max-request-bytes`. | Split the batch. It is not a conflict. |
+| `configetcd.ErrNoEndpoints` | `FromConfig` got no endpoints, or `Default` found no `ETCDCTL_ENDPOINTS`. | Name the endpoints. |
+| `configetcd.ErrMalformedEnv` | `Default` found an `ETCDCTL_` variable it cannot use. | Fix the variable the error names. |
+| `fs.ErrNotExist` | Nothing exists under the prefix. | Check the prefix. The store tolerates it as an empty layer unless it is the first source and you set `RequireFirstSource`. |
+
+## Limits
+
+- **etcd v3 only.**
+- **Not a secrets store.** The layer is never marked sensitive; see below.
+
+### It is not a secrets store
 
 The layer is **not** marked sensitive, and there is deliberately no option to mark it so.
 
@@ -163,77 +278,14 @@ If you have secrets in etcd and cannot move them, you are not stuck:
 - wrap the backend in [`config.Filtered`](filter-a-backend.md) to keep those keys out of the layer, or
 - contribute those keys through a backend that does declare itself sensitive.
 
-## Leased keys can vanish under you
+## When you don't need this
 
-etcd keys can carry a lease and disappear when it expires. This adapter reads them like any
-other key: the value contributes while it exists, and once the lease lapses the key is simply
-absent at the next load.
+If nothing needs to change between deploys, a file is simpler and cannot be
+unreachable at start-up.
 
-!!! warning "A leased prefix can lose keys with nobody writing anything"
-    That is not a bug, and it is not special-cased. It is what a layer losing a key already
-    means, and merge, provenance and shadowing all handle it the same way they handle a file
-    being deleted underneath a running store.
-
-    It is worth knowing before it surprises you. If you did not mean the keys to be
-    ephemeral, use an unleased prefix.
-
-## Getting a client
-
-Building the client yourself is the default. Two further rungs exist:
-
-```go
-// You assembled the config; the adapter builds the client.
-b, err := configetcd.FromConfig(clientv3.Config{Endpoints: []string{"localhost:2379"}}, "app/")
-
-// Nothing at all: the environment etcdctl reads.
-b, err := configetcd.Default("app/")
-
-store, err := config.NewStore(ctx, config.WithBackend(b), config.WithCloser(b))
-defer store.Close()
-```
-
-Both return `*OwnedBackend`, which **must be closed**. The adapter built the etcd
-client, so it owns the client's connections and goroutines. Hand it to the store
-with `WithCloser`, as above, and closing the store releases it. `FromConfig` has
-done this since config-etcd v0.3.0; before that, nothing could close it. A backend from
-`FromClient` is not owned, and the client you built stays yours to close.
-
-### `Default` reads what etcdctl reads
-
-`clientv3` has no `DefaultConfig` of its own, but etcd's command-line tool
-documents one: every global flag can be set as `ETCDCTL_` plus its name. So a
-machine that can run `etcdctl get` against a cluster already has what `Default`
-needs, and a tool built on `config` reaches the same cluster from the same shell.
-
-`Default` reads seven variables, once, at construction, and no others:
-
-| Variable | Sets |
-|---|---|
-| `ETCDCTL_ENDPOINTS` | the endpoints, comma-separated |
-| `ETCDCTL_CACERT`, `ETCDCTL_CERT`, `ETCDCTL_KEY` | TLS, which is on when any of the three is set |
-| `ETCDCTL_USER`, `ETCDCTL_PASSWORD` | the credentials; `ETCDCTL_USER` may be `user:password` when `ETCDCTL_PASSWORD` is unset, and a password with no user is an error |
-| `ETCDCTL_DIAL_TIMEOUT` | the dial timeout, as a duration such as `3s` |
-
-It departs from `etcdctl` in three places, each on purpose:
-
-- **No endpoint is an error, not `localhost:2379`.** `ErrNoEndpoints` names the
-  variable. A configuration store that guesses its source serves wrong values
-  instead of failing.
-- **A user with no password is an error, not a prompt.** A library has no
-  terminal to ask on.
-- **`ETCDCTL_INSECURE_SKIP_TLS_VERIFY` is never read.** If a test cluster needs
-  it, build the config yourself and use `FromConfig`.
-
-A variable it cannot use, such as a dial timeout of `3` with no unit or a
-certificate without its key, fails at `Default` with `ErrMalformedEnv`, naming the
-variable. With `ETCDCTL_DIAL_TIMEOUT` unset there is no dial timeout at all:
-nothing dials until `Load`, and `Load`'s context bounds it. Neither rung contacts
-etcd, so an unreachable cluster is a `Load` error. `FromConfig` also returns
-`ErrNoEndpoints` when the config names none, because it does not fall back to
-`localhost` either.
-
-The reasoning, including why this convention was adopted when `clientv3` has
-none, is in [who owns the connection](../explanation/connection-ownership.md).
+Reach for etcd when values change at runtime, when you need a **write across several
+keys to be atomic**, or when you already run etcd and would rather not add a second
+system.
 
 ## What it costs
 
@@ -251,6 +303,6 @@ the module pins the footprint, so a transitive upgrade cannot widen it quietly.
 
 - [How dynamic backends work](../explanation/dynamic-backends.md): what every remote backend
   shares, and where they legitimately differ
-- [Read & write Consul](consul.md): the closest sibling, and the reference this follows
+- [Read and write Consul](consul.md): the closest sibling, and the reference this follows
 - [A directory of files](filekv.md): the Kubernetes ConfigMap case, which needs no cluster client
 - [Filter a backend](filter-a-backend.md): bounding which keys a backend contributes
