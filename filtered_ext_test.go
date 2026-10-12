@@ -15,6 +15,16 @@ import (
 func filteredStore(t *testing.T, opts ...config.FilterOption) *config.Store {
 	t.Helper()
 
+	return filteredStoreOver(t, map[string]any{"db": map[string]any{
+		"password": "s3cret",
+		"user":     "app",
+	}}, opts...)
+}
+
+// filteredStoreOver is filteredStore with the secrets backend holding values.
+func filteredStoreOver(t *testing.T, values map[string]any, opts ...config.FilterOption) *config.Store {
+	t.Helper()
+
 	fsys, err := config.Dir(t.TempDir())
 	if err != nil {
 		t.Fatalf("config.Dir: %v", err)
@@ -26,13 +36,7 @@ func filteredStore(t *testing.T, opts ...config.FilterOption) *config.Store {
 
 	store, err := config.NewStore(context.Background(),
 		config.WithBackend(config.NewFileBackend(fsys, "base.yaml")),
-		config.WithBackend(config.Filtered(sensitiveBackend{
-			name: "vault",
-			values: map[string]any{"db": map[string]any{
-				"password": "s3cret",
-				"user":     "app",
-			}},
-		}, opts...)),
+		config.WithBackend(config.Filtered(sensitiveBackend{name: "vault", values: values}, opts...)),
 	)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)

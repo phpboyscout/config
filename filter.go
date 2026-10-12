@@ -22,7 +22,8 @@ func Allow(patterns ...string) FilterOption {
 	return func(r *filterRules) { r.allow = append(r.allow, patterns...) }
 }
 
-// Deny excludes the keys matching any pattern, and beats [Allow].
+// Deny excludes the keys matching any pattern, and beats [Allow]. Patterns
+// match keys in any case.
 //
 // A caller who has written both has expressed a narrowing intention twice, so
 // resolving the overlap the other way would let an Allow re-expose something
@@ -81,6 +82,9 @@ func (r filterRules) permits(segs []string) bool {
 // "**" is terminal: it consumes the rest of the path, so it is only meaningful
 // as the last segment. Anything after it would be unreachable, and a pattern
 // whose tail can never match is a typo worth not honouring quietly.
+//
+// Both sides are folded: [Filtered] sees the backend's raw keys, and the Store
+// folds them afterwards, so a pattern must match every spelling of its key.
 func matchPattern(pattern string, segs []string) bool {
 	parts := strings.Split(pattern, ".")
 
@@ -95,7 +99,7 @@ func matchPattern(pattern string, segs []string) bool {
 			return false
 		}
 
-		if part != "*" && part != segs[i] {
+		if part != "*" && normaliseKey(part) != normaliseKey(segs[i]) {
 			return false
 		}
 	}
@@ -296,7 +300,7 @@ func filterValues(values map[string]any, rules filterRules, prefix []string) (ma
 		}
 
 		if !rules.permits(path) {
-			removed = append(removed, strings.Join(path, "."))
+			removed = append(removed, normaliseKey(strings.Join(path, ".")))
 
 			continue
 		}

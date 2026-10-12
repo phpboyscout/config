@@ -283,7 +283,7 @@ func routeOne(snap *Snapshot, targets, routable, order []Source, values map[Sour
 		// nothing in the snapshot, so the check above cannot see it. Refusing
 		// here is what stops a deny list quietly turning a secret into a
 		// plaintext write.
-		if owner, hidden := withheld[change.Path]; hidden {
+		if owner, hidden := withheld[normalisePath(change.Path)]; hidden {
 			return Operation{}, fmt.Errorf("%w: %q is held by the sensitive source %q and hidden "+
 				"by a filter, so it cannot be written to %q", ErrSensitiveLeak, change.Path, owner, target)
 		}

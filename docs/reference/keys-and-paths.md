@@ -141,6 +141,10 @@ wildcards. They are deliberately not regular expressions, because a mistake in a
 
 A pattern with no `**` must have exactly as many segments as the path it matches.
 
+A segment matches in any case, as keys do. `Deny("db.password")` and `Deny("DB.Password")`
+both hide a key the backend spells `DB.PASSWORD`. `Forbid` patterns on `config.Constrained`
+follow the same rule.
+
 ### Worked matches
 
 Against a backend contributing `db.host`, `db.password`, `db.primary.host`, `top` and
