@@ -1,5 +1,28 @@
 # Changelog
 
+## [v0.21.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.21.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.20.1...v0.21.0)
+
+### Notes
+
+- A source holding two spellings of one key, such as `port` and `Port` in one file, now fails to load with `config.ErrKeyCollision`, even when the two values agree. It used to load with whichever spelling won a random draw. `NewStore` returns the error with no store, unlike `ErrInvalidConfig`, so a program that tolerates `ErrInvalidConfig` at start-up still stops on such a file; a reload is rejected and the last good configuration stays live. Fix the source by removing one spelling. Separately, a write to an existing key now edits it in the spelling the source already uses, so writing `server.port` where a key-value store, a JSON, TOML or HCL file, or keychain holds `Server.Port` updates that key instead of adding `server.port` beside it, and removing it in another case now removes it.
+
+- Nesting the same store twice is now refused with `config.ErrCyclicStore` at construction however each copy is nested. Before, a copy nested with `NestedPromotable`, or wrapped in `Filtered` or `Constrained`, either failed later with `ErrDuplicateLayer` or, for a promotable store, loaded with its layers at two precedences.
+
+- Filter and constraint patterns now match keys in any case. A `Deny` or `Allow` pattern given to `config.Filtered` matches every spelling of the key it names, and a write in another spelling of a key that a filter hides on a sensitive backend is now refused with `ErrSensitiveLeak`. A `Forbid` pattern containing an upper-case letter used to match nothing and now takes effect, so a source supplying such a key fails to load.
+
+### Features
+
+- add WithCaseSensitiveKeys, a Store that keeps every key as spelled ([8bf102f](https://gitlab.com/phpboyscout/go/config/-/commit/8bf102fae74cd7b10729320cb030a12a5beb91df))
+- refuse a layer whose keys collide, and write in the layer's spelling ([68a1ee2](https://gitlab.com/phpboyscout/go/config/-/commit/68a1ee236013a493ceaf577ac4d0d51a9c91e6ec))
+
+### Bug Fixes
+
+- **deps**: update module gitlab.com/phpboyscout/go/yamldoc to v0.7.0 ([ffb6f5f](https://gitlab.com/phpboyscout/go/config/-/commit/ffb6f5f492b60aa02452ef7706f7bb6310f0b090))
+- refuse a nested store twice however it is wrapped ([e96692b](https://gitlab.com/phpboyscout/go/config/-/commit/e96692b10b784988cc6af8bca03e9acd5ab057cf))
+- match filter and constraint patterns in any case ([dc44b7b](https://gitlab.com/phpboyscout/go/config/-/commit/dc44b7bc3bcaadb9348dd99edec51351d034387c))
+
 ## [v0.20.1](https://gitlab.com/phpboyscout/go/config/-/releases/v0.20.1)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.20.0...v0.20.1)
