@@ -48,8 +48,9 @@ section name or a key may itself contain dots, each a nesting separator, so `[db
 `pool.size = 4` reads as `db.primary.pool.size`. Keys before any section are top-level.
 
 Values are strings, and the read path casts them. When two lines resolve to the same key the later
-one wins, and that includes a key that is a prefix of another: a top-level `db = x` followed by a
-`[db]` section with `host = y` leaves only `db.host`, and nothing reports it.
+one wins. A key that is also a section is refused instead: a top-level `db = x` beside a `[db]`
+section with `host = y` would make `db` a value and a parent at once, so the load fails with
+`config.ErrBackendUnsafe` naming the line. Rename the key or the section.
 
 ### What a line may contain
 
@@ -89,6 +90,7 @@ To test through a store, point `config.Dir(t.TempDir())` at a file you write fir
 | Error | Cause | Fix |
 |---|---|---|
 | `config.ErrBackendParse` | An empty section header, a line with no `=` or `:`, or an empty key. The error names the file and line. | Fix the line, or comment it out with `;` or `#`. |
+| `config.ErrBackendUnsafe` | A key is also a section, such as `db = x` beside `[db]`. The error names the file and line. | Rename the key or the section. |
 | `config.ErrNoWritableLayer` | An `Apply` set a key and no layer in the store can be written. | Add a writable layer, such as a YAML file. |
 
 ## When you don't need this

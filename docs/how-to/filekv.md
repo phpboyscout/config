@@ -100,9 +100,10 @@ staging tree stays invisible rather than being read twice.
   becomes `sub.database.host`. A symlink to a directory is followed.
 - **An empty file is an empty value**, not an absent key. Otherwise "set to empty"
   and "not set" would be indistinguishable.
-- **A file whose name is a prefix of another's loses to it.** Files named `database` and
-  `database.host` cannot both be kept, since `database` would be a value and a parent at once.
-  Entries are read in name order, so `database.host` replaces `database` without reporting it.
+- **A key cannot be a value and a parent at once.** Files named `database` and
+  `database.host`, or two files resolving to one key such as `database.host` beside
+  `database/host`, refuse the load with `config.ErrBackendUnsafe`. A write that would create
+  that shape is refused with `config.ErrInvalidTarget` before anything is written.
 
 ### Values are byte-exact
 
@@ -231,7 +232,8 @@ It is what keeps the layout and the `subPath` warning below true.
 |---|---|---|
 | `configfilekv.ErrNotListable` | `New` was given a filesystem that cannot list a directory. | Use `config.OS()`, `config.Dir`, or a wrapper that satisfies `config.DirLister`. |
 | `configfilekv.ErrUnwritableValue` | A write carried a map or a slice. | Write a scalar: a list or a map has no one-file form. |
-| `config.ErrInvalidTarget` | With `WithPrefix`, a write named a path outside the prefix. | Write under the prefix, or to another layer. |
+| `config.ErrInvalidTarget` | With `WithPrefix`, a write named a path outside the prefix; or a write would make a key both a value and a parent, such as `database` beside an existing `database.host`. | Write under the prefix, or to another layer; or remove the other key in the same change. |
+| `config.ErrBackendUnsafe` | One key is both a value and a parent, such as files `database` and `database.host`, or two files resolve to one key. | Rename or remove one of the files. |
 | `config.ErrConflict` | Something in the directory changed, or a key appeared or vanished, since the last load. | Reload and apply again. |
 | `config.ErrSensitiveLeak` | With `WithSensitive`, a write to one of the layer's keys would land in a plainer layer. | Change the value at its source, or make the backend writable. |
 
