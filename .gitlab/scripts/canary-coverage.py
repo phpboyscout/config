@@ -8,6 +8,7 @@ uncovered that way (go/config#9).
 import json
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -16,11 +17,23 @@ API = "https://gitlab.com/api/v4"
 GROUP = "phpboyscout/go"
 CORE = "gitlab.com/phpboyscout/go/config"
 CI_FILE = ".gitlab-ci.yml"
+ATTEMPTS = 5
 
 
 def get(url):
-    with urllib.request.urlopen(url, timeout=30) as resp:
-        return resp.read().decode()
+    # The walk makes one request per project in the group, so without a retry a
+    # single 503 or rate limit fails the main pipeline and skips the release.
+    for attempt in range(ATTEMPTS):
+        try:
+            with urllib.request.urlopen(url, timeout=30) as resp:
+                return resp.read().decode()
+        except urllib.error.HTTPError as err:
+            if (err.code != 429 and err.code < 500) or attempt == ATTEMPTS - 1:
+                raise
+        except (urllib.error.URLError, TimeoutError):
+            if attempt == ATTEMPTS - 1:
+                raise
+        time.sleep(2 ** (attempt + 1))
 
 
 def group_projects():
