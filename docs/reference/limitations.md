@@ -235,9 +235,10 @@ value. *Inherent.*
 ### The core's only codec is YAML
 
 The core parses and edits YAML. Because YAML 1.2 is a superset of JSON, it also reads a JSON
-document unaided and edits or removes an existing key in place. Adding a new key to a JSON
-file writes YAML flow style, which is no longer valid JSON, and JSON Lines is refused (see
-[JSON](../how-to/json.md)). `config-json` is the route for both. Every other format is a
+document unaided, and edits it in place: changing, removing or adding a key keeps the file valid
+JSON in the layout it had. A value JSON has no form for (infinity, NaN, a `time.Time`, a `[]byte`)
+is refused rather than written. JSON Lines is refused at load (see [JSON](../how-to/json.md)), and
+`config-json` is the route for it. Every other format is a
 separate adapter module: TOML, HCL, XML, dotenv, INI and Java properties. So is every filesystem beyond local disk and every remote backend. That is what keeps a consumer
 reading TOML from compiling an XML parser. *Deliberate;* see
 [the adapter ecosystem](../explanation/adapters.md).

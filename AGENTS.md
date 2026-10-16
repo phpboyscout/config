@@ -19,8 +19,8 @@ back, and the file returns with its comments, key order and block style intact.
 
 The boundary is the useful half. The core's only codec is YAML, though that is
 not the same as reading only YAML: YAML 1.2 is a superset of JSON, so the core
-reads a JSON document unaided and `config-json` exists for the two things the
-core cannot do rather than for JSON support. Beyond parsing, the core never
+reads and edits a JSON document unaided, and `config-json` exists for JSON Lines,
+which the core cannot read, rather than for JSON support. Beyond parsing, the core never
 talks to a remote system itself, has no provider registry, expresses only coarse
 validation (rich schemas are `config-schema`'s job), injects no defaults, and
 reloads nothing until `Store.Watch` is called.

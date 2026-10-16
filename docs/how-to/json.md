@@ -8,9 +8,8 @@ tags: [how-to, formats, json]
 
 The core already reads JSON: YAML 1.2 is a superset of JSON, so `WithFiles(fsys, "app.json")`
 works with no module at all. [`config-json`](https://gitlab.com/phpboyscout/go/config-json), a
-sibling module, exists for the two things the core cannot do: add a key to a JSON file and keep it
-JSON, and read [JSON Lines](https://jsonlines.org). A consumer who needs them takes it, and one
-who does not pays nothing. [When you don't need this](#when-you-dont-need-this) says where the
+sibling module, exists for what the core cannot do: read [JSON Lines](https://jsonlines.org). A
+consumer who needs it takes it, and one who does not pays nothing. [When you don't need this](#when-you-dont-need-this) says where the
 line falls.
 
 ```bash
@@ -150,8 +149,8 @@ YAML 1.2 is a superset of JSON, so the core's YAML codec **reads a JSON document
 `WithFiles(fsys, "app.json")` works with no module at all, and the values come back typed as you
 would expect.
 
-The core also writes one back, and for the common edit it keeps the layout. A change to a value
-that already exists is made in place, so a pretty-printed file stays pretty-printed and a
+The core also writes one back, and keeps the layout. A change to a value that already exists
+is made in place, so a pretty-printed file stays pretty-printed and a
 config file in review does not turn into a one-line diff. `Set("server.port", 9090)` on:
 
 ```json
@@ -163,21 +162,16 @@ config file in review does not turn into a one-line diff. `Set("server.port", 90
 }
 ```
 
-leaves the file as valid JSON with only the number changed. Removing a key works the same way.
+leaves the file as valid JSON with only the number changed. Removing a key works the same way, and
+so does adding one: `Set("server.name", "x")` appends `"name": "x"` after `"port": 8080` at the
+same indent, and `Set("server.host", "x")` on `{"server":{"port":8080}}` gives
+`{"server":{"port":8080,"host":"x"}}`. A value JSON has no form for (infinity, NaN, a `time.Time`,
+a `[]byte`) is refused, and the file is left as it was.
 
-What the core cannot do is add a key to a JSON file and keep it JSON. A new key is written in
-YAML's flow style, so `Set("server.host", "x")` on `{"server":{"port":8080}}` produces
+What the core cannot do is read **JSON Lines**: a multi-document stream is not a YAML document,
+and it fails at load with `config.ErrBackendParse` rather than half-reading it.
 
-```
-{"server":{"port":8080, host: x}}
-```
-
-which the core can read back and a JSON parser cannot. That is tracked as
-[yamldoc#25](https://gitlab.com/phpboyscout/go/yamldoc/-/work_items/25). The core also refuses
-**JSON Lines**: a multi-document stream is not a YAML document, and it fails at load with
-`config.ErrBackendParse` rather than half-reading it.
-
-So reach for `config-json` when you write new keys into JSON files, or when you read JSON Lines.
+So reach for `config-json` when you read JSON Lines.
 Everything else (precedence, merge, provenance, hot reload) is identical either way, because
 both are ordinary layers.
 

@@ -68,12 +68,9 @@ dependency**, because they parse their format in-module. And if the format you n
 the store handles the rest.
 
 `config-json` is narrower than its name suggests. YAML 1.2 is a superset of JSON, so the core
-already reads a plain `.json` file with no module at all. It also edits one: changing or removing
-an existing key keeps the layout and stays valid JSON. What the core cannot do is add a new key and
-keep the file JSON, because it writes the key in YAML flow style (`, host: x}`), which a JSON parser
-rejects. This is tracked as [yamldoc#25](https://gitlab.com/phpboyscout/go/yamldoc/-/work_items/25).
-`config-json` is the route for writes that add keys to JSON files, and for JSON Lines, which the
-core refuses.
+already reads a plain `.json` file with no module at all. It also edits one in place: changing,
+removing or adding a key keeps the layout and stays valid JSON. `config-json` is the route for
+JSON Lines, which the core refuses.
 
 ## Filesystem adapters
 
