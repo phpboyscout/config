@@ -2,10 +2,13 @@ package config_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"math"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"gitlab.com/phpboyscout/go/config"
 )
@@ -204,33 +207,103 @@ func TestJSONDocClaims(t *testing.T) {
 	}
 }
 
+// TestJSONDocClaims_CoreRefusesAValueJSONCannotHold pins the pages' claim that
+// a value with no JSON form is refused, leaving the file as it was.
+func TestJSONDocClaims_CoreRefusesAValueJSONCannotHold(t *testing.T) {
+	t.Parallel()
+
+	const doc = "{\"server\":{\"port\":8080}}\n"
+
+	for _, value := range []any{math.Inf(1), math.NaN(), time.Unix(0, 0).UTC(), []byte("hi")} {
+		fsys := config.NewMemFS()
+		if err := fsys.WriteFile("/app.json", []byte(doc), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		store, err := config.NewStore(context.Background(), config.WithFiles(fsys, "/app.json"))
+		if err != nil {
+			t.Fatalf("NewStore: %v", err)
+		}
+
+		if _, err := store.Apply(context.Background(), config.Set("server.v", value)); err == nil {
+			t.Errorf("writing %T to a JSON file succeeded, want it refused", value)
+		}
+
+		if got, _ := fsys.ReadFile("/app.json"); string(got) != doc {
+			t.Errorf("a refused %T write changed the file to\n%s", value, got)
+		}
+	}
+}
+
 func TestJSONDocClaims_CoreWritePreservesLayout(t *testing.T) {
 	t.Parallel()
 
 	// Claim 3: a core write to a .json file produces valid JSON and keeps the
 	// layout it had, since a JSON document is YAML and yamldoc edits in place.
-	fsys := config.NewMemFS()
-	if err := fsys.WriteFile("/app.json",
-		[]byte("{\n  \"server\": {\n    \"host\": \"h\",\n    \"port\": 8080\n  }\n}\n"), 0o600); err != nil {
-		t.Fatal(err)
+	// A new key and a change of type stay JSON from yamldoc v0.7.0 (yamldoc#25).
+	const (
+		pretty  = "{\n  \"server\": {\n    \"host\": \"h\",\n    \"port\": 8080\n  }\n}\n"
+		compact = "{\"server\":{\"port\":8080}}\n"
+	)
+
+	cases := []struct {
+		name   string
+		doc    string
+		change config.Change
+		want   string
+	}{
+		{
+			"an existing key", pretty, config.Set("server.port", 9090),
+			"{\n  \"server\": {\n    \"host\": \"h\",\n    \"port\": 9090\n  }\n}\n",
+		},
+		{
+			"a new key", pretty, config.Set("server.name", "x"),
+			"{\n  \"server\": {\n    \"host\": \"h\",\n    \"port\": 8080,\n    \"name\": \"x\"\n  }\n}\n",
+		},
+		{
+			"a change of type", pretty, config.Set("server.port", "nine"),
+			"{\n  \"server\": {\n    \"host\": \"h\",\n    \"port\": \"nine\"\n  }\n}\n",
+		},
+		{
+			"a new key in a compact object", compact, config.Set("server.host", "x"),
+			"{\"server\":{\"port\":8080,\"host\":\"x\"}}\n",
+		},
+		{
+			"a new object", pretty, config.Set("server.tls.enabled", true),
+			"{\n  \"server\": {\n    \"host\": \"h\",\n    \"port\": 8080,\n    \"tls\": {\"enabled\": true}\n  }\n}\n",
+		},
 	}
 
-	store, err := config.NewStore(context.Background(), config.WithFiles(fsys, "/app.json"))
-	if err != nil {
-		t.Fatalf("NewStore: %v", err)
-	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	if _, err := store.Apply(context.Background(), config.Set("server.port", 9090)); err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
+			fsys := config.NewMemFS()
+			if err := fsys.WriteFile("/app.json", []byte(tc.doc), 0o600); err != nil {
+				t.Fatal(err)
+			}
 
-	got, err := fsys.ReadFile("/app.json")
-	if err != nil {
-		t.Fatal(err)
-	}
+			store, err := config.NewStore(context.Background(), config.WithFiles(fsys, "/app.json"))
+			if err != nil {
+				t.Fatalf("NewStore: %v", err)
+			}
 
-	const want = "{\n  \"server\": {\n    \"host\": \"h\",\n    \"port\": 9090\n  }\n}\n"
-	if string(got) != want {
-		t.Errorf("the page says the layout is kept; got\n%s", got)
+			if _, err := store.Apply(context.Background(), tc.change); err != nil {
+				t.Fatalf("Apply: %v", err)
+			}
+
+			got, err := fsys.ReadFile("/app.json")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if !json.Valid(got) {
+				t.Errorf("the page says the file stays JSON; got\n%s", got)
+			}
+
+			if string(got) != tc.want {
+				t.Errorf("the page says the layout is kept; got\n%s", got)
+			}
+		})
 	}
 }
