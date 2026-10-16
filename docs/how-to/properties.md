@@ -47,9 +47,10 @@ merges into a nested YAML or JSON one by the same paths. In Java a dotted key is
 string. Here it nests, which is what makes it a configuration layer rather than a map.
 
 Values are strings, and the read path casts them. When two lines name the same key the later one
-wins, and that includes a key that is a prefix of another, which Java allows and this mapping
-cannot hold: `db=x` followed by `db.host=y` leaves only `db.host`, and the reverse order leaves
-only `db`, set to `x`. Neither is reported.
+wins, as in Java. A key that is a prefix of another is refused: Java allows `db=x` beside
+`db.host=y`, but it would make `db` a value and a parent at once, which this mapping cannot hold.
+The load fails with `config.ErrBackendUnsafe` naming the line, in either order. Rename one of the
+keys.
 
 ### The format it honours
 
@@ -90,6 +91,7 @@ To test through a store, point `config.Dir(t.TempDir())` at a file you write fir
 | Error | Cause | Fix |
 |---|---|---|
 | `config.ErrBackendParse` | An empty key, or a truncated or invalid `\u` escape. The error names the file and line. | Fix the line. |
+| `config.ErrBackendUnsafe` | A key is a prefix of another, such as `db` beside `db.host`. The error names the file and line. | Rename one of the keys. |
 | `config.ErrNoWritableLayer` | An `Apply` set a key and no layer in the store can be written. | Add a writable layer, such as a YAML file. |
 
 ## When you don't need this

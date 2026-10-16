@@ -53,9 +53,10 @@ expressed, by design. The rule is the same in a store built with `WithCaseSensit
 it is how a dotenv name becomes a key, not a folding of keys a source spelled.
 
 Values are strings, and the read path casts them: `GetInt("database.port")` turns `"5432"` into
-`5432`. When two lines name the same key the later one wins, and that includes a key that is a
-prefix of another: `DATABASE=x` followed by `DATABASE_HOST=y` leaves only `database.host`, and the
-reverse order leaves only `database`, set to `x`. Neither is reported.
+`5432`. When two lines name the same key the later one wins. A name that is a prefix of another is
+refused instead: `DATABASE=x` beside `DATABASE_HOST=y` would make `database` a value and a parent
+at once, so the load fails with `config.ErrBackendUnsafe` naming the line, in either order. Rename
+one of the variables.
 
 ### What a line may contain
 
@@ -109,6 +110,7 @@ To test through a store, point `config.Dir(t.TempDir())` at a file you write fir
 | Error | Cause | Fix |
 |---|---|---|
 | `config.ErrBackendParse` | A line has no `=`, or an empty key. The error names the file and line. | Fix the line, or comment it out with `#`. |
+| `config.ErrBackendUnsafe` | A name is a prefix of another, such as `LOG` beside `LOG_LEVEL`. The error names the file and line. | Rename one of the variables. |
 | `config.ErrNoWritableLayer` | An `Apply` set a key and no layer in the store can be written. | Add a writable layer, such as a YAML file. |
 
 ## When you don't need this
