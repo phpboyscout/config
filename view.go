@@ -430,12 +430,9 @@ func translateCollection(input any, target reflect.Type, keys keyCase) (any, boo
 
 // resolveAlias moves a value written under an alias to the canonical key.
 //
-// In a folded Store matching is normalised on both sides. A tag is written in
-// whatever case its author chose, while a mapping's keys are lower-cased on the
-// way into a layer — but the keys inside a sequence element are not, because
-// nothing walks them. Comparing raw would therefore work in a list and fail in
-// a map, which is how a field tagged only yaml or json came to decode as its
-// zero value in one place and not the other.
+// In a folded Store a tag is written in whatever case its author chose, while
+// every key reaching here is already lower case, so the alias is folded before
+// comparing. In an exact Store both keep their spelling.
 func resolveAlias(values map[string]any, canonical string, aliases []string, keys keyCase) {
 	if _, ok := values[canonical]; ok {
 		return
