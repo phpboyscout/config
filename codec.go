@@ -220,6 +220,16 @@ func (b *codecBackend) Watch(
 	return w.Watch(ctx, []string{b.path}, onChange)
 }
 
+// PollInterval reports the cadence this file's filesystem hints, so the Store
+// settles the interval once and an explicit one reaches the watcher unaltered.
+func (b *codecBackend) PollInterval() time.Duration {
+	if h, ok := b.fs.(PollIntervalHinter); ok {
+		return h.PollInterval()
+	}
+
+	return 0
+}
+
 // WatchErrorReporter is an optional interface a [WatchableBackend] may satisfy
 // to be told where to send the errors raised when watching one of its sources
 // degrades and the fallback cannot be established either.

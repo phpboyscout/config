@@ -41,16 +41,15 @@ type Watcher interface {
 // distinction is not cosmetic: fsnotify operates on real paths, so it silently
 // fails on an in-memory filesystem — which is exactly what a test, or a tool
 // working over a virtual worktree, will be using.
+//
+// A non-positive interval means none was chosen: the filesystem's
+// [PollIntervalHinter] cadence is used if it declares one, and
+// [DefaultPollInterval] otherwise. A positive interval is used as given, even
+// one equal to the default.
 func NewWatcher(filesystem FS, interval time.Duration) Watcher {
 	if interval <= 0 {
 		interval = DefaultPollInterval
-	}
 
-	// A filesystem that must be polled may ask for a cadence other than the
-	// default — a remote store where every poll is a billed call. The hint fills
-	// in only where the caller left the default; an explicit WithPollInterval,
-	// which arrives here as any other value, still wins.
-	if interval == DefaultPollInterval {
 		if hinter, ok := filesystem.(PollIntervalHinter); ok {
 			if hinted := hinter.PollInterval(); hinted > 0 {
 				interval = hinted

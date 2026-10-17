@@ -359,4 +359,28 @@ func TestF4_BackendPollIntervalHintIsHonoured(t *testing.T) {
 			t.Errorf("backend received %v, want the explicit 5s override", got)
 		}
 	})
+
+	// 2s is also the default, so it is the value a "was it set?" check by
+	// comparison would mistake for unset.
+	t.Run("explicit interval equal to the default overrides the hint", func(t *testing.T) {
+		t.Parallel()
+
+		h := &hintBackend{got: make(chan time.Duration, 1)}
+
+		s, err := config.NewStore(context.Background(), config.WithBackend(h))
+		if err != nil {
+			t.Fatalf("NewStore: %v", err)
+		}
+
+		stop, err := s.Watch(context.Background(), config.WithPollInterval(config.DefaultPollInterval))
+		if err != nil {
+			t.Fatalf("Watch: %v", err)
+		}
+
+		defer stop()
+
+		if got := <-h.got; got != config.DefaultPollInterval {
+			t.Errorf("backend received %v, want the explicit %v", got, config.DefaultPollInterval)
+		}
+	})
 }

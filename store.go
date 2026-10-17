@@ -1501,12 +1501,11 @@ func (s *Store) trackWatch(stop func()) (func(), error) {
 //
 // When the caller left the default, a backend may declare its own cadence
 // through [PollIntervalHinter] — a remote store where every poll is a billed
-// call wants minutes, not the 2-second default suited to a local file. The hint
-// fills in only where the caller left the default; an explicit
-// [WithPollInterval] always wins, mirroring [NewWatcher]'s own logic so the two
-// entry points agree.
+// call wants minutes, not the 2-second default suited to a local file. An
+// explicit [WithPollInterval] always wins, including one of exactly 2 seconds,
+// which is why it is recorded as set rather than compared with the default.
 func (s *Store) watchInterval(cfg watchConfig, b WatchableBackend) time.Duration {
-	if cfg.interval != DefaultPollInterval {
+	if cfg.intervalSet {
 		return cfg.interval
 	}
 
@@ -1548,8 +1547,9 @@ func stopAll(stops []func()) {
 type WatchOption func(*watchConfig)
 
 type watchConfig struct {
-	interval time.Duration
-	settle   time.Duration
+	interval    time.Duration
+	intervalSet bool
+	settle      time.Duration
 	// settleSet records that the caller chose a window, so an injected watcher
 	// can default to none without overriding an explicit choice.
 	settleSet bool
@@ -1558,7 +1558,10 @@ type watchConfig struct {
 
 // WithPollInterval sets how often a polling watcher checks for changes.
 func WithPollInterval(d time.Duration) WatchOption {
-	return func(c *watchConfig) { c.interval = d }
+	return func(c *watchConfig) {
+		c.interval = d
+		c.intervalSet = true
+	}
 }
 
 // WithSettleInterval sets how long a burst of foreign changes is allowed to

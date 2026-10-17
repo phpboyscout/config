@@ -394,16 +394,33 @@ type hintingFS struct {
 
 func (h hintingFS) PollInterval() time.Duration { return h.hint }
 
+// The Store settles a file backend's cadence before the watcher sees it, so the
+// backend has to report its filesystem's hint for the Store to adopt.
+func TestCodecBackend_ReportsItsFilesystemsPollIntervalHint(t *testing.T) {
+	t.Parallel()
+
+	hinting := &codecBackend{fs: hintingFS{FS: wrapAfero(afero.NewMemMapFs()), hint: 90 * time.Second}}
+	if got := hinting.PollInterval(); got != 90*time.Second {
+		t.Errorf("PollInterval() = %v, want the filesystem's 90s hint", got)
+	}
+
+	plain := &codecBackend{fs: wrapAfero(afero.NewMemMapFs())}
+	if got := plain.PollInterval(); got != 0 {
+		t.Errorf("PollInterval() = %v, want 0 so the Store keeps its own", got)
+	}
+}
+
 // A remote filesystem is polled, and each poll is a round-trip it would rather
 // not make every two seconds. When it hints a cadence, the watcher adopts it —
-// but only where the caller left the default; an explicit interval still wins.
+// but only where the caller gave no interval; an explicit one still wins, even
+// when it equals the default.
 func TestNewWatcher_HonoursPollIntervalHint(t *testing.T) {
 	t.Parallel()
 
 	fs := hintingFS{FS: wrapAfero(afero.NewMemMapFs()), hint: 90 * time.Second}
 
-	// Caller left the default: the hint is adopted.
-	w, ok := NewWatcher(fs, DefaultPollInterval).(*pollWatcher)
+	// Caller gave no interval: the hint is adopted.
+	w, ok := NewWatcher(fs, 0).(*pollWatcher)
 	if !ok {
 		t.Fatal("a hinting in-memory filesystem must be polled")
 	}
@@ -413,17 +430,19 @@ func TestNewWatcher_HonoursPollIntervalHint(t *testing.T) {
 	}
 
 	// Caller was explicit: their interval wins over the hint.
-	w, ok = NewWatcher(fs, 250*time.Millisecond).(*pollWatcher)
-	if !ok {
-		t.Fatal("a hinting in-memory filesystem must be polled")
-	}
+	for _, explicit := range []time.Duration{250 * time.Millisecond, DefaultPollInterval} {
+		w, ok = NewWatcher(fs, explicit).(*pollWatcher)
+		if !ok {
+			t.Fatal("a hinting in-memory filesystem must be polled")
+		}
 
-	if w.interval != 250*time.Millisecond {
-		t.Errorf("interval = %v, want the explicit 250ms", w.interval)
+		if w.interval != explicit {
+			t.Errorf("interval = %v, want the explicit %v", w.interval, explicit)
+		}
 	}
 
 	// A filesystem that does not hint keeps the default.
-	plain, ok := NewWatcher(wrapAfero(afero.NewMemMapFs()), DefaultPollInterval).(*pollWatcher)
+	plain, ok := NewWatcher(wrapAfero(afero.NewMemMapFs()), 0).(*pollWatcher)
 	if !ok {
 		t.Fatal("a plain in-memory filesystem must be polled")
 	}

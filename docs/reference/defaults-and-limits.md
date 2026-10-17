@@ -24,16 +24,15 @@ because nothing outside the process changes them.
 
 ### How the poll interval is chosen
 
-1. If you passed `WithPollInterval(d)` with a positive `d` other than `DefaultPollInterval`,
-   that wins outright. Nothing records that the call was made, so the store compares the
-   interval against the default. Passing exactly `2s` is indistinguishable from not passing
-   it, and a hint still applies.
+1. If you passed `WithPollInterval(d)` with a positive `d`, that wins outright, including
+   a `d` of exactly `2s`.
 2. Otherwise, if the backend or filesystem implements `PollIntervalHinter` and hints a
    positive duration, the hint is used. A remote object store, where every poll is a billed
    API call, asks for minutes rather than the two seconds a local file wants.
 3. Otherwise, `DefaultPollInterval`.
 
-A non-positive interval passed to `NewWatcher` is replaced by the default.
+`NewWatcher` follows the same order. A positive interval is used as given, and a
+non-positive one means none was chosen, so the filesystem's hint applies, or the default.
 
 The store's interval does not reach every backend. AWS Secrets Manager, Azure Key Vault,
 GCP Secret Manager and Vault ignore it and poll on their own cadence, set with the
