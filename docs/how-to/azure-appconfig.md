@@ -87,7 +87,14 @@ a malformed one without echoing the input, because that is how a secret reaches 
 
 ## Map settings to keys
 
-Keys under the prefix nest into the tree. Values are scalar strings by default; pass a
+Keys under the prefix, split on `/`, nest into the tree.
+
+A dot inside a setting's key also separates segments, because a config path splits on dots: `app/log.level`
+reads as `log.level`. A write to an existing key goes back to that key, dot and all, and a new key
+is written with slashes. Two keys that read as one path, such as `app/log.level` beside
+`app/log/level`, fail the load with `config.ErrBackendUnsafe` rather than one hiding the other.
+
+Values are scalar strings by default; pass a
 `config.Codec` with `WithValueCodec` to decode a document-valued setting. The declared
 content-type is **not** used to pick a codec. Decoding is always the codec you inject.
 
@@ -179,6 +186,7 @@ billable store. It is skipped unless `INT_TEST_INTEGRATION=1` is set, and needs
 |---|---|---|
 | `config.ErrConflict` | A setting moved between load and write. | Reload and apply the change again. |
 | `config.ErrBackendUnsafe` | The written value is a map, a slice or a lossy number, which a flat setting cannot hold. | Write scalars, one key at a time. |
+| `config.ErrBackendUnsafe` on load | Two settings read as one config path, such as `app/log.level` beside `app/log/level`. | Delete the one you do not want. The error names both. |
 | `configazureappconfig.ErrNoEndpoint` | A rung was called with no store endpoint. | Pass the endpoint. |
 | `configazureappconfig.ErrNoCredential` | `FromCredential` got a nil (or typed-nil) credential. | Check the error from the credential constructor. |
 | `configazureappconfig.ErrNoConnectionString` | `FromConnectionString` got an empty string. | Pass the connection string. |

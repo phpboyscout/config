@@ -115,6 +115,11 @@ app/server/host = "localhost"        store.View().GetString("server.host") // "l
 app/server/port = "8080"        →    store.View().GetInt("server.port")    // 8080
 ```
 
+A dot inside an etcd key also separates segments, because a config path splits on dots: `app/log.level`
+reads as `log.level`. A write to an existing key goes back to that key, dot and all, and a new key
+is written with slashes. Two keys that read as one path, such as `app/log.level` beside
+`app/log/level`, fail the load with `config.ErrBackendUnsafe` rather than one hiding the other.
+
 ### Values are strings, or decoded documents
 
 etcd stores bytes, so by default every value is a scalar **string** and the View's typed
@@ -252,6 +257,7 @@ suite, under `test/integration`, runs against a real etcd under testcontainers a
 |---|---|---|
 | `config.ErrConflict` | A key under the prefix changed between load and write. | Reload and re-plan; do not retry blindly. |
 | `config.ErrBackendUnsafe` | The written value is a map, a slice or a lossy number, which a flat key cannot hold. | Write scalars, one key at a time, or a whole document as a string. |
+| `config.ErrBackendUnsafe` on load | Two keys read as one config path, such as `app/log.level` beside `app/log/level`. | Delete the one you do not want. The error names both. |
 | `rpctypes.ErrTooManyOps`, `rpctypes.ErrRequestTooLarge` | The batch exceeded the server's `--max-txn-ops` or `--max-request-bytes`. | Split the batch. It is not a conflict. |
 | `configetcd.ErrNoEndpoints` | `FromConfig` got no endpoints, or `Default` found no `ETCDCTL_ENDPOINTS`. | Name the endpoints. |
 | `configetcd.ErrMalformedEnv` | `Default` found an `ETCDCTL_` variable it cannot use. | Fix the variable the error names. |

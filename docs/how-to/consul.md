@@ -102,6 +102,11 @@ app/server/host = "localhost"        store.View().GetString("server.host") // "l
 app/server/port = "8080"        →    store.View().GetInt("server.port")    // 8080
 ```
 
+A dot inside a Consul key also separates segments, because a config path splits on dots: `app/log.level`
+reads as `log.level`. A write to an existing key goes back to that key, dot and all, and a new key
+is written with slashes. Two keys that read as one path, such as `app/log.level` beside
+`app/log/level`, fail the load with `config.ErrBackendUnsafe` rather than one hiding the other.
+
 ### Values are strings, or decoded documents
 
 Consul stores bytes, so by default every value is a scalar **string** and the View's typed
@@ -193,6 +198,7 @@ the same way, see [Write a custom backend](custom-backend.md).
 |---|---|---|
 | `config.ErrConflict` | A key under the prefix changed between load and write. | Reload and apply the change again. |
 | `config.ErrBackendUnsafe` | The written value is a map, a slice or a lossy number, which a flat key cannot hold. | Write scalars, one key at a time, or a whole document as a string. |
+| `config.ErrBackendUnsafe` on load | Two keys read as one config path, such as `app/log.level` beside `app/log/level`. | Delete the one you do not want. The error names both. |
 | `configconsul.ErrNoConfig` | `FromConfig` got a nil config. | Pass a config, or use `Default`. |
 | `fs.ErrNotExist` | Nothing with a value exists under the prefix. | Check the prefix. The store tolerates it as an empty layer unless it is the first source and you set `RequireFirstSource`. |
 | A permission error from Consul (wrapped, no sentinel) | The ACL token expired or lacks `key:read` (or `key:write`) on the prefix. | [Rebuild the client with a fresh token](#the-token-is-read-once-and-no-rung-renews-it), or widen the policy. |
