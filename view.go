@@ -80,7 +80,7 @@ func (v *View) Sub(key string) *View {
 		return nil
 	}
 
-	return &View{snap: v.pinned(), prefix: full}
+	return &View{snap: v.pinned(), prefix: v.keys().path(full)}
 }
 
 // Get returns the raw value at a path.

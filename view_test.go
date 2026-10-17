@@ -131,6 +131,28 @@ func TestView_Keys_ScopedToPrefix(t *testing.T) {
 	}
 }
 
+// A folded Store finds a subtree whatever case the caller spells it in, and its
+// Keys must agree with its Get rather than comparing the caller's spelling with
+// the folded keys.
+func TestView_Keys_ScopedToAMixedCasePrefix(t *testing.T) {
+	t.Parallel()
+
+	v := viewOn(t, "server:\n  port: 1\n  tls:\n    enabled: true\n")
+
+	server := v.Sub("Server")
+	if server == nil {
+		t.Fatal("Sub(Server) returned nil")
+	}
+
+	if got := server.Keys(); !slices.Equal(got, []string{"port", "tls.enabled"}) {
+		t.Errorf("Sub(Server).Keys() = %v, want [port tls.enabled]", got)
+	}
+
+	if got := server.Sub("TLS").Keys(); !slices.Equal(got, []string{"enabled"}) {
+		t.Errorf("Sub(Server).Sub(TLS).Keys() = %v, want [enabled]", got)
+	}
+}
+
 func TestView_Unmarshal(t *testing.T) {
 	t.Parallel()
 
