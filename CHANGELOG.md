@@ -1,5 +1,18 @@
 # Changelog
 
+## [v0.21.2](https://gitlab.com/phpboyscout/go/config/-/releases/v0.21.2)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.21.1...v0.21.2)
+
+### Notes
+
+- An explicit `WithPollInterval(2 * time.Second)` now overrides a backend's or filesystem's `PollIntervalHinter` cadence, as any other explicit interval already did. `NewWatcher` now adopts a filesystem's hint only when passed a non-positive interval; a caller passing `DefaultPollInterval` to mean "no preference" should pass 0 instead.
+
+### Bug Fixes
+
+- list a mixed-case Sub view's keys in a folded Store ([cf69357](https://gitlab.com/phpboyscout/go/config/-/commit/cf69357e51f67e3598b80df543dc6fa9193d8a47))
+- honour an explicit 2s poll interval over a backend's hint ([5d12e7c](https://gitlab.com/phpboyscout/go/config/-/commit/5d12e7cec40521b13e41fb721ebdad8268727a8a))
+
 ## [v0.21.1](https://gitlab.com/phpboyscout/go/config/-/releases/v0.21.1)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.21.0...v0.21.1)
