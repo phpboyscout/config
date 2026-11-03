@@ -42,8 +42,8 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 gitlab.com/phpboyscout/go/errors v0.4.0 h1:mQaiajQfm9dY/piitHGyY3Ysx0aiL1Ilh/fpu98/ZyY=
 gitlab.com/phpboyscout/go/errors v0.4.0/go.mod h1:St46RqvDC8/YG8lh2Y01btBppK4nQZD/Ecr5faF5m0A=
-gitlab.com/phpboyscout/go/yamldoc v0.9.0 h1:ghKmnSeB7Nm5WgooyWZKUcbUgGijN/KONzL5B1QSjrY=
-gitlab.com/phpboyscout/go/yamldoc v0.9.0/go.mod h1:QjWs2BdZl3cWZ+XMoME4DP7IUfTDMy28/sOOQqV1HVg=
+gitlab.com/phpboyscout/go/yamldoc v0.9.1 h1:SDhTlhd1pv7pRxMAIhTLsyK0EIooU+xht6xha8s5eL8=
+gitlab.com/phpboyscout/go/yamldoc v0.9.1/go.mod h1:LRntfgvWjlpfr3ETu8ePDdmWx6l7z/luKOklqgxgdTI=
 go.yaml.in/yaml/v3 v3.0.6 h1:zcDfvjXEqTQmpjniUBLc91xYJMB2c4QOFxEF/LCEckM=
 go.yaml.in/yaml/v3 v3.0.6/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=
 golang.org/x/sys v0.47.0 h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=
