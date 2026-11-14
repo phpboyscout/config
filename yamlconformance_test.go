@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	yaml "go.yaml.in/yaml/v3"
+	yaml "go.yaml.in/yaml/v4"
 
 	"gitlab.com/phpboyscout/go/config"
 	"gitlab.com/phpboyscout/go/config/backendconformance"

@@ -12,7 +12,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	gitlab.com/phpboyscout/go/errors v0.4.0
 	gitlab.com/phpboyscout/go/yamldoc v0.9.1
-	go.yaml.in/yaml/v3 v3.0.6
+	go.yaml.in/yaml/v4 v4.0.0
 )
 
 require (
@@ -24,6 +24,7 @@ require (
 	github.com/hashicorp/go-memdb v1.3.5 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 )
