@@ -220,6 +220,8 @@ canary-full:
           - dispatch
           - dispatch-kubeflow
           - dispatch-slurm
+          - assess
+          - launch
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "colophon/release/main"'
