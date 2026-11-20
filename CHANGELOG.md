@@ -1,5 +1,14 @@
 # Changelog
 
+## [v0.21.5](https://gitlab.com/phpboyscout/go/config/-/releases/v0.21.5)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.21.4...v0.21.5)
+
+### Bug Fixes
+
+- **deps**: update go modules ([a601ebe](https://gitlab.com/phpboyscout/go/config/-/commit/a601ebea1b7bb5fba029e1ea737654dabb6244f0))
+- **deps**: update module github.com/spf13/pflag to v1.1.0 ([33e17e6](https://gitlab.com/phpboyscout/go/config/-/commit/33e17e6ed3fffc8e14576aba3214613309522de5))
+
 ## [v0.21.4](https://gitlab.com/phpboyscout/go/config/-/releases/v0.21.4)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.21.3...v0.21.4)
