@@ -262,13 +262,16 @@ two keys in the source.
 
 `config: a layer holds an empty key: app.yaml has an empty key under "server"`
 
-Returned when one source holds an empty key, such as `"": 3`, at any depth. No dotted
-path can address an empty key, so its value could never be read, and the source is refused
-rather than loaded with a setting nothing can reach. This holds in both key-case modes.
+Returned when one source holds an empty key, such as `"": 3`, or one made only of
+whitespace, such as `" ": 3`, at any depth. No path reaches an empty key. A
+whitespace-only key at the top level is unreachable too, and a nested one is reachable
+only through a fragile path such as `"server. "` that nothing should depend on. So the
+source is refused when it loads, in both key-case modes. Before v0.22.0 such a source
+loaded.
+
 Environment variables and flags are the exception: a name that would yield an empty key,
 such as `MYTOOL_SERVER__PORT` or `--server--port`, is skipped, because the environment and
 the command line are ambient and one stray name must not stop the tool starting.
-Before v0.22.0 such a source loaded.
 
 It is refused at the same points as [`ErrKeyCollision`](#errkeycollision): `NewStore`
 returns no store, a reload keeps the last known good configuration, and `Store.AddLayer`

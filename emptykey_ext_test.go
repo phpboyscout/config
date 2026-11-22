@@ -25,6 +25,8 @@ func TestEmptyKey_ALayerHoldingOneIsRefused(t *testing.T) {
 		"deep":                {"a:\n  b:\n    \"\": x\n", `under "a.b"`},
 		"inside a list":       {"items:\n  - \"\": a\n", `under "items[0]"`},
 		"as an empty mapping": {"c:\n  \"\": {}\n", `under "c"`},
+		"whitespace only":     {"\" \": 1\n", `whitespace-only key " " at the top level`},
+		"tab, nested":         {"c:\n  \"\\t\": 1\n", `whitespace-only key "\t" under "c"`},
 	}
 
 	for name, tc := range cases {
@@ -215,5 +217,55 @@ func TestEmptyKey_AFlagWithATrailingDashIsSkipped(t *testing.T) {
 				t.Errorf("NewStore: %v; a flag yielding an empty segment must be skipped", err)
 			}
 		})
+	}
+}
+
+func TestEmptyKey_AKeyWithTextAroundSpacesStillLoads(t *testing.T) {
+	t.Parallel()
+
+	_, err := config.NewStore(context.Background(),
+		config.WithReaders(config.NamedSource{Name: "app.yaml", Content: []byte("\"a b\": 1\n")}))
+	if err != nil {
+		t.Fatalf("NewStore: %v; only a key with no text at all is refused", err)
+	}
+}
+
+func TestEmptyKey_AWhitespaceFlagSegmentIsSkipped(t *testing.T) {
+	t.Parallel()
+
+	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	flags.String("server- ", "", "")
+
+	if err := flags.Parse([]string{"--server- =1"}); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	if _, err := config.NewStore(context.Background(), config.WithBackend(config.NewFlagBackend(flags))); err != nil {
+		t.Errorf("NewStore: %v; a flag yielding a whitespace-only key must be skipped", err)
+	}
+}
+
+func TestEmptyKey_AWhitespaceEnvSegmentIsSkipped(t *testing.T) {
+	t.Parallel()
+
+	env := config.WithEnviron(func() []string { return []string{"APP_SERVER_ =1", "APP_SERVER_PORT=2"} })
+
+	store, err := config.NewStore(context.Background(), config.WithEnv("APP", env))
+	if err != nil {
+		t.Fatalf("NewStore: %v; a variable yielding a whitespace-only key must be skipped", err)
+	}
+
+	if got := store.View().GetInt("server.port"); got != 2 {
+		t.Errorf("server.port = %d, want 2", got)
+	}
+}
+
+func TestEmptyKey_ANestedWhitespaceKeyIsRefusedThoughAPathReachedIt(t *testing.T) {
+	t.Parallel()
+
+	_, err := config.NewStore(context.Background(),
+		config.WithReaders(config.NamedSource{Name: "app.yaml", Content: []byte("c:\n  \" \": 1\n  \"  \": 2\n")}))
+	if !errors.Is(err, config.ErrEmptyKey) {
+		t.Fatalf("NewStore err = %v, want ErrEmptyKey", err)
 	}
 }

@@ -115,9 +115,11 @@ control the file, do not put a dot in a key name. If you do not, read the subtre
 
 ## An empty key is refused
 
-A key spelt `""` cannot be addressed by any path, so a source holding one, at any depth,
-fails to load with [`ErrEmptyKey`](errors.md#erremptykey), naming the source and where
-the key sits.
+A key spelt `""`, or made only of whitespace such as `" "`, fails to load with
+[`ErrEmptyKey`](errors.md#erremptykey) at any depth, naming the source and where the
+key sits. No path reaches an empty key. A nested whitespace-only key used to be
+reachable, but only through a fragile path such as `"server. "`, and it is now refused
+when the file loads.
 
 ```yaml
 server:

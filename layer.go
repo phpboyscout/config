@@ -16,9 +16,10 @@ import (
 // rule for the winner would be anything but a silent choice of value.
 var ErrKeyCollision = errors.NewSentinel("config.key_collision", "config: two keys in one layer are the same key")
 
-// ErrEmptyKey is returned when a layer holds an empty key, such as `"": 3`. No
-// dotted path can address one, so the layer is refused rather than loaded with
-// a value nothing can read (go/config#32).
+// ErrEmptyKey is returned when a layer holds an empty or whitespace-only key,
+// such as `"": 3` or `" ": 3`. Such a key is unreachable or, nested, reachable
+// only by a fragile whitespace path, so the layer is refused (go/config#32,
+// go/config#33).
 var ErrEmptyKey = errors.NewSentinel("config.empty_key", "config: a layer holds an empty key")
 
 // SourceKind identifies where a layer's values came from.
@@ -355,16 +356,27 @@ type spelt struct {
 // ErrKeyCollision and the layer by normalised.
 type collision struct{ first, second string }
 
-// emptyKey is the detail of an empty key, wrapped with ErrEmptyKey and the layer
-// by normalised. at is the path of the map holding it.
-type emptyKey struct{ at string }
+// emptyKey is the detail of an empty or whitespace-only key, wrapped with
+// ErrEmptyKey and the layer by normalised. at is the path of the map holding it.
+type emptyKey struct{ key, at string }
 
 func (e emptyKey) Error() string {
-	if e.at == "" {
-		return "has an empty key at the top level"
+	what := "an empty key"
+	if e.key != "" {
+		what = fmt.Sprintf("a whitespace-only key %q", e.key)
 	}
 
-	return fmt.Sprintf("has an empty key under %q", e.at)
+	if e.at == "" {
+		return "has " + what + " at the top level"
+	}
+
+	return fmt.Sprintf("has %s under %q", what, e.at)
+}
+
+// isBlankKey reports whether a key has no text, which a layer is refused for
+// holding (ErrEmptyKey).
+func isBlankKey(key string) bool {
+	return strings.TrimSpace(key) == ""
 }
 
 func refusalOf(err error) error {
@@ -426,8 +438,8 @@ func newKeyFolder(at string, size int, keys keyCase) *keyFolder {
 }
 
 func (f *keyFolder) add(key string, v any) error {
-	if key == "" {
-		return emptyKey{at: f.at}
+	if isBlankKey(key) {
+		return emptyKey{key: key, at: f.at}
 	}
 
 	folded := f.keys.key(key)
@@ -544,10 +556,11 @@ func leafKeys(layers []Layer) []string {
 	return keys
 }
 
-// hasEmptySegment reports whether a dotted key names an empty key somewhere,
-// which a layer is refused for holding (ErrEmptyKey).
+// hasEmptySegment reports whether a dotted key names an empty or
+// whitespace-only key somewhere, which a layer is refused for holding
+// (ErrEmptyKey).
 func hasEmptySegment(key string) bool {
-	return slices.Contains(strings.Split(key, "."), "")
+	return slices.ContainsFunc(strings.Split(key, "."), isBlankKey)
 }
 
 // joinPath appends a segment to a dotted path, tolerating either being empty.
