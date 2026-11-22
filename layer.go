@@ -16,6 +16,11 @@ import (
 // rule for the winner would be anything but a silent choice of value.
 var ErrKeyCollision = errors.NewSentinel("config.key_collision", "config: two keys in one layer are the same key")
 
+// ErrEmptyKey is returned when a layer holds an empty key, such as `"": 3`. No
+// dotted path can address one, so the layer is refused rather than loaded with
+// a value nothing can read (go/config#32).
+var ErrEmptyKey = errors.NewSentinel("config.empty_key", "config: a layer holds an empty key")
+
 // SourceKind identifies where a layer's values came from.
 //
 // Provenance is only useful if it can name every kind of source, not just
@@ -325,7 +330,7 @@ func normalised(layers []Layer, keys keyCase) ([]Layer, []keySpelling, error) {
 	for _, l := range layers {
 		values, spelling, err := normaliseValues(l.Values, "", keys)
 		if err != nil {
-			return nil, nil, fmt.Errorf("%w: %s %w", ErrKeyCollision, l.Source, err)
+			return nil, nil, fmt.Errorf("%w: %s %w", refusalOf(err), l.Source, err)
 		}
 
 		out = append(out, Layer{Source: l.Source, Values: values})
@@ -349,6 +354,27 @@ type spelt struct {
 // collision is the detail of an in-layer collision, wrapped with
 // ErrKeyCollision and the layer by normalised.
 type collision struct{ first, second string }
+
+// emptyKey is the detail of an empty key, wrapped with ErrEmptyKey and the layer
+// by normalised. at is the path of the map holding it.
+type emptyKey struct{ at string }
+
+func (e emptyKey) Error() string {
+	if e.at == "" {
+		return "has an empty key at the top level"
+	}
+
+	return fmt.Sprintf("has an empty key under %q", e.at)
+}
+
+func refusalOf(err error) error {
+	var empty emptyKey
+	if errors.As(err, &empty) {
+		return ErrEmptyKey
+	}
+
+	return ErrKeyCollision
+}
 
 func (c collision) Error() string {
 	first, second := min(c.first, c.second), max(c.first, c.second)
@@ -400,6 +426,10 @@ func newKeyFolder(at string, size int, keys keyCase) *keyFolder {
 }
 
 func (f *keyFolder) add(key string, v any) error {
+	if key == "" {
+		return emptyKey{at: f.at}
+	}
+
 	folded := f.keys.key(key)
 
 	if earlier, dup := f.seen[folded]; dup {

@@ -113,6 +113,17 @@ view.Get("weird.key")  // nil: it looks for key "key" inside mapping "weird"
 control the file, do not put a dot in a key name. If you do not, read the subtree with
 `View.Unmarshal` or `Value[map[string]any]` on the parent and index it yourself.
 
+## An empty key is refused
+
+A key spelt `""` cannot be addressed by any path, so a source holding one, at any depth,
+fails to load with [`ErrEmptyKey`](errors.md#erremptykey), naming the source and where
+the key sits.
+
+```yaml
+server:
+  "": 3   # refused: app.yaml has an empty key under "server"
+```
+
 ## List elements cannot be addressed by index
 
 Paths walk mappings only. There is no `servers.0.host` syntax:

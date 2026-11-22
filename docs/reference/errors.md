@@ -258,6 +258,19 @@ and the last known good configuration stays live. `Store.AddLayer` withdraws the
 added, and a write whose result would collide commits nothing. Rename or remove one of the
 two keys in the source.
 
+### `ErrEmptyKey`
+
+`config: a layer holds an empty key: app.yaml has an empty key under "server"`
+
+Returned when one source holds an empty key, such as `"": 3`, at any depth. No dotted
+path can address an empty key, so its value could never be read, and the source is refused
+rather than loaded with a setting nothing can reach. This holds in both key-case modes.
+Before v0.22.0 such a source loaded.
+
+It is refused at the same points as [`ErrKeyCollision`](#errkeycollision): `NewStore`
+returns no store, a reload keeps the last known good configuration, and `Store.AddLayer`
+withdraws the layer. Remove the key from the source, or give it a name.
+
 ### `ErrReadOnlyFS`
 
 `config: filesystem is read-only`
