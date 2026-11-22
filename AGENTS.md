@@ -66,12 +66,12 @@ this one unmissable.
 
 **Two YAML parsers, and the boundary between them must not be crossed.**
 `YAMLCodec` reads each file twice on purpose. Values are decoded by
-`go.yaml.in/yaml/v3`; the document itself is parsed, validated and edited in
+`go.yaml.in/yaml/v4`; the document itself is parsed, validated and edited in
 place by `yamldoc`, which is what preserves every byte outside an edit and what
 decides, through `Validate`, whether the file means anything to edit. The core
 never reads a comment or a position itself beyond reporting a diagnostic's line:
 it calls `Parse`, applies the batch in one `Edit`, and writes the bytes back.
-The two parsers disagree about scalar types (yaml/v3 has one fixed rule set;
+The two parsers disagree about scalar types (yaml/v4 has one fixed rule set;
 yamldoc follows the document's `%YAML` directive), so values never come from
 yamldoc and documents never come from the value parser. Moving values over is
 spec 0008 OQ5 in yamldoc's wiki, its own change.

@@ -194,6 +194,27 @@ func TestStore_MultiDocumentFileContributesEveryDocument(t *testing.T) {
 	}
 }
 
+// YAML 1.2 lets a bare document follow a "..." end marker without a "---".
+// yamldoc always accepted it; yaml v3 refused it at Decode, so the file was
+// judged editable and then failed to load.
+func TestStore_ADocumentAfterAnEndMarkerIsLoaded(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t, map[string]string{
+		"/app.yaml": "first: 1\n...\nsecond: 2\n",
+	}, "/app.yaml")
+
+	snap := s.Snapshot()
+
+	if got, _ := snap.Get("second"); got != 2 {
+		t.Errorf("second = %v, want the document after the end marker to contribute", got)
+	}
+
+	if src, _ := snap.Origin("second"); src.Document != 1 {
+		t.Errorf("provenance document = %d, want 1", src.Document)
+	}
+}
+
 func TestStore_ReloadPublishesANewSnapshot(t *testing.T) {
 	t.Parallel()
 

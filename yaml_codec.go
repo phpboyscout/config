@@ -8,7 +8,7 @@ import (
 
 	"gitlab.com/phpboyscout/go/errors"
 	"gitlab.com/phpboyscout/go/yamldoc"
-	yaml "go.yaml.in/yaml/v3"
+	yaml "go.yaml.in/yaml/v4"
 )
 
 // NewFileBackend returns a backend reading YAML from a path on the given
