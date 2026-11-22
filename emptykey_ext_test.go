@@ -183,7 +183,9 @@ func TestEmptyKey_AFlagNameWithAnEmptySegmentIsSkipped(t *testing.T) {
 	}
 }
 
-func TestEmptyKey_APrefixOnlyEnvNameIsSkipped(t *testing.T) {
+// Guards the skip of a name with nothing after the prefix, which predates
+// ErrEmptyKey; hasEmptySegment would also catch it, so only removing both fails.
+func TestEmptyKey_APrefixOnlyEnvNameStaysSkipped(t *testing.T) {
 	t.Parallel()
 
 	env := config.WithEnviron(func() []string { return []string{"APP_=1", "APP_PORT=2"} })
@@ -255,8 +257,19 @@ func TestEmptyKey_AWhitespaceEnvSegmentIsSkipped(t *testing.T) {
 		t.Fatalf("NewStore: %v; a variable yielding a whitespace-only key must be skipped", err)
 	}
 
-	if got := store.View().GetInt("server.port"); got != 2 {
+	view := store.View()
+	if got := view.GetInt("server.port"); got != 2 {
 		t.Errorf("server.port = %d, want 2", got)
+	}
+
+	for _, key := range view.Keys() {
+		if key != "server.port" {
+			t.Errorf("Keys holds %q; the skipped variable must contribute nothing", key)
+		}
+	}
+
+	if server, ok := view.Get("server").(map[string]any); !ok || len(server) != 1 {
+		t.Errorf("server = %#v, want a map holding only port", view.Get("server"))
 	}
 }
 
