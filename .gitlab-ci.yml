@@ -237,7 +237,7 @@ canary-full:
 # that canary-full does not build, or names one that no longer requires it.
 canary-coverage:
   stage: canary
-  image: "registry.gitlab.com/phpboyscout/images/ci-base:v0.3.5"
+  image: "registry.gitlab.com/phpboyscout/images/ci-base:v0.3.6"
   interruptible: true
   script:
     - python3 .gitlab/scripts/canary-coverage.py
