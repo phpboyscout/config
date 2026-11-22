@@ -2,6 +2,9 @@ package config
 
 import (
 	"fmt"
+	"iter"
+	"maps"
+	"slices"
 	"strings"
 
 	"gitlab.com/phpboyscout/go/errors"
@@ -112,6 +115,52 @@ func (s Source) Authored() bool {
 type Layer struct {
 	Source Source
 	Values map[string]any
+}
+
+// Leaves yields each leaf path in the layer with its value, sorted as
+// [Snapshot.Keys] sorts. A leaf is what Keys counts as one: a scalar, a
+// sequence, or an empty map. Values are the layer's own, not copies.
+func (l Layer) Leaves() iter.Seq2[string, any] {
+	return func(yield func(string, any) bool) {
+		var leaves []leaf
+
+		collectLeaves(l.Values, "", map[string]bool{}, &leaves)
+
+		slices.SortFunc(leaves, func(a, b leaf) int { return strings.Compare(a.path, b.path) })
+
+		for _, lf := range leaves {
+			if !yield(lf.path, lf.value) {
+				return
+			}
+		}
+	}
+}
+
+type leaf struct {
+	path  string
+	value any
+}
+
+// collectLeaves is the module's one leaf walk (spec 0016). Keys are visited in
+// sorted order so that a path a layer spells twice, as `a.b` beside `a: {b}`,
+// keeps the nested value, which is the one a path lookup finds.
+func collectLeaves(values map[string]any, prefix string, seen map[string]bool, out *[]leaf) {
+	for _, k := range slices.Sorted(maps.Keys(values)) {
+		v := values[k]
+		path := joinPath(prefix, k)
+
+		if nested, isMap := asStringMap(v); isMap && len(nested) > 0 {
+			collectLeaves(nested, path, seen, out)
+
+			continue
+		}
+
+		if !seen[path] {
+			seen[path] = true
+
+			*out = append(*out, leaf{path: path, value: v})
+		}
+	}
 }
 
 // mergeLayers folds layers in precedence order — earliest first, latest wins —
@@ -451,10 +500,15 @@ func respell(path string, values map[string]any, spelling keySpelling) string {
 func leafKeys(layers []Layer) []string {
 	seen := map[string]bool{}
 
-	var keys []string
+	var leaves []leaf
 
 	for _, layer := range layers {
-		collectKeys(layer.Values, "", seen, &keys)
+		collectLeaves(layer.Values, "", seen, &leaves)
+	}
+
+	keys := make([]string, len(leaves))
+	for i, lf := range leaves {
+		keys[i] = lf.path
 	}
 
 	return keys

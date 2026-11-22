@@ -179,6 +179,22 @@ for _, key := range view.Keys() {
 `store.Snapshot().Values()` returns the whole merged tree as a map. It is a copy, so
 mutating it cannot affect the store.
 
+To see what one source says before the merge, walk its layer:
+
+```go
+for _, layer := range store.Snapshot().Layers() {
+	for path, value := range layer.Leaves() {
+		fmt.Println(layer.Source.Name, path, "=", value)
+	}
+}
+```
+
+`Leaves` yields a layer's leaf paths in the same sorted order as `Keys`, under the same
+[leaf rule](../reference/keys-and-paths.md#what-counts-as-a-leaf). A lower layer can
+report a path the merged tree no longer has: `tls: {}` in one file and `tls.cert` in a
+higher one merge into a `tls` with a `cert`, while the lower layer still yields `tls`.
+In a store with folded keys, the paths are lower-cased, as everywhere else.
+
 ## Find what is set in more than one place
 
 `Keys` tells you what exists. `Shadows` tells you what is set more than once, and which

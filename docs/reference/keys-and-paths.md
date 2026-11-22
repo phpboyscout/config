@@ -133,7 +133,7 @@ Read the whole sequence and index it in Go, or decode it into a struct with
 
 ## What counts as a leaf
 
-`Keys()`, provenance and schema validation all work on **leaf** paths. A leaf is any value
+`Keys()`, `Layer.Leaves()`, provenance and schema validation all work on **leaf** paths. A leaf is any value
 that is not a populated mapping:
 
 | Value in the file | Leaf? | Appears in `Keys()` |

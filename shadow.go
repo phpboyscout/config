@@ -13,7 +13,7 @@ import "strings"
 // a working environment reference wants removing whether or not it happens to
 // match the value in effect: same-value is redundant configuration,
 // different-value is dead configuration, and both are a secret in a file. A
-// caller that genuinely needs to compare has [Snapshot.Layers].
+// caller that genuinely needs to compare has [Snapshot.Layers] and [Layer.Leaves].
 //
 // See the whole-configuration shadow report spec, D7.
 type Shadow struct {

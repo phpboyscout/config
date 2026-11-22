@@ -1099,25 +1099,6 @@ func (s *Store) rebuild(ctx context.Context, pending map[string]Pending) ([]back
 	return next, nil
 }
 
-func collectKeys(values map[string]any, prefix string, seen map[string]bool, out *[]string) {
-	for k, v := range values {
-		path := joinPath(prefix, k)
-
-		nested, isMap := asStringMap(v)
-		if isMap && len(nested) > 0 {
-			collectKeys(nested, path, seen, out)
-
-			continue
-		}
-
-		if !seen[path] {
-			seen[path] = true
-
-			*out = append(*out, path)
-		}
-	}
-}
-
 // writableOnly filters a precedence order down to the sources a write may be
 // routed at, so the order is walked once rather than once per question.
 func writableOnly(order []Source) []Source {
