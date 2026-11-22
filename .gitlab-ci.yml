@@ -96,7 +96,7 @@ variables:
 # ----------------------------------------------------------------------
 .canary:
   stage: canary
-  image: "registry.gitlab.com/phpboyscout/images/go-tools:v0.5.11"
+  image: "registry.gitlab.com/phpboyscout/images/go-tools:v0.5.12"
   interruptible: true
   variables:
     GOPATH: "$CI_PROJECT_DIR/.go"
