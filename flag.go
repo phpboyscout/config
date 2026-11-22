@@ -71,7 +71,7 @@ func (b *flagBackend) Load(ctx context.Context, _ []Layer) ([]Layer, error) {
 		// Visit only walks flags the user actually set, which is exactly the
 		// filter this layer needs.
 		key := b.keyFor(f.Name)
-		if key == "" {
+		if key == "" || hasEmptySegment(key) {
 			return
 		}
 

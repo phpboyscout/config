@@ -154,6 +154,12 @@ as missing, because YAML writes an absent value the same way.
   stop the application starting.
 - **It has no nesting syntax beyond underscores.** There is no way to express a list element
   or a key containing a literal underscore that resolution cannot disambiguate.
+- **A doubled, leading or trailing underscore is ignored, not an error.** The
+  double-underscore nesting other tools use does not work here: `MYTOOL_SERVER__PORT`
+  would name an empty key under `server`, so the variable is skipped and contributes
+  nothing. A file holding an empty key is refused with
+  [`ErrEmptyKey`](errors.md#erremptykey), but a stray variable must not stop the tool
+  starting. Use single underscores: `MYTOOL_SERVER_PORT`.
 
 ## Testing without touching the process environment
 

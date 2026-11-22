@@ -2,9 +2,11 @@ package config_test
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/spf13/pflag"
 	"gitlab.com/phpboyscout/go/errors"
 
 	"gitlab.com/phpboyscout/go/config"
@@ -65,5 +67,153 @@ func TestEmptyKey_IsNotACollision(t *testing.T) {
 		config.WithReaders(config.NamedSource{Name: "app.yaml", Content: []byte("c:\n  \"\": 3\n")}))
 	if errors.Is(err, config.ErrKeyCollision) {
 		t.Errorf("err = %v; an empty key is its own refusal, not ErrKeyCollision", err)
+	}
+}
+
+func TestEmptyKey_AReloadKeepsTheLastGoodSnapshot(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "app.yaml")
+	writeFile(t, path, "port: 1\n")
+
+	fsys, err := config.Dir(dir)
+	if err != nil {
+		t.Fatalf("Dir: %v", err)
+	}
+
+	store, err := config.NewStore(context.Background(), config.WithBackend(config.NewFileBackend(fsys, "app.yaml")))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	notified := 0
+
+	store.AddObserverFunc(func(config.Observed) error {
+		notified++
+
+		return nil
+	})
+
+	writeFile(t, path, "port: 1\nserver:\n  \"\": 2\n")
+
+	if err := store.Reload(context.Background()); !errors.Is(err, config.ErrEmptyKey) {
+		t.Fatalf("Reload err = %v, want ErrEmptyKey", err)
+	}
+
+	if got := store.View().GetInt("port"); got != 1 {
+		t.Errorf("port = %d after a refused reload, want the last good 1", got)
+	}
+
+	if notified != 0 {
+		t.Errorf("observers notified %d times by a refused reload, want 0", notified)
+	}
+}
+
+func TestEmptyKey_AddLayerWithdrawsOnlyItself(t *testing.T) {
+	t.Parallel()
+
+	store, err := config.NewStore(context.Background(),
+		config.WithReaders(config.NamedSource{Name: "base.yaml", Content: []byte("port: 1\n")}))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	err = store.AddLayer(context.Background(), "extra.yaml", strings.NewReader("host: a\n\"\": b\n"))
+	if !errors.Is(err, config.ErrEmptyKey) {
+		t.Fatalf("AddLayer err = %v, want ErrEmptyKey", err)
+	}
+
+	if store.View().IsSet("host") {
+		t.Error("host is set; the refused layer was not withdrawn")
+	}
+
+	if err := store.AddLayer(context.Background(), "extra.yaml", strings.NewReader("host: a\n")); err != nil {
+		t.Errorf("re-adding the corrected layer: %v", err)
+	}
+}
+
+// The environment and the command line are ambient: a stray variable must not
+// stop the tool starting. A name yielding an empty segment was never readable,
+// so it is skipped rather than refused.
+func TestEmptyKey_AnEnvNameWithAnEmptySegmentIsSkipped(t *testing.T) {
+	t.Parallel()
+
+	env := config.WithEnviron(func() []string {
+		return []string{"APP_SERVER__PORT=1", "APP_FOO_=2", "APP__X=3", "APP_SERVER_HOST=h"}
+	})
+
+	store, err := config.NewStore(context.Background(),
+		config.WithReaders(config.NamedSource{Name: "app.yaml", Content: []byte("server:\n  port: 8080\n")}),
+		config.WithEnv("APP", env))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	view := store.View()
+	if got := view.GetInt("server.port"); got != 8080 {
+		t.Errorf("server.port = %d, want the file's 8080", got)
+	}
+
+	if got := view.GetString("server.host"); got != "h" {
+		t.Errorf("server.host = %q, want the well-formed variable still applied", got)
+	}
+}
+
+func TestEmptyKey_AFlagNameWithAnEmptySegmentIsSkipped(t *testing.T) {
+	t.Parallel()
+
+	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	flags.String("server--port", "", "")
+	flags.String("server-host", "", "")
+
+	if err := flags.Parse([]string{"--server--port=1", "--server-host=h"}); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	store, err := config.NewStore(context.Background(), config.WithBackend(config.NewFlagBackend(flags)))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	if got := store.View().GetString("server.host"); got != "h" {
+		t.Errorf("server.host = %q, want h", got)
+	}
+}
+
+func TestEmptyKey_APrefixOnlyEnvNameIsSkipped(t *testing.T) {
+	t.Parallel()
+
+	env := config.WithEnviron(func() []string { return []string{"APP_=1", "APP_PORT=2"} })
+
+	store, err := config.NewStore(context.Background(), config.WithEnv("APP", env))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	if got := store.View().GetInt("port"); got != 2 {
+		t.Errorf("port = %d, want 2", got)
+	}
+}
+
+// A leading dash needs no case: pflag refuses "---port" before the backend sees it.
+func TestEmptyKey_AFlagWithATrailingDashIsSkipped(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"port-", "server-port-"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+			flags.String(name, "", "")
+
+			if err := flags.Parse([]string{"--" + name + "=1"}); err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+
+			if _, err := config.NewStore(context.Background(), config.WithBackend(config.NewFlagBackend(flags))); err != nil {
+				t.Errorf("NewStore: %v; a flag yielding an empty segment must be skipped", err)
+			}
+		})
 	}
 }

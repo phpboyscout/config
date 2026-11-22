@@ -109,7 +109,10 @@ func (b *envBackend) Load(ctx context.Context, below []Layer) ([]Layer, error) {
 			return nil, fmt.Errorf("%w: %s", err, name)
 		}
 
-		if key == "" {
+		// A name with a doubled or trailing underscore was never readable. The
+		// environment is ambient, so it is skipped rather than refused: a stray
+		// variable must not stop the tool starting (go/config#32).
+		if key == "" || hasEmptySegment(key) {
 			continue
 		}
 

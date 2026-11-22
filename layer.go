@@ -544,6 +544,12 @@ func leafKeys(layers []Layer) []string {
 	return keys
 }
 
+// hasEmptySegment reports whether a dotted key names an empty key somewhere,
+// which a layer is refused for holding (ErrEmptyKey).
+func hasEmptySegment(key string) bool {
+	return slices.Contains(strings.Split(key, "."), "")
+}
+
 // joinPath appends a segment to a dotted path, tolerating either being empty.
 //
 // One definition, because the rule is the module's contract with dotted keys.

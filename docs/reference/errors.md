@@ -265,6 +265,9 @@ two keys in the source.
 Returned when one source holds an empty key, such as `"": 3`, at any depth. No dotted
 path can address an empty key, so its value could never be read, and the source is refused
 rather than loaded with a setting nothing can reach. This holds in both key-case modes.
+Environment variables and flags are the exception: a name that would yield an empty key,
+such as `MYTOOL_SERVER__PORT` or `--server--port`, is skipped, because the environment and
+the command line are ambient and one stray name must not stop the tool starting.
 Before v0.22.0 such a source loaded.
 
 It is refused at the same points as [`ErrKeyCollision`](#errkeycollision): `NewStore`

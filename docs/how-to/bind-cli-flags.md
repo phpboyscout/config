@@ -91,6 +91,9 @@ folds keys then lower-cases it like any other key, so a flag name that differs o
 will not give you a distinct key. In a store built with `WithCaseSensitiveKeys` it will, and
 `BindFlag("level", "Log.Level")` is how a short flag name reaches a mixed-case key.
 
+A doubled dash inside a name, as in `--server--port`, would name an empty key, so that
+flag is skipped and contributes nothing.
+
 ## Check that a flag really is winning
 
 A flag is a layer like any other, so provenance names it:
