@@ -1,5 +1,36 @@
 # Changelog
 
+## [v0.22.0](https://gitlab.com/phpboyscout/go/config/-/releases/v0.22.0)
+
+[Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.21.4...v0.22.0)
+
+### Notes
+
+- Before this release an empty or whitespace-only key also showed up in its parent's map, so `Get` on the parent, or decoding it into a map, returned a stray `""` or `" "` entry; with such keys now refused in files and skipped in environment variables and flags, that entry no longer appears.
+
+- A key made only of whitespace, such as `" ": 1`, is now treated as an empty key: a file holding one at any depth is refused at load with `ErrEmptyKey`, and an environment variable or flag yielding one is skipped. Such a file used to load: at the top level the value was unreachable, and nested it was reachable only through a fragile whitespace path such as `server. `, which no longer works, so rename the key before upgrading.
+
+- An environment variable or flag whose name would yield an empty key, such as `MYTOOL_SERVER__PORT` (the double-underscore nesting other tools use), `MYTOOL_FOO_` or `--server--port`, is skipped rather than refused with `ErrEmptyKey`, and contributes nothing; before this release such a name added an empty key no path could read, and could turn the value beneath it into a map, so `MYTOOL_FOO_` beside `foo: 1` made `foo` read as a map rather than `1`. Use single underscores.
+
+- A source holding an empty key (`"": 3`) at any depth is now refused at load with the new `config.ErrEmptyKey`, which names the source and where the key sits; such a file used to load, with a value no path could read. Remove the key, or give it a name, before upgrading.
+
+- `Layer.Leaves()` yields one layer's leaf paths and values, in `Snapshot.Keys` order and by the same leaf rule, so a caller comparing layers no longer walks `Layer.Values` by hand.
+
+- Values are now decoded with go.yaml.in/yaml v4, and every document that loaded before decodes to the same values. A parse error is worded differently ("construct errors" for "unmarshal errors", "cannot construct" for "cannot unmarshal" or "cannot decode") and more often names its line, so match on `config.ErrBackendParse`, not the message. v4 also accepts two shapes v3 refused: a document after a `...` end marker with no `---`, which YAML 1.2 allows, and, from a `NewReaderBackend` source only, an implicit key longer than 1024 characters.
+
+### Features
+
+- refuse a layer holding an empty key ([11c262a](https://gitlab.com/phpboyscout/go/config/-/commit/11c262a03ce48af93f77fad1d96547bb73fe823d))
+- enumerate one layer's leaves with Layer.Leaves ([a82c005](https://gitlab.com/phpboyscout/go/config/-/commit/a82c005a4bac7b55dbf5748a1f1c3427267b6bf8))
+
+### Bug Fixes
+
+- treat a whitespace-only key as an empty one ([78d5cc8](https://gitlab.com/phpboyscout/go/config/-/commit/78d5cc8c02b1ab2c2fbea4eeb726746be1000a32))
+- skip an env var or flag whose name would yield an empty key ([3d98e74](https://gitlab.com/phpboyscout/go/config/-/commit/3d98e744e5230bb5e85e79a2594d9b00a245fff5))
+- **deps**: decode values with go.yaml.in/yaml v4 ([e9f10ee](https://gitlab.com/phpboyscout/go/config/-/commit/e9f10eea79fa48eeee3772341f00c6fc3b8fb35e))
+- **deps**: update go modules ([a601ebe](https://gitlab.com/phpboyscout/go/config/-/commit/a601ebea1b7bb5fba029e1ea737654dabb6244f0))
+- **deps**: update module github.com/spf13/pflag to v1.1.0 ([33e17e6](https://gitlab.com/phpboyscout/go/config/-/commit/33e17e6ed3fffc8e14576aba3214613309522de5))
+
 ## [v0.21.4](https://gitlab.com/phpboyscout/go/config/-/releases/v0.21.4)
 
 [Compare to previous version](https://gitlab.com/phpboyscout/go/config/-/compare/v0.21.3...v0.21.4)
